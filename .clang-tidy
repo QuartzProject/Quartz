@@ -1,0 +1,26 @@
+---
+Checks: >
+  bugprone-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-union-access,
+  -modernize-use-trailing-return-type,
+  -readability-magic-numbers,
+  -readability-identifier-length
+
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  cppcoreguidelines-owning-memory,
+  cppcoreguidelines-no-malloc
+
+HeaderFilterRegex: '.*/(quartz|src)/.*'
+
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 60

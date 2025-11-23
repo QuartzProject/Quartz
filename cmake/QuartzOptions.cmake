@@ -1,0 +1,38 @@
+option(QUARTZ_WERROR "Treat warnings as errors" OFF)
+set(QUARTZ_SANITIZE "" CACHE STRING "Comma separated sanitizers (address,undefined,thread)")
+option(QUARTZ_FUZZ "Build libFuzzer targets" OFF)
+option(QUARTZ_COMPILER "Build the optional LLVM backend (quartz-compiler)" OFF)
+
+find_program(QUARTZ_CCACHE ccache)
+if(QUARTZ_CCACHE)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${QUARTZ_CCACHE})
+    set(CMAKE_C_COMPILER_LAUNCHER ${QUARTZ_CCACHE})
+endif()
+
+add_library(quartz_options INTERFACE)
+add_library(quartz::options ALIAS quartz_options)
+target_compile_features(quartz_options INTERFACE cxx_std_23)
+# Deterministic floats (D24): never contract a*b+c into an FMA.
+target_compile_options(quartz_options INTERFACE -ffp-contract=off -fno-rtti -Wall -Wextra -Wpedantic -Wshadow
+    -Wconversion -Wno-sign-conversion -Wnon-virtual-dtor -Wimplicit-fallthrough)
+if(QUARTZ_WERROR)
+    target_compile_options(quartz_options INTERFACE -Werror)
+endif()
+if(QUARTZ_SANITIZE)
+    target_compile_options(quartz_options INTERFACE -fsanitize=${QUARTZ_SANITIZE} -fno-omit-frame-pointer)
+    target_link_options(quartz_options INTERFACE -fsanitize=${QUARTZ_SANITIZE})
+endif()
+
+function(quartz_module name)
+    cmake_parse_arguments(ARG "" "" "SOURCES;DEPS" ${ARGN})
+    add_library(${name} STATIC ${ARG_SOURCES})
+    target_include_directories(${name} PUBLIC ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(${name} PUBLIC quartz::options ${ARG_DEPS})
+endfunction()
+
+function(quartz_test name)
+    cmake_parse_arguments(ARG "" "" "SOURCES;DEPS" ${ARGN})
+    add_executable(${name} ${ARG_SOURCES})
+    target_link_libraries(${name} PRIVATE quartz::options quartz_doctest ${ARG_DEPS})
+    add_test(NAME ${name} COMMAND ${name} WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+endfunction()

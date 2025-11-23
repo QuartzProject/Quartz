@@ -1,0 +1,18 @@
+cmake_minimum_required(VERSION 3.28)
+project(Quartz VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+include(QuartzOptions)
+
+add_library(quartz_doctest INTERFACE)
+target_include_directories(quartz_doctest SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/third_party)
+
+add_subdirectory(src)
+add_subdirectory(cli)
+add_subdirectory(bench)
+
+enable_testing()
+add_subdirectory(tests)

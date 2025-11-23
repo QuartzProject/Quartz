@@ -1,0 +1,47 @@
+package net.blueva.hub
+
+import org.basaltmc.server.*
+
+struct Vec3 {
+    x: f64
+    y: f64
+    z: f64
+}
+
+state HubData {
+    visits: Map<str, i64>
+}
+
+const SPAWN = Vec3(0.0, 64.0, 0.0)
+
+@on(PlayerJoin)
+suspend fn handleJoin(event: PlayerJoinEvent, hub: HubData) {
+    let player = event.player
+    let count = (hub.visits.get(player.uuid) ?? 0) + 1
+    hub.visits.set(player.uuid, count)
+
+    player.teleport(SPAWN)
+    player.send("Bienvenido, {player.name}! Visita #{count}")
+
+    wait 40.ticks
+    if player.isOnline() {
+        player.send("Usa /heal si necesitas recuperar vida.")
+    }
+}
+
+@command("heal", perm = "basalt.heal")
+fn heal(sender: Player, target: Player?) -> bool {
+    let who = target ?? sender
+    who.health = who.maxHealth
+    sender.send("Has curado a {who.name}")
+    let m: Map<str, List<i32>> = Map()
+    let f = (x) => x * 2
+    var y = 1 >> 2
+    y >>= 1
+    match y {
+        0 => {}
+        1..5 => y = 3
+        _ => return false
+    }
+    return true
+}
