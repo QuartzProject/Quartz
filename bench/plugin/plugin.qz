@@ -1,0 +1,160 @@
+package bench.plugin
+
+const N = 10000
+
+struct Region {
+    minx: i64
+    miny: i64
+    minz: i64
+    maxx: i64
+    maxy: i64
+    maxz: i64
+}
+
+state Data {
+    seed: i64
+    regions: [Region]
+    names: [str]
+    balance: Map<str, i64>
+    banned: [str]
+    last: [i64]
+    count: [i64]
+    xs: [f64]
+    vs: [f64]
+}
+
+fn rnd(d: Data, n: i64) -> i64 {
+    d.seed = (d.seed * 16807) % 2147483647
+    return d.seed % n
+}
+
+fn init(d: Data) {
+    d.seed = 12345
+    for i in 0..300 {
+        let x = rnd(d, 2000)
+        let z = rnd(d, 2000)
+        let y = rnd(d, 200)
+        let w = 16 + rnd(d, 48)
+        d.regions.push(Region(x, y, z, x + w, y + w, z + w))
+    }
+    for i in 0..64 {
+        let name = "Player{i}"
+        d.names.push(name)
+        d.balance[name] = 1000000 + i * 137
+        d.last.push(-100)
+        d.count.push(0)
+    }
+    d.banned = ["spam", "scam", "hack", "cheat", "exploit", "dupe", "griefer", "noob", "ez", "trash",
+        "stupid", "idiot", "fake", "fraud", "bot", "ddos", "leak", "bully", "toxic", "abuse"]
+    for i in 1..=N {
+        d.xs.push(((i * 37) % 100) as f64)
+        d.vs.push((((i * 13) % 7 - 3) as f64) * 0.5 + 0.25)
+    }
+}
+
+fn onBreak(d: Data, p: Player, x: i64, y: i64, z: i64) -> i64 {
+    if p.level >= 4 {
+        return 0
+    }
+    for i, r in d.regions {
+        if x >= r.minx && x <= r.maxx && y >= r.miny && y <= r.maxy && z >= r.minz && z <= r.maxz {
+            if trusted(p, i + 1) {
+                return 0
+            }
+            send(p, "You cannot build here")
+            return 1
+        }
+    }
+    return 0
+}
+
+fn group(n: i64) -> str {
+    let s = "{n}"
+    let len = s.len()
+    var parts: [str] = []
+    let first = len % 3
+    if first > 0 {
+        parts.push(s.slice(0, first))
+    }
+    var i = first
+    while i < len {
+        parts.push(s.slice(i, i + 3))
+        i += 3
+    }
+    return parts.join(",")
+}
+
+fn onTransfer(d: Data, p: Player, target: i64, amount: i64) -> i64 {
+    let from = p.name
+    let to = d.names[target]
+    if from == to {
+        return 0
+    }
+    let b = d.balance[from]
+    if b < amount {
+        send(p, "Insufficient funds")
+        return 0
+    }
+    d.balance[from] = b - amount
+    d.balance[to] = d.balance[to] + amount
+    setScore(p, "Balance: {group(d.balance[from])} coins")
+    return d.balance[from] % 1000
+}
+
+fn onChat(d: Data, p: Player, msg: str, tick: i64) -> i64 {
+    let id = p.id
+    if tick - d.last[id] < 20 {
+        d.count[id] += 1
+    } else {
+        d.count[id] = 1
+        d.last[id] = tick
+    }
+    if d.count[id] > 5 {
+        return 1
+    }
+    let m = msg.lower()
+    for word in d.banned {
+        if m.contains(word) {
+            return 1
+        }
+    }
+    send(p, msg)
+    return 0
+}
+
+fn onTick(d: Data) -> i64 {
+    var s = 0.0
+    for i in 0..N {
+        let x = d.xs[i] + d.vs[i] * 0.05
+        if x > 100.0 || x < 0.0 {
+            d.vs[i] = -d.vs[i]
+        }
+        d.xs[i] = x
+        s += x
+    }
+    return floor(s) as i64
+}
+
+fn onSieve() -> i64 {
+    let n = 200000
+    var f = [true; n + 1]
+    f[0] = false
+    f[1] = false
+    let limit = floor(sqrt(n as f64)) as i64
+    for i in 2..=limit {
+        if f[i] {
+            var j = i * i
+            while j <= n {
+                f[j] = false
+                j += i
+            }
+        }
+    }
+    var c = 0
+    for i in 1..=n {
+        if f[i] {
+            c += 1
+        }
+    }
+    return c
+}

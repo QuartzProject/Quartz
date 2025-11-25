@@ -1,0 +1,123 @@
+#pragma once
+
+#include <cstdint>
+#include <map>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace quartz::ir {
+
+using TypeId = std::uint32_t;
+
+enum class TypeKind : std::uint8_t {
+    Error,
+    Void,
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    U8,
+    U16,
+    U32,
+    U64,
+    F32,
+    F64,
+    Char,
+    Str,
+    Bytes,
+    Null, // type of the `null` literal before it meets a nullable type
+    Never, // type of `return`, `break` and other diverging expressions
+    Handle,
+    List,
+    Map,
+    Tuple,
+    Struct,
+    State,
+    Enum,
+    Nullable,
+    Fn,
+};
+
+inline constexpr TypeId kError = 0;
+inline constexpr TypeId kVoid = 1;
+inline constexpr TypeId kBool = 2;
+inline constexpr TypeId kI8 = 3;
+inline constexpr TypeId kI16 = 4;
+inline constexpr TypeId kI32 = 5;
+inline constexpr TypeId kI64 = 6;
+inline constexpr TypeId kU8 = 7;
+inline constexpr TypeId kU16 = 8;
+inline constexpr TypeId kU32 = 9;
+inline constexpr TypeId kU64 = 10;
+inline constexpr TypeId kF32 = 11;
+inline constexpr TypeId kF64 = 12;
+inline constexpr TypeId kChar = 13;
+inline constexpr TypeId kStr = 14;
+inline constexpr TypeId kBytes = 15;
+inline constexpr TypeId kNull = 16;
+inline constexpr TypeId kNever = 17;
+inline constexpr TypeId kFirstUserType = 18;
+
+struct Field {
+    std::string name;
+    TypeId type = kError;
+};
+
+struct VariantInfo {
+    std::string name;
+    std::vector<TypeId> payload;
+};
+
+struct TypeInfo {
+    TypeKind kind = TypeKind::Error;
+    std::string name;            // nominal types and handles
+    TypeId elem = kError;        // List, Nullable; Map value
+    TypeId key = kError;         // Map key
+    TypeId result = kVoid;       // Fn
+    std::vector<TypeId> elems;   // Tuple elements, Fn params
+    std::vector<Field> fields;   // Struct, State
+    std::vector<VariantInfo> variants;
+    bool complete = true;        // nominal types are declared first and completed later
+};
+
+/// Owns every type of a program; structural types are interned so equal types share one id.
+class TypeTable {
+public:
+    TypeTable();
+
+    [[nodiscard]] const TypeInfo& info(TypeId id) const { return types_[id]; }
+    [[nodiscard]] TypeKind kind(TypeId id) const { return types_[id].kind; }
+    [[nodiscard]] std::size_t size() const { return types_.size(); }
+
+    TypeId list(TypeId elem);
+    TypeId map(TypeId key, TypeId value);
+    TypeId nullable(TypeId inner);
+    TypeId tuple(const std::vector<TypeId>& elems);
+    TypeId fn(const std::vector<TypeId>& params, TypeId result);
+    TypeId declareNominal(TypeKind kind, std::string name);
+    TypeInfo& mutableInfo(TypeId id) { return types_[id]; }
+    /// Adds a fully described type as read from a serialized module; structural types are interned.
+    TypeId addRaw(TypeInfo info);
+
+    [[nodiscard]] std::string name(TypeId id) const;
+
+    [[nodiscard]] bool isInteger(TypeId id) const;
+    [[nodiscard]] bool isSigned(TypeId id) const;
+    [[nodiscard]] bool isFloat(TypeId id) const { return id == kF32 || id == kF64; }
+    [[nodiscard]] bool isNumeric(TypeId id) const { return isInteger(id) || isFloat(id); }
+    [[nodiscard]] bool isScalar(TypeId id) const { return id >= kBool && id <= kChar; }
+    [[nodiscard]] int bitWidth(TypeId id) const;
+    /// True when a value of this type holds a pointer the runtime must track (strings, collections, state).
+    [[nodiscard]] bool hasRefs(TypeId id) const;
+    [[nodiscard]] bool isRefKind(TypeId id) const;
+
+private:
+    TypeId intern(TypeInfo info, const std::string& key);
+
+    std::vector<TypeInfo> types_;
+    std::map<std::string, TypeId> structural_;
+};
+
+} // namespace quartz::ir

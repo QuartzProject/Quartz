@@ -1,0 +1,455 @@
+#include "sema/SemaImpl.hpp"
+
+#include <charconv>
+#include <format>
+
+namespace quartz::sema {
+
+using ir::Intrinsic;
+
+std::optional<BuiltinSig> Checker::builtinMethod(TypeId recv, std::string_view name) {
+    const ir::TypeInfo& info = types_->info(recv);
+    if (recv == ir::kStr) {
+        static const std::pair<std::string_view, BuiltinSig> table[] = {
+            {"len", {Intrinsic::StrLen, {}, ir::kI64}},
+            {"lower", {Intrinsic::StrLower, {}, ir::kStr}},
+            {"upper", {Intrinsic::StrUpper, {}, ir::kStr}},
+            {"contains", {Intrinsic::StrContains, {ir::kStr}, ir::kBool}},
+            {"startsWith", {Intrinsic::StrStartsWith, {ir::kStr}, ir::kBool}},
+            {"endsWith", {Intrinsic::StrEndsWith, {ir::kStr}, ir::kBool}},
+            {"slice", {Intrinsic::StrSlice, {ir::kI64, ir::kI64}, ir::kStr}},
+            {"byteAt", {Intrinsic::StrByteAt, {ir::kI64}, ir::kI64}},
+        };
+        for (const auto& [n, sig] : table) {
+            if (n == name) {
+                return sig;
+            }
+        }
+        if (name == "find") {
+            return BuiltinSig{Intrinsic::StrFind, {ir::kStr}, types_->nullable(ir::kI64)};
+        }
+        return std::nullopt;
+    }
+    if (info.kind == ir::TypeKind::List) {
+        TypeId elem = info.elem;
+        if (name == "len") {
+            return BuiltinSig{Intrinsic::ListLen, {}, ir::kI64};
+        }
+        if (name == "push") {
+            return BuiltinSig{Intrinsic::ListPush, {elem}, ir::kVoid};
+        }
+        if (name == "pop") {
+            return BuiltinSig{Intrinsic::ListPop, {}, types_->nullable(elem)};
+        }
+        if (name == "clear") {
+            return BuiltinSig{Intrinsic::ListClear, {}, ir::kVoid};
+        }
+        if (name == "join" && elem == ir::kStr) {
+            return BuiltinSig{Intrinsic::ListJoin, {ir::kStr}, ir::kStr};
+        }
+        return std::nullopt;
+    }
+    if (info.kind == ir::TypeKind::Map) {
+        if (name == "len") {
+            return BuiltinSig{Intrinsic::MapLen, {}, ir::kI64};
+        }
+        if (name == "get") {
+            return BuiltinSig{Intrinsic::MapGet, {info.key}, types_->nullable(info.elem)};
+        }
+        if (name == "set") {
+            return BuiltinSig{Intrinsic::MapSet, {info.key, info.elem}, ir::kVoid};
+        }
+        if (name == "has") {
+            return BuiltinSig{Intrinsic::MapHas, {info.key}, ir::kBool};
+        }
+        if (name == "remove") {
+            return BuiltinSig{Intrinsic::MapRemove, {info.key}, ir::kBool};
+        }
+        return std::nullopt;
+    }
+    if (recv == ir::kF64) {
+        static const std::pair<std::string_view, Intrinsic> table[] = {
+            {"sqrt", Intrinsic::MathSqrt}, {"floor", Intrinsic::MathFloor}, {"ceil", Intrinsic::MathCeil},
+            {"abs", Intrinsic::MathAbsF},  {"sin", Intrinsic::MathSin},     {"cos", Intrinsic::MathCos},
+        };
+        for (const auto& [n, op] : table) {
+            if (n == name) {
+                return BuiltinSig{op, {}, ir::kF64};
+            }
+        }
+    }
+    if (recv == ir::kI64 && name == "abs") {
+        return BuiltinSig{Intrinsic::MathAbsI, {}, ir::kI64};
+    }
+    return std::nullopt;
+}
+
+bool Checker::bindArgs(CallExpr* call, const std::vector<TypeId>& params, const std::vector<Symbol>& names,
+                       const std::vector<Expr*>& defaults, std::size_t skip) {
+    std::size_t n = params.size() - skip;
+    std::vector<Expr*> ordered(n, nullptr);
+    bool ok = true;
+    bool sawNamed = false;
+    std::size_t positional = 0;
+    for (Arg& a : call->args) {
+        std::size_t slot = n;
+        if (a.name.valid()) {
+            sawNamed = true;
+            for (std::size_t i = 0; i < n; ++i) {
+                if (names.size() > i + skip && names[i + skip] == a.name) {
+                    slot = i;
+                }
+            }
+            if (slot == n) {
+                diags_.error(a.value->span, std::format("no parameter named '{}'", str(a.name)));
+                check(a.value, ir::kError);
+                ok = false;
+                continue;
+            }
+        } else {
+            if (sawNamed) {
+                diags_.error(a.value->span, "positional arguments must come before named ones");
+                ok = false;
+            }
+            slot = positional++;
+            if (slot >= n) {
+                diags_.error(a.value->span, std::format("too many arguments: expected {}", n));
+                check(a.value, ir::kError);
+                ok = false;
+                continue;
+            }
+        }
+        if (ordered[slot] != nullptr) {
+            diags_.error(a.value->span, "argument given twice");
+            ok = false;
+        }
+        ordered[slot] = a.value;
+        TypeId pt = params[slot + skip];
+        expectAssignable(checkValue(a.value, pt), pt, a.value->span);
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (ordered[i] == nullptr) {
+            Expr* d = defaults.size() > i + skip ? defaults[i + skip] : nullptr;
+            if (d == nullptr) {
+                std::string pname = names.size() > i + skip ? std::string(str(names[i + skip])) : std::to_string(i);
+                diags_.error(call->span, std::format("missing argument '{}'", pname));
+                ok = false;
+            } else {
+                if (d->type == ir::kError) {
+                    auto saved = std::move(scopes_);
+                    scopes_.clear();
+                    expectAssignable(checkValue(d, params[i + skip]), params[i + skip], d->span);
+                    scopes_ = std::move(saved);
+                }
+                ordered[i] = d;
+            }
+        }
+    }
+    call->ordered = arena_.copy(ordered);
+    return ok;
+}
+
+TypeId Checker::finishCall(CallExpr* call, FnInfo* fn, Expr* receiver) {
+    call->fn = fn;
+    call->receiver = receiver;
+    call->callKind = fn->isHost ? CallKind::Host : CallKind::Function;
+    if (fn->isSuspend && (currentFn_ == nullptr || !currentFn_->isSuspend)) {
+        diags_.error(call->span, std::format("suspend function '{}' can only be called from a suspend function",
+                                             fn->name));
+    }
+    bindArgs(call, fn->params, fn->paramNames, fn->defaults, receiver != nullptr ? 1 : 0);
+    return fn->result;
+}
+
+TypeId Checker::checkConstruct(CallExpr* call, TypeId type) {
+    const ir::TypeInfo& info = types_->info(type);
+    if (info.kind != ir::TypeKind::Struct) {
+        diags_.error(call->span, std::format("'{}' cannot be constructed", typeName(type)));
+        for (Arg& a : call->args) {
+            check(a.value, ir::kError);
+        }
+        return ir::kError;
+    }
+    call->callKind = CallKind::Construct;
+    std::vector<TypeId> params;
+    std::vector<Symbol> names;
+    std::vector<Expr*> defaults;
+    StructDecl* decl = prog_->structDecls[type];
+    for (std::size_t i = 0; i < info.fields.size(); ++i) {
+        params.push_back(info.fields[i].type);
+        names.push_back(decl->fields[i].name);
+        defaults.push_back(decl->fields[i].defaultValue);
+    }
+    bindArgs(call, params, names, defaults, 0);
+    return type;
+}
+
+TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found) {
+    found = true;
+    std::string_view n = str(name);
+    auto* ident = static_cast<IdentExpr*>(call->callee);
+    auto unaryF64 = [&](Intrinsic op) {
+        call->callKind = CallKind::Builtin;
+        call->builtin = static_cast<std::uint16_t>(op);
+        bindArgs(call, {ir::kF64}, {}, {}, 0);
+        return ir::kF64;
+    };
+    if (n == "sqrt") {
+        return unaryF64(Intrinsic::MathSqrt);
+    }
+    if (n == "floor") {
+        return unaryF64(Intrinsic::MathFloor);
+    }
+    if (n == "ceil") {
+        return unaryF64(Intrinsic::MathCeil);
+    }
+    if (n == "sin") {
+        return unaryF64(Intrinsic::MathSin);
+    }
+    if (n == "cos") {
+        return unaryF64(Intrinsic::MathCos);
+    }
+    if (n == "pow") {
+        call->callKind = CallKind::Builtin;
+        call->builtin = static_cast<std::uint16_t>(Intrinsic::MathPow);
+        bindArgs(call, {ir::kF64, ir::kF64}, {}, {}, 0);
+        return ir::kF64;
+    }
+    if (n == "panic") {
+        call->callKind = CallKind::Builtin;
+        call->builtin = static_cast<std::uint16_t>(Intrinsic::Panic);
+        bindArgs(call, {ir::kStr}, {}, {}, 0);
+        return ir::kNever;
+    }
+    if (n == "abs" || n == "min" || n == "max") {
+        std::size_t arity = n == "abs" ? 1 : 2;
+        if (call->args.size() != arity) {
+            diags_.error(call->span, std::format("'{}' takes {} argument(s)", n, arity));
+            return ir::kError;
+        }
+        TypeId t = checkValue(call->args[0].value, expected);
+        if (t != ir::kI64 && t != ir::kF64 && t != ir::kError) {
+            diags_.error(call->span, std::format("'{}' works on i64 and f64", n));
+            return ir::kError;
+        }
+        bool isF = t == ir::kF64;
+        Intrinsic op = n == "abs" ? (isF ? Intrinsic::MathAbsF : Intrinsic::MathAbsI)
+                       : n == "min" ? (isF ? Intrinsic::MathMinF : Intrinsic::MathMinI)
+                                    : (isF ? Intrinsic::MathMaxF : Intrinsic::MathMaxI);
+        call->callKind = CallKind::Builtin;
+        call->builtin = static_cast<std::uint16_t>(op);
+        std::vector<TypeId> params(arity, t);
+        bindArgs(call, params, {}, {}, 0);
+        return t;
+    }
+    if (n == "Map" || n == "List") {
+        TypeId t = ir::kError;
+        if (!ident->typeArgs.empty()) {
+            std::size_t want = n == "Map" ? 2 : 1;
+            if (ident->typeArgs.size() != want) {
+                diags_.error(call->span, std::format("'{}' takes {} type argument(s)", n, want));
+                return ir::kError;
+            }
+            t = n == "Map" ? types_->map(resolveType(ident->typeArgs[0]), resolveType(ident->typeArgs[1]))
+                           : types_->list(resolveType(ident->typeArgs[0]));
+        } else {
+            TypeId want = expected;
+            if (want != ir::kError && types_->kind(want) == ir::TypeKind::Nullable) {
+                want = types_->info(want).elem;
+            }
+            ir::TypeKind k = want == ir::kError ? ir::TypeKind::Error : types_->kind(want);
+            if ((n == "Map" && k != ir::TypeKind::Map) || (n == "List" && k != ir::TypeKind::List)) {
+                diags_.error(call->span, std::format("cannot infer the type of '{}()'; write '{}::<...>()'", n, n));
+                return ir::kError;
+            }
+            t = want;
+        }
+        if (!call->args.empty()) {
+            diags_.error(call->span, std::format("'{}()' takes no arguments", n));
+        }
+        call->callKind = CallKind::Builtin;
+        call->builtin = static_cast<std::uint16_t>(n == "Map" ? Intrinsic::MapNew : Intrinsic::ListNew);
+        return t;
+    }
+    found = false;
+    return ir::kError;
+}
+
+TypeId Checker::checkBuiltinMethod(CallExpr* call, TypeId recvType, Symbol name, TypeId expected) {
+    (void)expected;
+    std::optional<BuiltinSig> sig = builtinMethod(recvType, str(name));
+    if (!sig) {
+        diags_.error(call->callee->span, std::format("'{}' has no method '{}'", typeName(recvType), str(name)));
+        for (Arg& a : call->args) {
+            check(a.value, ir::kError);
+        }
+        return ir::kError;
+    }
+    call->callKind = CallKind::Builtin;
+    call->builtin = static_cast<std::uint16_t>(sig->op);
+    bindArgs(call, sig->params, {}, {}, 0);
+    return sig->result;
+}
+
+TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expected) {
+    // `Enum.Variant(payload)`
+    if (callee->object->kind == ExprKind::Ident && !callee->safe) {
+        auto* id = static_cast<IdentExpr*>(callee->object);
+        if (findLocal(id->name) == nullptr && !globals_.contains(id->name)) {
+            TypeId et = lookupTypeName(id->name, id->span, false);
+            if (et != ir::kError && types_->kind(et) == ir::TypeKind::Enum) {
+                const ir::TypeInfo& info = types_->info(et);
+                for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
+                    if (info.variants[v].name == str(callee->name)) {
+                        call->callKind = CallKind::Variant;
+                        call->variant = v;
+                        std::vector<TypeId> payload = info.variants[v].payload;
+                        bindArgs(call, payload, {}, {}, 0);
+                        return et;
+                    }
+                }
+                diags_.error(callee->span, std::format("'{}' has no variant '{}'", typeName(et), str(callee->name)));
+                return ir::kError;
+            }
+        }
+    }
+    TypeId recv = checkValue(callee->object, ir::kError);
+    callee->type = ir::kError;
+    if (recv == ir::kError) {
+        for (Arg& a : call->args) {
+            check(a.value, ir::kError);
+        }
+        return ir::kError;
+    }
+    if (callee->safe) {
+        diags_.error(callee->span, "'?.' method calls are not supported yet; use 'if let'");
+        return ir::kError;
+    }
+    auto it = methods_.find({recv, callee->name.id});
+    if (it != methods_.end()) {
+        FnInfo* fn = it->second;
+        if (!fn->hasSelf) {
+            diags_.error(callee->span, std::format("'{}' is not a method; call it as '{}'", fn->name, fn->name));
+            return ir::kError;
+        }
+        return finishCall(call, fn, callee->object);
+    }
+    call->receiver = callee->object;
+    return checkBuiltinMethod(call, recv, callee->name, expected);
+}
+
+TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
+    if (e->callee->kind == ExprKind::Member) {
+        return checkMethodCall(e, static_cast<MemberExpr*>(e->callee), expected);
+    }
+    if (e->callee->kind == ExprKind::Ident) {
+        auto* id = static_cast<IdentExpr*>(e->callee);
+        if (findLocal(id->name) != nullptr) {
+            diags_.error(e->callee->span, "calling a value is not supported yet");
+            return ir::kError;
+        }
+        auto fit = functions_.find(id->name);
+        if (fit != functions_.end()) {
+            id->ref = IdentRef::Function;
+            id->fn = fit->second;
+            return finishCall(e, fit->second, nullptr);
+        }
+        bool found = false;
+        TypeId bt = checkBuiltinFunction(e, id->name, expected, found);
+        if (found) {
+            return bt;
+        }
+        TypeId tt = lookupTypeName(id->name, id->span, false);
+        if (tt != ir::kError) {
+            id->ref = IdentRef::Type;
+            return checkConstruct(e, tt);
+        }
+        diags_.error(id->span, std::format("unknown function '{}'", str(id->name)));
+        for (Arg& a : e->args) {
+            check(a.value, ir::kError);
+        }
+        return ir::kError;
+    }
+    diags_.error(e->callee->span, "this expression cannot be called");
+    return ir::kError;
+}
+
+TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
+    (void)expected;
+    if (e->object->kind == ExprKind::Ident && !e->safe) {
+        auto* id = static_cast<IdentExpr*>(e->object);
+        if (findLocal(id->name) == nullptr && !globals_.contains(id->name)) {
+            TypeId et = lookupTypeName(id->name, id->span, false);
+            if (et != ir::kError) {
+                const ir::TypeInfo& info = types_->info(et);
+                if (info.kind == ir::TypeKind::Enum) {
+                    for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
+                        if (info.variants[v].name == str(e->name)) {
+                            if (!info.variants[v].payload.empty()) {
+                                diags_.error(e->span, std::format("variant '{}' needs its payload", str(e->name)));
+                            }
+                            e->isVariant = true;
+                            e->fieldIndex = v;
+                            id->ref = IdentRef::Type;
+                            return et;
+                        }
+                    }
+                }
+                diags_.error(e->span, std::format("'{}' has no member '{}'", typeName(et), str(e->name)));
+                return ir::kError;
+            }
+        }
+    }
+    TypeId ot = checkValue(e->object, ir::kError);
+    if (ot == ir::kError) {
+        return ot;
+    }
+    bool wrap = false;
+    if (e->safe) {
+        if (types_->kind(ot) != ir::TypeKind::Nullable) {
+            diags_.error(e->span, std::format("'?.' needs a nullable value, found '{}'", typeName(ot)));
+            return ir::kError;
+        }
+        ot = types_->info(ot).elem;
+        wrap = true;
+    } else if (types_->kind(ot) == ir::TypeKind::Nullable) {
+        diags_.error(e->span, std::format("value of type '{}' may be null; use '?.' or 'if let'", typeName(ot)));
+        return ir::kError;
+    }
+    const ir::TypeInfo& info = types_->info(ot);
+    TypeId result = ir::kError;
+    if (info.kind == ir::TypeKind::Struct || info.kind == ir::TypeKind::State) {
+        for (std::uint32_t i = 0; i < info.fields.size(); ++i) {
+            if (info.fields[i].name == str(e->name)) {
+                e->fieldIndex = i;
+                result = info.fields[i].type;
+            }
+        }
+    } else if (info.kind == ir::TypeKind::Tuple) {
+        std::string_view n = str(e->name);
+        std::uint32_t idx = 0;
+        auto res = std::from_chars(n.data(), n.data() + n.size(), idx);
+        if (res.ec == std::errc{} && idx < info.elems.size()) {
+            e->fieldIndex = idx;
+            result = info.elems[idx];
+        }
+    } else if (info.kind == ir::TypeKind::Handle) {
+        auto it = properties_.find({ot, e->name.id});
+        if (it != properties_.end()) {
+            e->isProperty = true;
+            e->getter = it->second.getter;
+            result = it->second.type;
+        }
+    }
+    if (result == ir::kError) {
+        if (methods_.contains({ot, e->name.id}) || builtinMethod(ot, str(e->name))) {
+            diags_.error(e->span, std::format("'{}' is a method; call it with '()'", str(e->name)));
+        } else {
+            diags_.error(e->span, std::format("'{}' has no field '{}'", typeName(ot), str(e->name)));
+        }
+        return ir::kError;
+    }
+    return wrap ? types_->nullable(result) : result;
+}
+
+} // namespace quartz::sema

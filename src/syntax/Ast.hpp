@@ -8,7 +8,6 @@
 #include <string_view>
 
 namespace quartz::sema {
-struct Type;
 struct Local;
 struct FnInfo;
 struct GlobalInfo;
@@ -112,7 +111,7 @@ const char* binaryOpText(BinaryOp op);
 struct Expr {
     ExprKind kind;
     Span span;
-    const sema::Type* type = nullptr; // filled by sema
+    std::uint32_t type = 0; // ir::TypeId filled by sema; 0 is the error type
 };
 
 struct IntLitExpr : Expr {
@@ -173,14 +172,15 @@ struct Arg {
     Expr* value;
 };
 
-enum class CallKind : std::uint8_t { Unresolved, Function, Method, HostMethod, Construct, Builtin, Indirect };
+enum class CallKind : std::uint8_t { Unresolved, Function, Host, Construct, Variant, Builtin, Indirect };
 
 struct CallExpr : Expr {
     Expr* callee;
     std::span<Arg> args;
     CallKind callKind = CallKind::Unresolved;
     sema::FnInfo* fn = nullptr;
-    std::uint16_t builtin = 0;
+    std::uint16_t builtin = 0;  // ir::Intrinsic for CallKind::Builtin
+    std::uint32_t variant = 0;  // CallKind::Variant
     Expr* receiver = nullptr; // for methods: the object
     std::span<Expr*> ordered; // args in parameter order after sema (defaults filled)
 };
@@ -190,8 +190,9 @@ struct MemberExpr : Expr {
     Symbol name;
     bool safe; // `?.`
     std::uint32_t fieldIndex = 0;
-    bool isProperty = false; // host handle property
-    sema::FnInfo* getter = nullptr;
+    bool isProperty = false; // host handle property, read through import `getter`
+    bool isVariant = false;  // `Enum.Variant` without payload; fieldIndex holds the variant
+    std::uint32_t getter = 0;
 };
 
 struct IndexExpr : Expr {
