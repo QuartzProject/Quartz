@@ -1,2 +1,3 @@
-add_executable(quartz main.cpp)
-target_link_libraries(quartz PRIVATE quartz_ir)
+add_executable(quartz-cli main.cpp)
+set_target_properties(quartz-cli PROPERTIES OUTPUT_NAME quartz)
+target_link_libraries(quartz-cli PRIVATE quartz)

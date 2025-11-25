@@ -3,3 +3,6 @@ quartz_module(quartz_syntax SOURCES syntax/Lexer.cpp syntax/Parser.cpp syntax/Pa
 quartz_module(quartz_sema SOURCES ir/Types.cpp sema/Declare.cpp sema/CheckExpr.cpp sema/CheckCall.cpp
     sema/CheckStmt.cpp DEPS quartz_syntax)
 quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/Validator.cpp DEPS quartz_sema)
+quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/Sandbox.cpp vm/Interp.cpp
+    DEPS quartz_ir)
+quartz_module(quartz SOURCES driver/Compiler.cpp DEPS quartz_vm)
