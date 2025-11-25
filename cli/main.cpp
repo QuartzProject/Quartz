@@ -1,4 +1,5 @@
 #include "ir/Lower.hpp"
+#include "ir/Validator.hpp"
 #include "sema/Sema.hpp"
 #include "support/Diagnostics.hpp"
 #include "syntax/Parser.hpp"
@@ -34,6 +35,10 @@ int main(int argc, char** argv) {
         auto prog = quartz::sema::analyze(modules, names, arena, diags);
         if (!diags.hasErrors()) {
             auto mod = quartz::ir::lower(*prog, sources, diags);
+            if (auto v = quartz::ir::validate(*mod); !v) {
+                std::fprintf(stderr, "%s\n", v.error().describe(*mod).c_str());
+                return 1;
+            }
             if (printIr) {
                 std::fputs(quartz::ir::print(*mod).c_str(), stdout);
             }
