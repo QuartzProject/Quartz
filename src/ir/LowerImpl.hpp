@@ -29,6 +29,8 @@ public:
     Reg lowerIf(IfExpr* e, TypeId want, bool wantValue);
     Reg lowerMatch(MatchExpr* m, TypeId want, bool wantValue);
     Reg lowerArmBody(Expr* body, TypeId want, bool wantValue);
+    void branchIfFalse(Expr* e, std::size_t frame);
+    void branchIfTrue(Expr* e, std::size_t frame);
     Reg patternTest(Pattern* p, Reg subject, TypeId subjectType);
     void bindPattern(Pattern* p, Reg subject, TypeId subjectType);
     Reg zeroValue(TypeId t, Span span);

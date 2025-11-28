@@ -1,6 +1,7 @@
 #include "quartz/Quartz.hpp"
 
 #include "ir/Lower.hpp"
+#include "ir/Optimize.hpp"
 #include "ir/Validator.hpp"
 #include "sema/Sema.hpp"
 #include "syntax/Parser.hpp"
@@ -31,6 +32,9 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     out.diagnostics = diags.render();
     if (diags.hasErrors()) {
         return out;
+    }
+    if (options.optimize) {
+        ir::optimize(*mod);
     }
     if (options.printIr) {
         out.irText = ir::print(*mod);

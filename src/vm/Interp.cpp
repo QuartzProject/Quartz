@@ -182,6 +182,30 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
                 pc += ins.bc();
             }
             NEXT();
+            CASE(JLtI) if (RA.i < RB.i) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JLeI) if (RA.i <= RB.i) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JEqI) if (RA.u == RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JNeI) if (RA.u != RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JLtU) if (RA.u < RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JLeU) if (RA.u <= RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JLtF) if (RA.f < RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JLeF) if (RA.f <= RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JEqF) if (RA.f == RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JNeF) if (RA.f != RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JNLtF) if (!(RA.f < RB.f)) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
+            CASE(JNLeF) if (!(RA.f <= RB.f)) { pc += static_cast<std::int16_t>(ins.c); }
+            NEXT();
             CASE(AddI) RA.u = RB.u + RC.u;
             NEXT();
             CASE(SubI) RA.u = RB.u - RC.u;
@@ -456,7 +480,11 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
                 if (RC.u >= l->len) {
                     TRAP(ir::TrapCode::IndexOutOfBounds, {});
                 }
-                std::memcpy(&RA, l->data + RC.u * l->elemSlots, l->elemSlots * sizeof(Slot));
+                const Slot* src = l->data + RC.u * l->elemSlots;
+                Slot* dst = &RA;
+                for (std::uint32_t k = 0; k < l->elemSlots; ++k) {
+                    dst[k] = src[k];
+                }
                 NEXT();
             }
             CASE(ListSet) {

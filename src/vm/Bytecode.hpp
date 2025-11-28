@@ -22,6 +22,8 @@ namespace quartz::vm {
     X(JmpT)      /* if a: pc += bc */                                                                                  \
     X(JmpF)      /* if !a: pc += bc */                                                                                 \
     X(LoopT)     /* if a: pc += bc (backward), charges fuel */                                                         \
+    X(JLtI) X(JLeI) X(JEqI) X(JNeI) X(JLtU) X(JLeU) /* if a op b: pc += int16 c */                                     \
+    X(JLtF) X(JLeF) X(JEqF) X(JNeF) X(JNLtF) X(JNLeF)                                                                  \
     X(AddI) X(SubI) X(MulI) X(DivI) X(RemI) X(DivU) X(RemU) X(AndI) X(OrI) X(XorI) X(ShlI) X(ShrI) X(ShrU)          \
     X(NegI) X(NotB) X(BNotI)                                                                                           \
     X(AddF) X(SubF) X(MulF) X(DivF) X(RemF) X(NegF)                                                                    \
@@ -123,6 +125,8 @@ struct Program {
 };
 
 const char* opcodeName(Opc op);
+
+inline bool isShortJump(Opc op) { return op >= Opc::JLtI && op <= Opc::JNLeF; }
 
 /// Lowers a validated module. The module must have passed ir::validate.
 std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module);

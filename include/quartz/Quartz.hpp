@@ -21,6 +21,7 @@ struct CompileOutput {
 
 struct CompileOptions {
     bool printIr = false;
+    bool optimize = true;
 };
 
 /// Front end, lowering, validation and bytecode generation in one call.

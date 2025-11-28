@@ -363,10 +363,7 @@ void Lowerer::lowerWhile(WhileStmt* s) {
     open(Op::Block);
     std::size_t loop = depth_;
     open(Op::Loop);
-    Reg c = lowerExpr(s->cond, kBool);
-    Reg nc = newReg(kBool);
-    emit(Op::Not, nc, c);
-    brIf(nc, exit);
+    branchIfFalse(s->cond, exit);
     loops_.push_back({exit, loop});
     lowerBlockStmts(s->body);
     loops_.pop_back();
@@ -443,24 +440,74 @@ void Lowerer::lowerFor(ForStmt* s) {
     close();
 }
 
+void Lowerer::branchIfFalse(Expr* e, std::size_t frame) {
+    if (e->kind == ExprKind::Binary) {
+        auto* b = static_cast<BinaryExpr*>(e);
+        if (b->op == BinaryOp::And) {
+            branchIfFalse(b->lhs, frame);
+            branchIfFalse(b->rhs, frame);
+            return;
+        }
+        if (b->op == BinaryOp::Or) {
+            std::size_t done = depth_;
+            open(Op::Block);
+            branchIfTrue(b->lhs, done);
+            branchIfFalse(b->rhs, frame);
+            close();
+            return;
+        }
+    }
+    if (e->kind == ExprKind::Unary && static_cast<UnaryExpr*>(e)->op == UnaryOp::Not) {
+        branchIfTrue(static_cast<UnaryExpr*>(e)->operand, frame);
+        return;
+    }
+    Reg c = lowerExpr(e, kBool);
+    Reg nc = newReg(kBool);
+    emit(Op::Not, nc, c);
+    brIf(nc, frame);
+}
+
+void Lowerer::branchIfTrue(Expr* e, std::size_t frame) {
+    if (e->kind == ExprKind::Binary) {
+        auto* b = static_cast<BinaryExpr*>(e);
+        if (b->op == BinaryOp::Or) {
+            branchIfTrue(b->lhs, frame);
+            branchIfTrue(b->rhs, frame);
+            return;
+        }
+        if (b->op == BinaryOp::And) {
+            std::size_t skip = depth_;
+            open(Op::Block);
+            branchIfFalse(b->lhs, skip);
+            branchIfTrue(b->rhs, frame);
+            close();
+            return;
+        }
+    }
+    if (e->kind == ExprKind::Unary && static_cast<UnaryExpr*>(e)->op == UnaryOp::Not) {
+        branchIfFalse(static_cast<UnaryExpr*>(e)->operand, frame);
+        return;
+    }
+    brIf(lowerExpr(e, kBool), frame);
+}
+
 Reg Lowerer::lowerIf(IfExpr* e, TypeId want, bool wantValue) {
     TypeId rt = wantValue ? (want != kError ? want : e->type) : kError;
     Reg result = wantValue && rt != kVoid && rt != kNever ? newReg(rt) : kNoReg;
-    Reg cond = kNoReg;
-    Reg bound = kNoReg;
+    // block $end { block $else { test; then; br $end } else }
+    std::size_t endFrame = depth_;
+    open(Op::Block);
+    std::size_t elseFrame = depth_;
+    open(Op::Block);
     if (e->bindValue != nullptr) {
-        bound = lowerExpr(e->bindValue);
+        Reg bound = lowerExpr(e->bindValue);
         Reg isNull = newReg(kBool);
         emit(Op::IsNull, isNull, bound);
-        cond = newReg(kBool);
-        emit(Op::Not, cond, isNull);
-    } else {
-        cond = lowerExpr(e->cond, kBool);
-    }
-    open(Op::If, cond);
-    if (bound != kNoReg) {
+        brIf(isNull, elseFrame);
         e->bindLocal->reg = newReg(e->bindLocal->type);
         emit(Op::Unwrap, e->bindLocal->reg, bound);
+    } else {
+        branchIfFalse(e->cond, elseFrame);
     }
     if (result != kNoReg) {
         Reg v = lowerBlockValue(e->then, rt);
@@ -471,7 +518,10 @@ Reg Lowerer::lowerIf(IfExpr* e, TypeId want, bool wantValue) {
         lowerBlockStmts(e->then);
     }
     if (e->otherwise != nullptr) {
-        emit(Op::Else);
+        br(endFrame);
+    }
+    close();
+    if (e->otherwise != nullptr) {
         if (e->otherwise->kind == ExprKind::If) {
             Reg v = lowerIf(static_cast<IfExpr*>(e->otherwise), rt, wantValue);
             if (result != kNoReg && v != kNoReg && e->otherwise->type != kNever) {

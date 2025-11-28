@@ -58,9 +58,27 @@ public:
             out.params.push_back(fn_.regs[p]);
         }
         regSlots_ = next;
+        analyze();
         for (pc_ = 0; pc_ < fn_.code.size(); ++pc_) {
+            if (skip_ > 0) {
+                --skip_;
+                continue;
+            }
             line_ = fn_.code[pc_].line;
-            lower(fn_.code[pc_]);
+            const Inst& in = fn_.code[pc_];
+            retarget_ = ir::kNoReg;
+            retargetFrom_ = ir::kNoReg;
+            if (fuse && in.dst != ir::kNoReg && canRetarget(in) && pc_ + 1 < fn_.code.size()) {
+                const Inst& mv = fn_.code[pc_ + 1];
+                if (mv.op == Op::Move && mv.a == in.dst && uses_[in.dst] == 1 && defs_[in.dst] == 1 &&
+                    defs_[mv.dst] > 1 && n(mv.dst) == n(in.dst)) {
+                    retarget_ = mv.dst;
+                    retargetFrom_ = in.dst;
+                    offset_[in.dst] = offset_[mv.dst];
+                    skip_ = 1;
+                }
+            }
+            lower(in);
         }
         out.frameSlots = regSlots_ + maxOutgoing_;
         if (out.frameSlots > 0xFFFF) {
@@ -78,6 +96,69 @@ public:
     }
 
 private:
+    void analyze() {
+        defs_.assign(fn_.regs.size(), 0);
+        uses_.assign(fn_.regs.size(), 0);
+        hoisted_.assign(fn_.regs.size(), false);
+        for (const Inst& in : fn_.code) {
+            if (in.dst != ir::kNoReg) {
+                ++defs_[in.dst];
+            }
+            if (in.op == Op::FieldSet) {
+                ++defs_[in.a];
+            } else if (in.a != ir::kNoReg) {
+                ++uses_[in.a];
+            }
+            if (in.b != ir::kNoReg && in.op != Op::EnumField) {
+                ++uses_[in.b];
+            }
+            for (std::uint32_t i = 0; i < in.argCount; ++i) {
+                ++uses_[fn_.args[in.argBegin + i]];
+            }
+        }
+        if (!fuse) {
+            return;
+        }
+        // Constants that are written once move to the prologue so loops do not reload them.
+        for (const Inst& in : fn_.code) {
+            if (in.op == Op::Const && defs_[in.dst] == 1) {
+                line_ = in.line;
+                emitConst(in);
+                hoisted_[in.dst] = true;
+            }
+        }
+    }
+
+    static bool canRetarget(const Inst& in) {
+        switch (in.op) {
+        case Op::Const:
+        case Op::Move:
+        case Op::FieldGet:
+        case Op::Make:
+        case Op::EnumMake:
+        case Op::Wrap:
+        case Op::Unwrap:
+        case Op::EnumField: return false;
+        default: return true;
+        }
+    }
+
+    void emitConst(const Inst& in) {
+        const ir::Constant& c = prog_.module->constants[in.imm];
+        auto v = static_cast<std::int64_t>(c.bits);
+        if (c.kind == ir::ConstKind::Int && v >= INT32_MIN && v <= INT32_MAX) {
+            std::size_t at = put(Opc::LoadI, s(in.dst));
+            code_[at].setBc(static_cast<std::int32_t>(v));
+        } else {
+            std::size_t at = put(Opc::LoadK, s(in.dst));
+            code_[at].setBc(static_cast<std::int32_t>(in.imm));
+        }
+    }
+
+    bool aliasable(Reg dst, Reg src) const {
+        return fuse && defs_[dst] == 1 && defs_[src] <= 1 && n(dst) <= n(src);
+    }
+
     std::uint16_t s(Reg r) { return slot(offset_[r]); }
 
     std::uint16_t slot(std::uint32_t v) {
@@ -117,7 +198,16 @@ private:
     }
 
     void patchTo(std::size_t at, std::size_t target) {
-        code_[at].setBc(static_cast<std::int32_t>(target) - static_cast<std::int32_t>(at) - 1);
+        std::int32_t off = static_cast<std::int32_t>(target) - static_cast<std::int32_t>(at) - 1;
+        if (isShortJump(code_[at].op)) {
+            if (off < INT16_MIN || off > INT16_MAX) {
+                tooFar_ = true;
+                return;
+            }
+            code_[at].c = static_cast<std::uint16_t>(static_cast<std::int16_t>(off));
+            return;
+        }
+        code_[at].setBc(off);
     }
 
     std::uint32_t outgoing(const std::vector<Reg>& args) {
@@ -187,7 +277,77 @@ private:
         }
     }
 
+    bool targetsLoop(std::uint32_t depth) const { return frames_[frames_.size() - 1 - depth].op == Op::Loop; }
+
+    // `t = a cmp b` feeding a forward branch becomes one compare-and-jump instruction.
+    bool fuseCompare(const Inst& in) {
+        if (!fuse || uses_[in.dst] != 1 || pc_ + 1 >= fn_.code.size()) {
+            return false;
+        }
+        const ir::TypeTable& types = prog_.module->types;
+        TypeId t = ty(in.a);
+        bool isFloat = t == ir::kF64;
+        bool isInt = (types.isInteger(t) || t == ir::kBool || t == ir::kChar);
+        if (!isFloat && !isInt) {
+            return false;
+        }
+        bool uns = types.isInteger(t) && !types.isSigned(t);
+        const Inst& next = fn_.code[pc_ + 1];
+        bool jumpIfTrue = false;
+        std::uint32_t depth = 0;
+        std::size_t consumed = 0;
+        if (next.op == Op::BrIf && next.a == in.dst) {
+            jumpIfTrue = true;
+            depth = next.imm;
+            consumed = 1;
+        } else if (next.op == Op::Not && next.a == in.dst && uses_[next.dst] == 1 && pc_ + 2 < fn_.code.size() &&
+                   fn_.code[pc_ + 2].op == Op::BrIf && fn_.code[pc_ + 2].a == next.dst) {
+            depth = fn_.code[pc_ + 2].imm;
+            consumed = 2;
+        } else {
+            return false;
+        }
+        if (targetsLoop(depth)) {
+            return false;
+        }
+        // Canonical form: x OP y with OP in {Lt, Le, Eq, Ne}.
+        Op op = in.op;
+        Reg x = in.a;
+        Reg y = in.b;
+        if (op == Op::Gt || op == Op::Ge) {
+            std::swap(x, y);
+            op = op == Op::Gt ? Op::Lt : Op::Le;
+        }
+        Opc jop = Opc::Nop;
+        if (isFloat) {
+            if (jumpIfTrue) {
+                jop = op == Op::Lt ? Opc::JLtF : op == Op::Le ? Opc::JLeF : op == Op::Eq ? Opc::JEqF : Opc::JNeF;
+            } else {
+                jop = op == Op::Lt ? Opc::JNLtF : op == Op::Le ? Opc::JNLeF : op == Op::Eq ? Opc::JNeF : Opc::JEqF;
+            }
+        } else {
+            if (!jumpIfTrue) {
+                if (op == Op::Lt || op == Op::Le) {
+                    std::swap(x, y);
+                    op = op == Op::Lt ? Op::Le : Op::Lt;
+                } else {
+                    op = op == Op::Eq ? Op::Ne : Op::Eq;
+                }
+            }
+            jop = op == Op::Eq   ? Opc::JEqI
+                  : op == Op::Ne ? Opc::JNeI
+                  : op == Op::Lt ? (uns ? Opc::JLtU : Opc::JLtI)
+                                 : (uns ? Opc::JLeU : Opc::JLeI);
+        }
+        frames_[frames_.size() - 1 - depth].exits.push_back(put(jop, s(x), s(y)));
+        skip_ = consumed;
+        return true;
+    }
+
     void compare(const Inst& in) {
+        if (fuseCompare(in)) {
+            return;
+        }
         TypeId t = ty(in.a);
         const ir::TypeTable& types = prog_.module->types;
         auto d = s(in.dst);
@@ -266,7 +426,12 @@ private:
             return;
         case Intrinsic::ListLen: put(Opc::ListLen, d, sa(0)); return;
         case Intrinsic::ListGet: put(n(in.dst) == 1 ? Opc::ListGet : Opc::ListGetN, d, sa(0), sa(1)); return;
-        case Intrinsic::ListSet: put(Opc::ListSetN, sa(0), sa(1), sa(2)); return;
+        case Intrinsic::ListSet: {
+            TypeId elem = prog_.module->types.info(ty(a[0])).elem;
+            bool simple = lay_.slots(elem) == 1 && !prog_.module->types.hasRefs(elem);
+            put(simple ? Opc::ListSet : Opc::ListSetN, sa(0), sa(1), sa(2));
+            return;
+        }
         case Intrinsic::ListPush: put(Opc::ListPush, sa(0), sa(1)); return;
         case Intrinsic::ListPop: put(Opc::ListPop, d, sa(0)); return;
         case Intrinsic::ListClear: put(Opc::ListClear, sa(0)); return;
@@ -376,19 +541,27 @@ private:
             }
             return;
         case Op::Trap: put(Opc::Trap, in.imm); return;
-        case Op::Const: {
-            const ir::Constant& c = prog_.module->constants[in.imm];
-            auto v = static_cast<std::int64_t>(c.bits);
-            if (c.kind == ir::ConstKind::Int && v >= INT32_MIN && v <= INT32_MAX) {
-                std::size_t at = put(Opc::LoadI, s(in.dst));
-                code_[at].setBc(static_cast<std::int32_t>(v));
-            } else {
-                std::size_t at = put(Opc::LoadK, s(in.dst));
-                code_[at].setBc(static_cast<std::int32_t>(in.imm));
+        case Op::Const:
+            if (!hoisted_[in.dst]) {
+                emitConst(in);
             }
             return;
-        }
-        case Op::Move: move(s(in.dst), s(in.a), n(in.a)); return;
+        case Op::Move:
+            if (aliasable(in.dst, in.a)) {
+                offset_[in.dst] = offset_[in.a];
+                return;
+            }
+            move(s(in.dst), s(in.a), n(in.a));
+            return;
+        case Op::Not:
+            if (fuse && pc_ + 1 < fn_.code.size() && uses_[in.dst] == 1 && fn_.code[pc_ + 1].op == Op::BrIf &&
+                fn_.code[pc_ + 1].a == in.dst && !targetsLoop(fn_.code[pc_ + 1].imm)) {
+                frames_[frames_.size() - 1 - fn_.code[pc_ + 1].imm].exits.push_back(put(Opc::JmpF, s(in.a)));
+                skip_ = 1;
+                return;
+            }
+            put(Opc::NotB, s(in.dst), s(in.a));
+            return;
         case Op::Neg: {
             TypeId t = ty(in.a);
             put(t == ir::kF64 ? Opc::NegF : t == ir::kF32 ? Opc::NegF32 : Opc::NegI, s(in.dst), s(in.a));
@@ -397,7 +570,6 @@ private:
             }
             return;
         }
-        case Op::Not: put(Opc::NotB, s(in.dst), s(in.a)); return;
         case Op::BitNot:
             put(Opc::BNotI, s(in.dst), s(in.a));
             normalize(ty(in.a), s(in.dst));
@@ -437,6 +609,8 @@ private:
                     put(Opc::SGetN, s(in.dst), s(in.a), off);
                     word(n(in.dst));
                 }
+            } else if (aliasable(in.dst, in.a)) {
+                offset_[in.dst] = offset_[in.a] + off;
             } else {
                 move(s(in.dst), offset_[in.a] + off, n(in.dst));
             }
@@ -518,6 +692,17 @@ private:
     std::size_t pc_ = 0;
     std::uint32_t line_ = 0;
     bool tooBig_ = false;
+    bool tooFar_ = false;
+    std::vector<std::uint32_t> defs_;
+    std::vector<std::uint32_t> uses_;
+    std::vector<bool> hoisted_;
+    std::size_t skip_ = 0;
+    Reg retarget_ = ir::kNoReg; // destination override for the instruction being lowered
+    Reg retargetFrom_ = ir::kNoReg;
+
+public:
+    bool fuse = true;
+    [[nodiscard]] bool needsRelax() const { return tooFar_; }
 };
 
 } // namespace
@@ -557,7 +742,14 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
         prog->importResultSlots.push_back(prog->layouts->slots(imp.result));
     }
     for (const ir::Function& fn : prog->module->functions) {
-        prog->functions.push_back(FunctionCompiler(*prog, fn).run());
+        FunctionCompiler fc(*prog, fn);
+        CompiledFunction cf = fc.run();
+        if (fc.needsRelax()) {
+            FunctionCompiler plain(*prog, fn);
+            plain.fuse = false;
+            cf = plain.run();
+        }
+        prog->functions.push_back(std::move(cf));
         prog->maxFrameSlots = std::max(prog->maxFrameSlots, prog->functions.back().frameSlots);
     }
     return prog;
