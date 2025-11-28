@@ -128,6 +128,14 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
         }                                                                                                              \
     } while (0)
 #define WORD() (static_cast<std::uint32_t>((pc++)->bc()))
+#define SHORT_JUMP()                                                                                                   \
+    do {                                                                                                               \
+        auto off = static_cast<std::int16_t>(ins.c);                                                                   \
+        if (off < 0 && --fuel < 0) {                                                                                   \
+            TRAP(ir::TrapCode::OutOfFuel, {});                                                                         \
+        }                                                                                                              \
+        pc += off;                                                                                                     \
+    } while (0)
 #define RA R[ins.a]
 #define RB R[ins.b]
 #define RC R[ins.c]
@@ -182,30 +190,51 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
                 pc += ins.bc();
             }
             NEXT();
-            CASE(JLtI) if (RA.i < RB.i) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JLtI) if (RA.i < RB.i) { SHORT_JUMP(); }
             NEXT();
-            CASE(JLeI) if (RA.i <= RB.i) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JLeI) if (RA.i <= RB.i) { SHORT_JUMP(); }
             NEXT();
-            CASE(JEqI) if (RA.u == RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JEqI) if (RA.u == RB.u) { SHORT_JUMP(); }
             NEXT();
-            CASE(JNeI) if (RA.u != RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JNeI) if (RA.u != RB.u) { SHORT_JUMP(); }
             NEXT();
-            CASE(JLtU) if (RA.u < RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JLtU) if (RA.u < RB.u) { SHORT_JUMP(); }
             NEXT();
-            CASE(JLeU) if (RA.u <= RB.u) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JLeU) if (RA.u <= RB.u) { SHORT_JUMP(); }
             NEXT();
-            CASE(JLtF) if (RA.f < RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JLtF) if (RA.f < RB.f) { SHORT_JUMP(); }
             NEXT();
-            CASE(JLeF) if (RA.f <= RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JLeF) if (RA.f <= RB.f) { SHORT_JUMP(); }
             NEXT();
-            CASE(JEqF) if (RA.f == RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JEqF) if (RA.f == RB.f) { SHORT_JUMP(); }
             NEXT();
-            CASE(JNeF) if (RA.f != RB.f) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JNeF) if (RA.f != RB.f) { SHORT_JUMP(); }
             NEXT();
-            CASE(JNLtF) if (!(RA.f < RB.f)) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JNLtF) if (!(RA.f < RB.f)) { SHORT_JUMP(); }
             NEXT();
-            CASE(JNLeF) if (!(RA.f <= RB.f)) { pc += static_cast<std::int16_t>(ins.c); }
+            CASE(JNLeF) if (!(RA.f <= RB.f)) { SHORT_JUMP(); }
             NEXT();
+            CASE(ForI) {
+                RA.u += 1;
+                if (RA.i < RB.i) {
+                    SHORT_JUMP();
+                }
+                NEXT();
+            }
+            CASE(ForIncl) {
+                if (RA.i < RB.i) {
+                    RA.u += 1;
+                    SHORT_JUMP();
+                }
+                NEXT();
+            }
+            CASE(ForList) {
+                RA.u += 1;
+                if (RA.u < LIST(RB)->len) {
+                    SHORT_JUMP();
+                }
+                NEXT();
+            }
             CASE(AddI) RA.u = RB.u + RC.u;
             NEXT();
             CASE(SubI) RA.u = RB.u - RC.u;

@@ -359,20 +359,25 @@ void Lowerer::lowerAssign(AssignStmt* s) {
 }
 
 void Lowerer::lowerWhile(WhileStmt* s) {
+    // Rotated: block $exit { if !cond br $exit; loop $top { block $cont { body } if cond br $top } }
     std::size_t exit = depth_;
     open(Op::Block);
+    branchIfFalse(s->cond, exit);
     std::size_t loop = depth_;
     open(Op::Loop);
-    branchIfFalse(s->cond, exit);
-    loops_.push_back({exit, loop});
+    std::size_t cont = depth_;
+    open(Op::Block);
+    loops_.push_back({exit, cont});
     lowerBlockStmts(s->body);
     loops_.pop_back();
-    br(loop);
+    close();
+    branchIfTrue(s->cond, loop);
     close();
     close();
 }
 
 void Lowerer::lowerFor(ForStmt* s) {
+    // Loops are rotated so each iteration ends in one conditional backward branch.
     std::size_t exit = depth_;
     if (s->iterable->kind == ExprKind::Range) {
         auto* r = static_cast<RangeExpr*>(s->iterable);
@@ -384,11 +389,11 @@ void Lowerer::lowerFor(ForStmt* s) {
         emit(Op::Move, i, lo);
         Reg one = constInt(1, t);
         open(Op::Block);
+        Reg skip = newReg(kBool);
+        emit(r->inclusive ? Op::Gt : Op::Ge, skip, i, hi);
+        brIf(skip, exit);
         std::size_t loop = depth_;
         open(Op::Loop);
-        Reg c = newReg(kBool);
-        emit(r->inclusive ? Op::Gt : Op::Ge, c, i, hi);
-        brIf(c, exit);
         std::size_t cont = depth_;
         open(Op::Block);
         loops_.push_back({exit, cont});
@@ -396,12 +401,19 @@ void Lowerer::lowerFor(ForStmt* s) {
         loops_.pop_back();
         close();
         if (r->inclusive) {
-            Reg last = newReg(kBool);
-            emit(Op::Eq, last, i, hi);
-            brIf(last, exit);
+            Reg more = newReg(kBool);
+            emit(Op::Lt, more, i, hi);
+            Reg done = newReg(kBool);
+            emit(Op::Not, done, more);
+            brIf(done, exit);
+            emit(Op::Add, i, i, one);
+            br(loop);
+        } else {
+            emit(Op::Add, i, i, one);
+            Reg more = newReg(kBool);
+            emit(Op::Lt, more, i, hi);
+            brIf(more, loop);
         }
-        emit(Op::Add, i, i, one);
-        br(loop);
         close();
         close();
         return;
@@ -410,17 +422,16 @@ void Lowerer::lowerFor(ForStmt* s) {
     TypeId elem = types_->info(lt).elem;
     Reg list = lowerExpr(s->iterable);
     Reg idx = newReg(kI64);
-    Reg zero = constInt(0, kI64);
-    emit(Op::Move, idx, zero);
+    emit(Op::Move, idx, constInt(0, kI64));
     Reg one = constInt(1, kI64);
     open(Op::Block);
-    std::size_t loop = depth_;
-    open(Op::Loop);
     Reg len = newReg(kI64);
     emitArgs(Op::Intrinsic, len, static_cast<std::uint32_t>(Intrinsic::ListLen), {list});
-    Reg done = newReg(kBool);
-    emit(Op::Ge, done, idx, len);
-    brIf(done, exit);
+    Reg empty = newReg(kBool);
+    emit(Op::Ge, empty, idx, len);
+    brIf(empty, exit);
+    std::size_t loop = depth_;
+    open(Op::Loop);
     Reg x = newReg(elem);
     s->local->reg = x;
     emitArgs(Op::Intrinsic, x, static_cast<std::uint32_t>(Intrinsic::ListGet), {list, idx});
@@ -435,7 +446,11 @@ void Lowerer::lowerFor(ForStmt* s) {
     loops_.pop_back();
     close();
     emit(Op::Add, idx, idx, one);
-    br(loop);
+    Reg len2 = newReg(kI64);
+    emitArgs(Op::Intrinsic, len2, static_cast<std::uint32_t>(Intrinsic::ListLen), {list});
+    Reg more = newReg(kBool);
+    emit(Op::Lt, more, idx, len2);
+    brIf(more, loop);
     close();
     close();
 }

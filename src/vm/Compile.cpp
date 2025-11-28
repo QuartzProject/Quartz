@@ -307,9 +307,6 @@ private:
         } else {
             return false;
         }
-        if (targetsLoop(depth)) {
-            return false;
-        }
         // Canonical form: x OP y with OP in {Lt, Le, Eq, Ne}.
         Op op = in.op;
         Reg x = in.a;
@@ -339,9 +336,87 @@ private:
                   : op == Op::Lt ? (uns ? Opc::JLtU : Opc::JLtI)
                                  : (uns ? Opc::JLeU : Opc::JLeI);
         }
-        frames_[frames_.size() - 1 - depth].exits.push_back(put(jop, s(x), s(y)));
+        branchTo(depth, put(jop, s(x), s(y)));
         skip_ = consumed;
         return true;
+    }
+
+    void branchTo(std::uint32_t depth, std::size_t at) {
+        Frame& f = frames_[frames_.size() - 1 - depth];
+        if (f.op == Op::Loop) {
+            patchTo(at, f.start);
+        } else {
+            f.exits.push_back(at);
+        }
+    }
+
+    [[nodiscard]] bool isConstOne(Reg r) const {
+        if (!hoisted_[r]) {
+            return false;
+        }
+        for (const Inst& in : fn_.code) {
+            if (in.op == Op::Const && in.dst == r) {
+                const ir::Constant& c = prog_.module->constants[in.imm];
+                return c.kind == ir::ConstKind::Int && c.bits == 1;
+            }
+        }
+        return false;
+    }
+
+    // Loop tails produced by the rotated lowering become one instruction (like Lua's FORLOOP).
+    bool fuseLoopTail(const Inst& in) {
+        if (!fuse || pc_ + 2 >= fn_.code.size()) {
+            return false;
+        }
+        const std::vector<Inst>& code = fn_.code;
+        TypeId t = ty(in.dst);
+        // i = i + 1; t = i < hi; br_if t $loop
+        if (in.op == Op::Add && in.dst == in.a && isConstOne(in.b) && t == ir::kI64) {
+            const Inst& cmp = code[pc_ + 1];
+            const Inst& br = code[pc_ + 2];
+            if (cmp.op == Op::Lt && cmp.a == in.dst && uses_[cmp.dst] == 1 && br.op == Op::BrIf && br.a == cmp.dst &&
+                targetsLoop(br.imm)) {
+                branchTo(br.imm, put(Opc::ForI, s(in.dst), s(cmp.b)));
+                skip_ = 2;
+                return true;
+            }
+            // i = i + 1; len = list.len(); t = i < len; br_if t $loop
+            if (pc_ + 3 < code.size() && cmp.op == Op::Intrinsic &&
+                static_cast<Intrinsic>(cmp.imm) == Intrinsic::ListLen && uses_[cmp.dst] == 1) {
+                const Inst& lt = code[pc_ + 2];
+                const Inst& br2 = code[pc_ + 3];
+                if (lt.op == Op::Lt && lt.a == in.dst && lt.b == cmp.dst && uses_[lt.dst] == 1 && br2.op == Op::BrIf &&
+                    br2.a == lt.dst && targetsLoop(br2.imm)) {
+                    branchTo(br2.imm, put(Opc::ForList, s(in.dst), s(fn_.args[cmp.argBegin])));
+                    skip_ = 3;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    bool fuseInclusiveTail(const Inst& in) {
+        if (!fuse || pc_ + 4 >= fn_.code.size() || ty(in.a) != ir::kI64) {
+            return false;
+        }
+        const std::vector<Inst>& code = fn_.code;
+        const Inst& no = code[pc_ + 1];
+        const Inst& exitBr = code[pc_ + 2];
+        const Inst& add = code[pc_ + 3];
+        const Inst& back = code[pc_ + 4];
+        if (in.op == Op::Lt && uses_[in.dst] == 1 && no.op == Op::Not && no.a == in.dst && uses_[no.dst] == 1 &&
+            exitBr.op == Op::BrIf && exitBr.a == no.dst && !targetsLoop(exitBr.imm) && add.op == Op::Add &&
+            add.dst == in.a && add.a == in.a && isConstOne(add.b) && back.op == Op::Br && targetsLoop(back.imm)) {
+            // The exit target must be the block right around the loop, which `ForIncl` falls through to.
+            if (exitBr.imm != back.imm + 1) {
+                return false;
+            }
+            branchTo(back.imm, put(Opc::ForIncl, s(in.a), s(in.b)));
+            skip_ = 4;
+            return true;
+        }
+        return false;
     }
 
     void compare(const Inst& in) {
@@ -495,6 +570,12 @@ private:
 
     void lower(const Inst& in) {
         const ir::TypeTable& types = prog_.module->types;
+        if (in.op == Op::Add && fuseLoopTail(in)) {
+            return;
+        }
+        if (in.op == Op::Lt && fuseInclusiveTail(in)) {
+            return;
+        }
         switch (in.op) {
         case Op::Block: frames_.push_back({Op::Block, code_.size(), {}, ~std::size_t{0}}); return;
         case Op::Loop: frames_.push_back({Op::Loop, code_.size(), {}, ~std::size_t{0}}); return;
