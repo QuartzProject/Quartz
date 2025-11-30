@@ -1,0 +1,26 @@
+// error: match is not exhaustive; missing: Green
+// error: expected 'str', found 'i64'
+// error: mismatched types 'i64' and 'f64'
+// error: cannot assign to an immutable binding
+// error: 'P' has no field 'y'
+// error: expected 'bool', found 'i64'
+// error: unknown name 'unknown'
+// error: function 'g' may end without returning a 'str'
+
+enum Color { Red, Green, Blue(i64) }
+struct P { x: i64 }
+fn f(a: i64) -> i64 {
+    let c = Color.Red
+    match c {
+        Red => return 1
+        Blue(v) => return v
+    }
+    let s: str = 5
+    let q = a + 1.5
+    a = 3
+    var p = P(x = 1)
+    p.y = 2
+    if a { }
+    return unknown
+}
+fn g() -> str { }

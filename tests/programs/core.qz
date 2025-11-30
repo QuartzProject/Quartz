@@ -1,0 +1,51 @@
+// expect: total 45
+// expect: p 3 4 q 10
+// expect: sum 10 len 4
+// expect: a=6 b=2 c=-1
+// expect: 12.0 7.0 0.0
+// expect: hello world true hello 1.5 0.6666666666666666
+// expect: wrap -2147483648 -3 -1 255 18446744073709551615
+// expect: null ok
+// expect: fib 6765
+
+struct P { x: i64, y: i64 }
+enum Shape { Circle(f64), Rect(f64, f64), Empty }
+fn area(s: Shape) -> f64 {
+    return match s {
+        Circle(r) => r * r * 3.0
+        Rect(w, h) => w * h
+        Empty => 0.0
+    }
+}
+fn fib(n: i64) -> i64 {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+fn main() -> i64 {
+    var total = 0
+    for i in 0..10 { total += i }
+    print("total {total}")
+    let p = P(3, 4)
+    var q = p
+    q.x = 10
+    print("p {p.x} {p.y} q {q.x}")
+    let xs = [1, 2, 3]
+    xs.push(4)
+    var s = 0
+    for v in xs { s += v }
+    print("sum {s} len {xs.len()}")
+    let m: Map<str, i64> = Map()
+    m["a"] = 1
+    m["b"] = 2
+    m["a"] += 5
+    print("a={m["a"]} b={m.get("b") ?? -1} c={m.get("c") ?? -1}")
+    print("{area(Shape.Circle(2.0))} {area(Shape.Rect(2.0, 3.5))} {area(Shape.Empty)}")
+    let word = "Hello World".lower()
+    print("{word} {word.contains("wor")} {word.slice(0, 5)} {1.5} {2.0 / 3.0}")
+    let n: i32 = 2147483647
+    print("wrap {n + 1} {-7 / 2} {-7 % 2} {(300.7) as u8} {(-1) as u64}")
+    let opt: i64? = null
+    if let v = opt { print("bad") } else { print("null ok") }
+    print("fib {fib(20)}")
+    return 0
+}
