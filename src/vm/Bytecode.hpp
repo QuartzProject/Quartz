@@ -75,7 +75,8 @@ namespace quartz::vm {
     X(StrLower) X(StrUpper) X(StrContains) X(StrFind) X(StrStarts) X(StrEnds) X(StrByteAt)                            \
     X(StrFromI) X(StrFromU) X(StrFromF) X(StrFromB) X(StrFromC)                                                        \
     X(Sqrt) X(Floor) X(Ceil) X(AbsF) X(AbsI) X(MinI) X(MaxI) X(MinF) X(MaxF) X(Pow) X(Sin) X(Cos)                       \
-    X(Panic)
+    X(Panic)                                                                                                           \
+    X(Wait)      /* suspend the task on handle a; resume value goes to b unless 0xFFFF; c = kind; type in next word */
 
 enum class Opc : std::uint8_t {
 #define QUARTZ_OPC_ENUM(name) name,
@@ -112,6 +113,8 @@ struct CompiledFunction {
     std::vector<ir::TypeId> params;
     ir::TypeId result = ir::kVoid;
     bool exported = false;
+    bool isSuspend = false;
+    std::vector<std::pair<std::uint32_t, ir::TypeId>> refSlots; // slots that may hold references, for task suspension
 };
 
 /// A validated module lowered to bytecode; immutable and shareable between sandboxes.

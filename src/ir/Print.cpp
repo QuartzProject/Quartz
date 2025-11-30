@@ -44,7 +44,7 @@ const char* opName(Op op) {
         "const", "move",  "neg",     "not",     "bitnot",    "add",     "sub",      "mul",      "div",
         "rem",   "and",   "or",      "xor",     "shl",       "shr",     "eq",       "ne",       "lt",
         "le",    "gt",    "ge",      "convert", "call",      "callhost", "intrinsic", "field.get", "field.set",
-        "make",  "isnull", "unwrap", "wrap",    "nullof",    "enum.make", "enum.tag", "enum.field",
+        "make",  "isnull", "unwrap", "wrap",    "nullof",    "enum.make", "enum.tag", "enum.field", "wait",
     };
     return kNames[static_cast<std::size_t>(op)];
 }

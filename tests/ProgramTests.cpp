@@ -2,6 +2,7 @@
 #include "quartz/Quartz.hpp"
 
 #include <doctest/doctest.h>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -31,6 +32,31 @@ std::vector<std::string> directives(const std::string& text, std::string_view ke
     return out;
 }
 
+constexpr std::string_view kStd = R"(fn print(text: str)
+@handle
+@awaitable
+struct Delay {}
+impl i64 {
+    @property
+    fn ticks(self) -> Delay
+}
+)";
+
+std::vector<quartz::SourceInput> withInterface(const fs::path& path, const std::string& text) {
+    std::vector<quartz::SourceInput> inputs{{path.string(), text}};
+    fs::path iface = path;
+    iface.replace_extension(".qzi");
+    if (fs::exists(iface)) {
+        inputs.push_back({iface.string(), readFile(iface)});
+    }
+    return inputs;
+}
+
+bool hostTicks(quartz::vm::HostCall& call, void*) {
+    call.result.u = call.args[0].u;
+    return true;
+}
+
 bool capturePrint(quartz::vm::HostCall& call, void* user) {
     auto* out = static_cast<std::string*>(user);
     *out += static_cast<const quartz::vm::Str*>(call.args[0].p)->view();
@@ -55,14 +81,21 @@ TEST_CASE("programs print what their expect lines say") {
     for (const fs::path& path : files("tests/programs")) {
         CAPTURE(path.string());
         std::string text = readFile(path);
-        quartz::SourceInput inputs[] = {{path.string(), text}, {"<std>.qzi", "fn print(text: str)\n"}};
+        std::vector<quartz::SourceInput> inputs = withInterface(path, text);
+        inputs.push_back({"<std>.qzi", std::string(kStd)});
         quartz::CompileOutput out = quartz::compile(inputs);
         REQUIRE_MESSAGE(out.program, out.diagnostics);
         std::string printed;
         quartz::vm::Sandbox sb(out.program);
         sb.bind("print", capturePrint, &printed);
+        sb.bind("i64.ticks", hostTicks);
         REQUIRE(sb.start().has_value());
-        auto r = sb.call(out.program->findFunction("main"), {});
+        auto t = sb.spawn(out.program->findFunction("main"), {});
+        while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
+            t = sb.resume(t->task);
+        }
+        auto r = t ? std::expected<quartz::vm::Slot, quartz::vm::Trap>(t->value)
+                   : std::expected<quartz::vm::Slot, quartz::vm::Trap>(std::unexpected(t.error()));
         std::vector<std::string> traps = directives(text, "trap");
         if (!traps.empty()) {
             REQUIRE_FALSE(r.has_value());
@@ -82,8 +115,7 @@ TEST_CASE("invalid programs report the expected diagnostics") {
     for (const fs::path& path : files("tests/diagnostics")) {
         CAPTURE(path.string());
         std::string text = readFile(path);
-        quartz::SourceInput inputs[] = {{path.string(), text}};
-        quartz::CompileOutput out = quartz::compile(inputs);
+        quartz::CompileOutput out = quartz::compile(withInterface(path, text));
         CHECK_FALSE(out.program);
         for (const std::string& want : directives(text, "error")) {
             CHECK_MESSAGE(out.diagnostics.find(want) != std::string::npos, want, "\n", out.diagnostics);

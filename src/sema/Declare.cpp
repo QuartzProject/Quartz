@@ -96,6 +96,28 @@ void Checker::completeTypes() {
                 properties_[{entry.type, f.name.id}] = {getter->index, ft};
             }
         }
+        for (const Attribute& a : entry.decl->attrs) {
+            if (str(a.name) != "awaitable") {
+                continue;
+            }
+            if (!isHandle) {
+                diags_.error(a.span, "@awaitable needs a @handle type");
+                continue;
+            }
+            TypeId produced = ir::kVoid;
+            if (!a.args.empty()) {
+                if (a.args[0].value->kind == ExprKind::Ident) {
+                    produced = lookupTypeName(static_cast<IdentExpr*>(a.args[0].value)->name, a.args[0].value->span, true);
+                } else {
+                    diags_.error(a.span, "@awaitable takes the type that 'wait' produces");
+                }
+            }
+            if (produced != ir::kVoid && produced != ir::kError && !types_->isScalar(produced) &&
+                produced != ir::kStr && types_->kind(produced) != ir::TypeKind::Handle) {
+                diags_.error(a.span, "an awaitable can only produce a scalar, a str or a handle");
+            }
+            awaitable_[entry.type] = produced;
+        }
         ir::TypeInfo& done = types_->mutableInfo(entry.type);
         if (!isHandle) {
             done.fields = std::move(fields);
@@ -268,6 +290,13 @@ void Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface) {
     }
     info->result = fn->result != nullptr ? resolveType(fn->result) : ir::kVoid;
     selfType_ = savedSelf;
+    if (hasAttr(fn->attrs, "property")) {
+        if (!info->isHost || !fn->hasSelf || fn->params.size() != 0 || info->result == ir::kVoid) {
+            diags_.error(fn->span, "@property needs a host method with only 'self' that returns a value");
+        } else {
+            info->isProperty = true;
+        }
+    }
     if (info->isHost) {
         info->index = static_cast<std::uint32_t>(prog_->imports.size());
         prog_->imports.push_back(info);

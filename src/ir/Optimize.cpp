@@ -47,8 +47,11 @@ bool hoistStateReads(Module& m, Function& fn) {
         std::vector<std::pair<TypeId, std::uint32_t>> written;
         std::vector<TypeId> passed;
         std::vector<bool> definedInside(fn.regs.size(), false);
+        bool suspends = false;
         for (std::size_t i = loop.begin + 1; i < loop.end; ++i) {
             const Inst& in = fn.code[i];
+            // A view held across a suspension becomes a task-local copy (D35), so it must be read after each resume.
+            suspends = suspends || in.op == Op::Wait || (in.op == Op::Call && m.functions[in.imm].isSuspend);
             if (in.dst != kNoReg) {
                 definedInside[in.dst] = true;
             }
@@ -63,6 +66,9 @@ bool hoistStateReads(Module& m, Function& fn) {
                     }
                 }
             }
+        }
+        if (suspends) {
+            continue;
         }
         std::vector<Inst> hoisted;
         std::vector<Inst> kept;

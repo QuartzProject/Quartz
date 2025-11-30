@@ -61,6 +61,10 @@ public:
     TypeId checkCast(CastExpr* e);
     TypeId checkIndex(IndexExpr* e);
     TypeId checkInterp(InterpExpr* e);
+    TypeId checkWait(Expr* operand, Span span);
+    bool derivedFromState(const Expr* e) const;
+    bool holdsMutable(TypeId t) const;
+    void checkViewBinding(Local* l, const Expr* init, Span span);
     bool assignable(TypeId from, TypeId to) const;
     TypeId unify(TypeId a, TypeId b, Span span);
     void expectAssignable(TypeId from, TypeId to, Span span);
@@ -99,6 +103,9 @@ public:
     std::unordered_map<Symbol, GlobalInfo*> globals_;
     std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> methods_;
     std::map<std::pair<TypeId, std::uint32_t>, Property> properties_;
+    std::unordered_map<TypeId, TypeId> awaitable_; // handle type -> value produced by `wait`
+    int atDepth_ = 0;
+    std::size_t atScopeBase_ = 0;
     std::vector<std::unordered_map<Symbol, Local*>> scopes_;
     FnInfo* currentFn_ = nullptr;
     TypeId selfType_ = ir::kError;

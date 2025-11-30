@@ -1,0 +1,10 @@
+@handle
+@awaitable
+struct Pause {}
+
+@handle
+struct Io {}
+
+fn pause() -> Pause
+
+fn io() -> Io

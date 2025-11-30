@@ -40,7 +40,7 @@ bool Sandbox::fail(ir::TrapCode code, std::string message) {
 }
 
 void* Sandbox::allocFor(Owner owner, std::size_t bytes) {
-    void* p = owner == Owner::State ? heap_.allocate(bytes) : arena_.allocate(bytes);
+    void* p = owner == Owner::State ? heap_.allocate(bytes) : cur_->allocate(bytes);
     if (p == nullptr) {
         fail(ir::TrapCode::OutOfMemory);
     }
@@ -52,7 +52,7 @@ Str* Sandbox::allocStr(std::size_t len) {
         fail(ir::TrapCode::OutOfMemory, "string too long");
         return nullptr;
     }
-    auto* s = static_cast<Str*>(arena_.allocate(kStrHeader + len + 1));
+    auto* s = static_cast<Str*>(cur_->allocate(kStrHeader + len + 1));
     if (s == nullptr) {
         fail(ir::TrapCode::OutOfMemory);
         return nullptr;
@@ -178,7 +178,7 @@ Str* Sandbox::fromChar(std::uint32_t cp) {
 }
 
 List* Sandbox::newList(TypeId elem) {
-    auto* l = static_cast<List*>(arena_.allocate(sizeof(List)));
+    auto* l = static_cast<List*>(cur_->allocate(sizeof(List)));
     if (l == nullptr) {
         fail(ir::TrapCode::OutOfMemory);
         return nullptr;
@@ -316,7 +316,7 @@ Str* Sandbox::join(const List* l, const Str* sep) {
 
 Map* Sandbox::newMap(TypeId mapType) {
     const ir::TypeInfo& info = program_->module->types.info(mapType);
-    auto* m = static_cast<Map*>(arena_.allocate(sizeof(Map)));
+    auto* m = static_cast<Map*>(cur_->allocate(sizeof(Map)));
     if (m == nullptr) {
         fail(ir::TrapCode::OutOfMemory);
         return nullptr;

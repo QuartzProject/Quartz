@@ -483,6 +483,9 @@ private:
                 return fail("call to unknown function");
             }
             const Function& callee = m_.functions[in.imm];
+            if (callee.isSuspend && !fn_.isSuspend) {
+                return fail("call to a suspend function from a normal function");
+            }
             std::vector<TypeId> params(callee.regs.begin(), callee.regs.begin() + callee.paramCount);
             if (auto r = callArgs(in, params, callee.result); !r) {
                 return r;
@@ -614,6 +617,28 @@ private:
                 return fail("enum.tag type mismatch");
             }
             return def(in.dst);
+        case Op::Wait: {
+            if (!fn_.isSuspend) {
+                return fail("wait outside a suspend function");
+            }
+            if (auto r = needA(); !r) {
+                return r;
+            }
+            if (t_.kind(ty(in.a)) != TypeKind::Handle || in.imm > static_cast<std::uint32_t>(WaitKind::Yield)) {
+                return fail("wait needs a handle");
+            }
+            if (in.dst != kNoReg) {
+                if (!reg(in.dst)) {
+                    return fail("register out of range");
+                }
+                TypeId d = ty(in.dst);
+                if (!t_.isScalar(d) && d != kStr && t_.kind(d) != TypeKind::Handle) {
+                    return fail("wait can only produce a scalar, a str or a handle");
+                }
+                return def(in.dst);
+            }
+            return {};
+        }
         case Op::EnumField: {
             if (auto r = needA(); !r) {
                 return r;

@@ -211,9 +211,7 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
     case ExprKind::Is:
         diags_.error(e->span, "'is' is not supported yet");
         return ir::kBool;
-    case ExprKind::Wait:
-        diags_.error(e->span, "'wait' is not supported yet");
-        return ir::kVoid;
+    case ExprKind::Wait: return checkWait(static_cast<WaitExpr*>(e)->value, e->span);
     case ExprKind::If: return checkIf(static_cast<IfExpr*>(e), expected, true);
     case ExprKind::Match: return checkMatch(static_cast<MatchExpr*>(e), expected, true);
     case ExprKind::Block: return checkBlock(static_cast<BlockExpr*>(e), expected, true);
@@ -226,6 +224,19 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
     if (Local* l = findLocal(e->name)) {
         e->ref = IdentRef::Local;
         e->local = l;
+        if (atDepth_ > 0 && types_->hasRefs(l->type) && l->type != ir::kStr) {
+            bool outer = true;
+            for (std::size_t i = atScopeBase_; i < scopes_.size(); ++i) {
+                auto found = scopes_[i].find(e->name);
+                if (found != scopes_[i].end() && found->second == l) {
+                    outer = false;
+                }
+            }
+            if (outer) {
+                diags_.error(e->span, std::format("'{}' cannot be used inside 'at': only copyable values cross contexts",
+                                                  str(e->name)));
+            }
+        }
         return l->type;
     }
     auto git = globals_.find(e->name);
@@ -497,6 +508,22 @@ TypeId Checker::checkInterp(InterpExpr* e) {
         }
     }
     return ir::kStr;
+}
+
+TypeId Checker::checkWait(Expr* operand, Span span) {
+    if (currentFn_ == nullptr || !currentFn_->isSuspend) {
+        diags_.error(span, "'wait' can only be used in a suspend function");
+    }
+    TypeId t = checkValue(operand, ir::kError);
+    if (t == ir::kError) {
+        return ir::kVoid;
+    }
+    auto it = awaitable_.find(t);
+    if (it == awaitable_.end()) {
+        diags_.error(operand->span, std::format("cannot wait on '{}'; the host must declare it @awaitable", typeName(t)));
+        return ir::kVoid;
+    }
+    return it->second;
 }
 
 Local* Checker::declareLocal(Symbol name, TypeId type, bool mutable_, Span span) {

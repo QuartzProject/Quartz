@@ -1,6 +1,7 @@
 #include "quartz/Quartz.hpp"
 
 #include <cstdio>
+#include <expected>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -9,7 +10,20 @@
 
 namespace {
 
-constexpr std::string_view kStdInterface = "fn print(text: str)\n";
+constexpr std::string_view kStdInterface = R"(fn print(text: str)
+@handle
+@awaitable
+struct Delay {}
+impl i64 {
+    @property
+    fn ticks(self) -> Delay
+}
+)";
+
+bool hostTicks(quartz::vm::HostCall& call, void*) {
+    call.result.u = call.args[0].u;
+    return true;
+}
 
 bool hostPrint(quartz::vm::HostCall& call, void*) {
     std::string_view s = static_cast<const quartz::vm::Str*>(call.args[0].p)->view();
@@ -75,6 +89,7 @@ int main(int argc, char** argv) {
     }
     quartz::vm::Sandbox sb(out.program);
     sb.bind("print", hostPrint);
+    sb.bind("i64.ticks", hostTicks);
     if (auto s = sb.start(); !s) {
         std::fprintf(stderr, "%s\n", s.error().describe().c_str());
         return 3;
@@ -84,11 +99,26 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "no function '%s'\n", entry.c_str());
         return 2;
     }
-    auto r = sb.call(fn, {});
-    if (!r) {
-        std::fprintf(stderr, "%s\n", r.error().describe().c_str());
+    auto t = sb.spawn(fn, {});
+    std::uint64_t ticks = 0;
+    std::uint64_t yields = 0;
+    while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
+        if (t->kind == quartz::vm::TaskOutcome::Kind::Wait) {
+            ticks += t->value.u;
+        } else if (t->kind == quartz::vm::TaskOutcome::Kind::Yield) {
+            ++yields;
+        }
+        t = sb.resume(t->task);
+    }
+    if (!t) {
+        std::fprintf(stderr, "%s\n", t.error().describe().c_str());
         return 3;
     }
+    if (ticks > 0 || yields > 0) {
+        std::fprintf(stderr, "[%llu ticks waited, %llu fuel yields]\n", static_cast<unsigned long long>(ticks),
+                     static_cast<unsigned long long>(yields));
+    }
+    auto r = std::expected<quartz::vm::Slot, quartz::vm::Trap>(t->value);
     const auto& f = out.program->functions[fn];
     if (f.result == quartz::ir::kI64) {
         std::printf("%lld\n", static_cast<long long>(r->i));

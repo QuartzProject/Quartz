@@ -59,7 +59,10 @@ enum class Op : std::uint8_t {
     EnumMake,   // dst, imm = variant, args = payload
     EnumTag,    // dst i64, a enum
     EnumField,  // dst, a enum, imm = variant, b = payload index
+    Wait,       // dst (optional, value given on resume), a = awaited handle, imm = WaitKind; suspend functions only
 };
+
+enum class WaitKind : std::uint8_t { Wait, AtEnter, AtLeave, Yield };
 
 enum class TrapCode : std::uint8_t {
     Unreachable,

@@ -460,6 +460,9 @@ TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
     }
     const ir::TypeInfo& info = types_->info(ot);
     TypeId result = ir::kError;
+    if (info.kind == ir::TypeKind::State && atDepth_ > 0) {
+        diags_.error(e->span, "state cannot be accessed inside 'at'");
+    }
     if (info.kind == ir::TypeKind::Struct || info.kind == ir::TypeKind::State) {
         for (std::uint32_t i = 0; i < info.fields.size(); ++i) {
             if (info.fields[i].name == str(e->name)) {
@@ -484,6 +487,13 @@ TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
         }
     }
     if (result == ir::kError) {
+        auto mit = methods_.find({ot, e->name.id});
+        if (mit != methods_.end() && mit->second->isProperty) {
+            e->isProperty = true;
+            e->getter = mit->second->index;
+            result = mit->second->result;
+            return wrap ? types_->nullable(result) : result;
+        }
         if (methods_.contains({ot, e->name.id}) || builtinMethod(ot, str(e->name))) {
             diags_.error(e->span, std::format("'{}' is a method; call it with '()'", str(e->name)));
         } else {

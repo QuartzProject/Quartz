@@ -30,6 +30,14 @@ struct Limits {
 
 class Sandbox;
 
+/// What a task (a call to a `suspend fn`) did before handing control back to the host.
+struct TaskOutcome {
+    enum class Kind : std::uint8_t { Done, Wait, AtEnter, AtLeave, Yield };
+    Kind kind = Kind::Done;
+    std::uint32_t task = 0;
+    Slot value{}; // Done: the result; Wait/AtEnter/AtLeave: the awaited handle
+};
+
 /// What a host function sees: its arguments, a slot for the result and helpers to build values.
 struct HostCall {
     Sandbox& sandbox;
@@ -55,6 +63,12 @@ public:
     std::expected<void, Trap> start();
     /// Calls an exported function; `state` parameters are supplied by the sandbox and skipped in `args`.
     std::expected<Slot, Trap> call(std::uint32_t function, std::span<const Slot> args);
+    /// Starts a task; it runs until it finishes, waits or spends its fuel slice (then it yields, spec 9.2).
+    std::expected<TaskOutcome, Trap> spawn(std::uint32_t function, std::span<const Slot> args);
+    /// Resumes a suspended task; `value` is what `wait` produces (ignored for void awaitables).
+    std::expected<TaskOutcome, Trap> resume(std::uint32_t task, Slot value = {});
+    void cancel(std::uint32_t task);
+    [[nodiscard]] std::size_t liveTasks() const;
 
     [[nodiscard]] const Program& program() const { return *program_; }
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
@@ -85,7 +99,9 @@ public:
     void releaseState(ir::TypeId type, Slot* slots);
 
     // Interp.cpp
+    enum class Status : std::uint8_t { Done, Trapped, Suspended };
     bool run(std::uint32_t function, Slot* base);
+    Status execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth);
     bool callHost(std::uint32_t import, const Slot* args, Slot* result);
 
     Trap trap_;
@@ -93,6 +109,26 @@ public:
     bool fail(ir::TrapCode code, std::string message = {});
 
 private:
+    struct SavedFrame {
+        std::uint32_t function;
+        std::uint32_t pc;
+        std::uint32_t base;
+        std::uint32_t dst;
+    };
+    struct Task {
+        bool live = false;
+        std::unique_ptr<InvocationArena> arena;
+        std::vector<Slot> slots;
+        std::vector<SavedFrame> frames; // callers, outermost first
+        std::uint32_t function = 0;     // innermost frame
+        std::uint32_t pc = 0;
+        std::uint32_t base = 0;
+        std::uint16_t waitDst = 0xFFFF;
+        ir::TypeId waitType = ir::kVoid;
+    };
+    std::expected<TaskOutcome, Trap> runTask(std::uint32_t id, const CompiledFunction* fn, const Ins* pc, Slot* R,
+                                             std::size_t entryDepth);
+    bool copyToArena(ir::TypeId type, const Slot* src, Slot* dst, bool onlyState);
     bool copyIntoState(ir::TypeId type, const Slot* src, Slot* dst);
     bool growList(List* l, std::uint32_t need);
     bool growMap(Map* m);
@@ -110,6 +146,18 @@ private:
         std::uint32_t dst;
     };
     std::vector<CallRecord> calls_;
+    std::vector<Task> tasks_;
+    std::vector<std::unique_ptr<InvocationArena>> retired_;
+    InvocationArena* cur_ = nullptr; // where arena values go: the invocation arena or the running task's
+    bool taskMode_ = false;
+    // Set by the interpreter when a task suspends.
+    const CompiledFunction* suspendFn_ = nullptr;
+    const Ins* suspendPc_ = nullptr;
+    Slot* suspendR_ = nullptr;
+    std::uint16_t suspendDst_ = 0xFFFF;
+    ir::TypeId suspendType_ = ir::kVoid;
+    TaskOutcome::Kind suspendKind_ = TaskOutcome::Kind::Wait;
+    Slot awaited_{};
 
     std::shared_ptr<const Program> program_;
     Limits limits_;

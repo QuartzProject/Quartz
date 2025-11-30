@@ -1,0 +1,34 @@
+// expect: hello Steve
+// expect: tick 1 count 1 name Steve
+// expect: tick 2 count 2 name Steve
+// expect: tick 3 count 3 name Steve
+// expect: done 3 visits 3
+
+state Hub {
+    visits: Map<str, i64>
+    names: [str]
+}
+
+suspend fn greet(hub: Hub, who: str) -> i64 {
+    hub.names.push(who)
+    let name = hub.names[0]
+    print("hello {name}")
+    var n = 0
+    every 20.ticks {
+        n += 1
+        hub.visits[who] = (hub.visits.get(who) ?? 0) + 1
+        hub.names[0] = "Renamed{n}"
+        print("tick {n} count {hub.visits[who]} name {name}")
+        if n == 3 {
+            break
+        }
+    }
+    return n
+}
+
+suspend fn main(hub: Hub) -> i64 {
+    let n = greet(hub, "Steve")
+    wait 5.ticks
+    print("done {n} visits {hub.visits["Steve"]}")
+    return 0
+}

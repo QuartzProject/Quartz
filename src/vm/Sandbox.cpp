@@ -12,6 +12,7 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
     stack_ = std::span<Slot>(stackMem_.get(), limits_.stackSlots);
     bindings_.resize(program_->module->imports.size());
     calls_.reserve(limits_.maxDepth + 1);
+    cur_ = &arena_;
 }
 
 Sandbox::~Sandbox() {

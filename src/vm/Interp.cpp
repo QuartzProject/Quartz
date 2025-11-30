@@ -100,20 +100,25 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
 }
 
 bool Sandbox::run(std::uint32_t function, Slot* base) {
+    const CompiledFunction* fn = &program_->functions[function];
+    if (fn->isSuspend) {
+        fail(ir::TrapCode::HostError, "suspend functions run as tasks; use spawn");
+        return false;
+    }
+    return execute(fn, fn->code.data(), base, base, calls_.size()) == Status::Done;
+}
+
+Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth) {
     const Program& P = *program_;
     const Slot* K = P.constants.data();
-    const CompiledFunction* fn = &P.functions[function];
-    const Ins* pc = fn->code.data();
-    Slot* R = base;
     Slot* const stackEnd = stack_.data() + stack_.size();
-    const std::size_t entryDepth = calls_.size();
     const std::size_t maxDepth = entryDepth + limits_.maxDepth;
     std::int64_t fuel = fuel_;
     Ins ins{};
 
     if (R + fn->frameSlots > stackEnd) {
         fail(ir::TrapCode::StackOverflow);
-        return false;
+        return Status::Trapped;
     }
 
 #define TRAP(code, msg)                                                                                                \
@@ -128,13 +133,35 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
         }                                                                                                              \
     } while (0)
 #define WORD() (static_cast<std::uint32_t>((pc++)->bc()))
+#define SUSPEND(resumePc, kind, dst, type, value)                                                                      \
+    do {                                                                                                               \
+        suspendFn_ = fn;                                                                                               \
+        suspendPc_ = (resumePc);                                                                                       \
+        suspendR_ = R;                                                                                                 \
+        suspendDst_ = (dst);                                                                                           \
+        suspendType_ = (type);                                                                                         \
+        suspendKind_ = (kind);                                                                                         \
+        awaited_ = (value);                                                                                            \
+        fuel_ = fuel;                                                                                                  \
+        return Status::Suspended;                                                                                      \
+    } while (0)
+// Tasks yield instead of trapping; normal code called from a task may overdraw one slice (spec 9.2).
+#define OUT_OF_FUEL(resumePc)                                                                                          \
+    do {                                                                                                               \
+        if (taskMode_ && fn->isSuspend) {                                                                              \
+            SUSPEND(resumePc, TaskOutcome::Kind::Yield, 0xFFFF, ir::kVoid, Slot{});                                    \
+        }                                                                                                              \
+        if (!taskMode_ || fuel < -limits_.fuelPerCall) {                                                               \
+            TRAP(ir::TrapCode::OutOfFuel, {});                                                                         \
+        }                                                                                                              \
+    } while (0)
 #define SHORT_JUMP()                                                                                                   \
     do {                                                                                                               \
         auto off = static_cast<std::int16_t>(ins.c);                                                                   \
-        if (off < 0 && --fuel < 0) {                                                                                   \
-            TRAP(ir::TrapCode::OutOfFuel, {});                                                                         \
-        }                                                                                                              \
         pc += off;                                                                                                     \
+        if (off < 0 && --fuel < 0) {                                                                                   \
+            OUT_OF_FUEL(pc);                                                                                           \
+        }                                                                                                              \
     } while (0)
 #define RA R[ins.a]
 #define RB R[ins.b]
@@ -176,18 +203,20 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
             NEXT();
             CASE(Jmp) pc += ins.bc();
             NEXT();
-            CASE(Loop) if (--fuel < 0) { TRAP(ir::TrapCode::OutOfFuel, {}); }
-            pc += ins.bc();
+            CASE(Loop) pc += ins.bc();
+            if (--fuel < 0) {
+                OUT_OF_FUEL(pc);
+            }
             NEXT();
             CASE(JmpT) if (RA.u != 0) { pc += ins.bc(); }
             NEXT();
             CASE(JmpF) if (RA.u == 0) { pc += ins.bc(); }
             NEXT();
             CASE(LoopT) if (RA.u != 0) {
-                if (--fuel < 0) {
-                    TRAP(ir::TrapCode::OutOfFuel, {});
-                }
                 pc += ins.bc();
+                if (--fuel < 0) {
+                    OUT_OF_FUEL(pc);
+                }
             }
             NEXT();
             CASE(JLtI) if (RA.i < RB.i) { SHORT_JUMP(); }
@@ -424,7 +453,10 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
                     TRAP(ir::TrapCode::StackOverflow, {});
                 }
                 if (--fuel < 0) {
-                    TRAP(ir::TrapCode::OutOfFuel, {});
+                    OUT_OF_FUEL(pc - 1);
+                }
+                if (callee->isSuspend) {
+                    std::memset(nb + callee->paramSlots, 0, (callee->frameSlots - callee->paramSlots) * sizeof(Slot));
                 }
                 calls_.push_back({fn, pc, R, ins.a});
                 fn = callee;
@@ -443,7 +475,7 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
                 if (calls_.size() == entryDepth) {
                     std::memmove(base, src, n * sizeof(Slot));
                     fuel_ = fuel;
-                    return true;
+                    return Status::Done;
                 }
                 CallRecord r = calls_.back();
                 calls_.pop_back();
@@ -456,7 +488,7 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
             CASE(Ret0) {
                 if (calls_.size() == entryDepth) {
                     fuel_ = fuel;
-                    return true;
+                    return Status::Done;
                 }
                 CallRecord r = calls_.back();
                 calls_.pop_back();
@@ -678,6 +710,14 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
             CASE(Cos) RA.f = std::cos(RB.f);
             NEXT();
             CASE(Panic) TRAP(ir::TrapCode::Panic, std::string(STR(RA)->view()));
+            CASE(Wait) {
+                ir::TypeId t = WORD();
+                if (!taskMode_) {
+                    TRAP(ir::TrapCode::Unreachable, "wait outside a task");
+                }
+                auto kind = static_cast<TaskOutcome::Kind>(ins.c + 1);
+                SUSPEND(pc, kind, ins.b, t, RA);
+            }
 #if QUARTZ_SWITCH_DISPATCH
         case Opc::Count: break;
         }
@@ -695,7 +735,7 @@ trap:
         trap_.line = at > 0 && at - 1 < fn->lines.size() ? fn->lines[at - 1] : 0;
     }
     calls_.resize(entryDepth);
-    return false;
+    return Status::Trapped;
 }
 
 } // namespace quartz::vm

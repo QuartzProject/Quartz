@@ -1,0 +1,28 @@
+// error: a suspend function cannot keep a list or map of the state in a variable
+// error: 'wait' can only be used in a suspend function
+// error: cannot wait on 'i64'
+// error: state cannot be accessed inside 'at'
+// error: 'xs' cannot be used inside 'at'
+
+state S {
+    items: [i64]
+}
+
+fn delay() -> Delay
+
+fn io() -> Io
+
+suspend fn bad(s: S) {
+    let items = s.items
+    items.push(1)
+    wait 5
+    var xs = [1]
+    at io() {
+        s.items.push(2)
+        xs.push(3)
+    }
+}
+
+fn notSuspend() {
+    wait pause()
+}

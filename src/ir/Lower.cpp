@@ -279,9 +279,36 @@ void Lowerer::lowerStmt(Stmt* s) {
     }
     case StmtKind::Break: br(loops_.back().breakFrame); return;
     case StmtKind::Continue: br(loops_.back().continueFrame); return;
-    case StmtKind::Scope:
-    case StmtKind::Every:
-    case StmtKind::At: return;
+    case StmtKind::Every: {
+        auto* ev = static_cast<EveryStmt*>(s);
+        std::size_t exit = depth_;
+        open(Op::Block);
+        std::size_t loop = depth_;
+        open(Op::Loop);
+        std::size_t cont = depth_;
+        open(Op::Block);
+        Reg v = lowerExpr(ev->interval);
+        TypeId produced = ev->interval->type;
+        (void)produced;
+        emit(Op::Wait, kNoReg, v, kNoReg, static_cast<std::uint32_t>(WaitKind::Wait));
+        loops_.push_back({exit, cont});
+        lowerBlockStmts(ev->body);
+        loops_.pop_back();
+        close();
+        br(loop);
+        close();
+        close();
+        return;
+    }
+    case StmtKind::At: {
+        auto* at = static_cast<AtStmt*>(s);
+        Reg ctx = lowerExpr(at->context);
+        emit(Op::Wait, kNoReg, ctx, kNoReg, static_cast<std::uint32_t>(WaitKind::AtEnter));
+        lowerBlockStmts(at->body);
+        emit(Op::Wait, kNoReg, ctx, kNoReg, static_cast<std::uint32_t>(WaitKind::AtLeave));
+        return;
+    }
+    case StmtKind::Scope: return;
     }
 }
 

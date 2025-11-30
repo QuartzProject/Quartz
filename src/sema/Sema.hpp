@@ -19,6 +19,7 @@ struct Local {
     Symbol name;
     TypeId type = ir::kError;
     bool mutable_ = false;
+    bool stateView = false; // holds a value read from a state
     Span span;
     std::uint32_t reg = ~0U; // assigned by lowering
 };
@@ -38,6 +39,7 @@ struct FnInfo {
     bool hasSelf = false;
     bool isHost = false;         // declared without a body in a `.qzi`
     bool isSuspend = false;
+    bool isProperty = false; // `@property` host method read without parentheses
     std::vector<TypeId> params;  // includes the receiver first when hasSelf
     std::vector<Symbol> paramNames;
     std::vector<syntax::Expr*> defaults;

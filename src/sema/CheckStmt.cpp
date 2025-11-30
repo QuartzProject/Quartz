@@ -206,6 +206,9 @@ void Checker::checkStmt(Stmt* s) {
     case StmtKind::For: checkFor(static_cast<ForStmt*>(s)); return;
     case StmtKind::Return: {
         auto* r = static_cast<ReturnStmt*>(s);
+        if (atDepth_ > 0) {
+            diags_.error(s->span, "'return' cannot leave an 'at' block");
+        }
         TypeId want = currentFn_ != nullptr ? currentFn_->result : ir::kVoid;
         if (r->value == nullptr) {
             if (want != ir::kVoid && want != ir::kError) {
@@ -227,9 +230,105 @@ void Checker::checkStmt(Stmt* s) {
             diags_.error(s->span, std::format("'{}' outside of a loop", s->kind == StmtKind::Break ? "break" : "continue"));
         }
         return;
-    case StmtKind::Scope:
-    case StmtKind::Every:
-    case StmtKind::At: diags_.error(s->span, "'scope', 'every' and 'at' are not supported yet"); return;
+    case StmtKind::Every: {
+        auto* ev = static_cast<EveryStmt*>(s);
+        TypeId produced = checkWait(ev->interval, s->span);
+        (void)produced;
+        ++loopDepth_;
+        checkBlock(ev->body, ir::kError, false);
+        --loopDepth_;
+        return;
+    }
+    case StmtKind::At: {
+        auto* at = static_cast<AtStmt*>(s);
+        if (currentFn_ == nullptr || !currentFn_->isSuspend) {
+            diags_.error(s->span, "'at' can only be used in a suspend function");
+        }
+        TypeId ct = checkValue(at->context, ir::kError);
+        if (ct != ir::kError && types_->kind(ct) != ir::TypeKind::Handle) {
+            diags_.error(at->context->span, "the context of 'at' must be a host handle");
+        }
+        int savedLoops = loopDepth_;
+        loopDepth_ = 0;
+        std::size_t savedBase = atScopeBase_;
+        atScopeBase_ = scopes_.size();
+        ++atDepth_;
+        checkBlock(at->body, ir::kError, false);
+        --atDepth_;
+        atScopeBase_ = savedBase;
+        loopDepth_ = savedLoops;
+        return;
+    }
+    case StmtKind::Scope: diags_.error(s->span, "'scope' is not supported yet"); return;
+    }
+}
+
+bool Checker::derivedFromState(const Expr* e) const {
+    switch (e->kind) {
+    case ExprKind::Ident: {
+        const auto* id = static_cast<const IdentExpr*>(e);
+        return id->ref == IdentRef::Local && id->local != nullptr && id->local->stateView;
+    }
+    case ExprKind::Member: {
+        const auto* m = static_cast<const MemberExpr*>(e);
+        return types_->kind(m->object->type) == ir::TypeKind::State || derivedFromState(m->object);
+    }
+    case ExprKind::Index: return derivedFromState(static_cast<const IndexExpr*>(e)->object);
+    case ExprKind::Call: {
+        const auto* c = static_cast<const CallExpr*>(e);
+        return (c->callKind == CallKind::Builtin || c->callKind == CallKind::Special) && c->receiver != nullptr &&
+               derivedFromState(c->receiver);
+    }
+    case ExprKind::Propagate: return derivedFromState(static_cast<const PropagateExpr*>(e)->inner);
+    case ExprKind::Binary: {
+        const auto* b = static_cast<const BinaryExpr*>(e);
+        return b->op == BinaryOp::Coalesce && (derivedFromState(b->lhs) || derivedFromState(b->rhs));
+    }
+    default: return false;
+    }
+}
+
+bool Checker::holdsMutable(TypeId t) const {
+    const ir::TypeInfo& info = types_->info(t);
+    switch (info.kind) {
+    case ir::TypeKind::List:
+    case ir::TypeKind::Map: return true;
+    case ir::TypeKind::Nullable: return holdsMutable(info.elem);
+    case ir::TypeKind::Struct:
+        for (const ir::Field& f : info.fields) {
+            if (holdsMutable(f.type)) {
+                return true;
+            }
+        }
+        return false;
+    case ir::TypeKind::Tuple:
+        for (TypeId x : info.elems) {
+            if (holdsMutable(x)) {
+                return true;
+            }
+        }
+        return false;
+    case ir::TypeKind::Enum:
+        for (const ir::VariantInfo& v : info.variants) {
+            for (TypeId x : v.payload) {
+                if (holdsMutable(x)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    default: return false;
+    }
+}
+
+void Checker::checkViewBinding(Local* l, const Expr* init, Span span) {
+    if (init == nullptr || !derivedFromState(init)) {
+        return;
+    }
+    l->stateView = true;
+    if (currentFn_ != nullptr && currentFn_->isSuspend && holdsMutable(l->type)) {
+        diags_.error(span, "a suspend function cannot keep a list or map of the state in a variable: it would become "
+                           "a copy after 'wait'; use it through the state");
     }
 }
 
@@ -259,6 +358,7 @@ void Checker::checkLet(LetStmt* s) {
         }
     }
     s->local = declareLocal(s->name, t, s->mutable_, s->nameSpan);
+    checkViewBinding(s->local, s->init, s->nameSpan);
 }
 
 bool Checker::isPlace(Expr* e, bool& mutableOut) {
@@ -301,6 +401,9 @@ void Checker::checkAssign(AssignStmt* s) {
     }
     if (s->op == AssignOp::Set) {
         expectAssignable(checkValue(s->value, tt), tt, s->value->span);
+        if (s->target->kind == ExprKind::Ident && static_cast<IdentExpr*>(s->target)->ref == IdentRef::Local) {
+            checkViewBinding(static_cast<IdentExpr*>(s->target)->local, s->value, s->target->span);
+        }
         return;
     }
     bool shift = s->op == AssignOp::Shl || s->op == AssignOp::Shr;
@@ -360,6 +463,12 @@ void Checker::checkFor(ForStmt* s) {
         s->indexLocal = declareLocal(s->indexName, ir::kI64, false, s->nameSpan);
     }
     s->local = declareLocal(s->name, elem, false, s->nameSpan);
+    if (s->iterable->kind != ExprKind::Range && derivedFromState(s->iterable)) {
+        s->local->stateView = true;
+        if (currentFn_ != nullptr && currentFn_->isSuspend && holdsMutable(elem)) {
+            diags_.error(s->nameSpan, "a suspend function cannot iterate over lists or maps held by the state");
+        }
+    }
     ++loopDepth_;
     checkBlock(s->body, ir::kError, false);
     --loopDepth_;

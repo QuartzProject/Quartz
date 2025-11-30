@@ -85,6 +85,17 @@ public:
             out.frameSlots = 0xFFFF; // the compiler rejects such functions below
             tooBig_ = true;
         }
+        out.isSuspend = fn_.isSuspend;
+        if (fn_.isSuspend) {
+            for (std::size_t r = 0; r < fn_.regs.size(); ++r) {
+                if (prog_.module->types.hasRefs(fn_.regs[r])) {
+                    std::pair<std::uint32_t, TypeId> e{offset_[r], fn_.regs[r]};
+                    if (std::find(out.refSlots.begin(), out.refSlots.end(), e) == out.refSlots.end()) {
+                        out.refSlots.push_back(e);
+                    }
+                }
+            }
+        }
         out.code = std::move(code_);
         out.lines = std::move(lines_);
         if (tooBig_) {
@@ -749,6 +760,10 @@ private:
             return;
         }
         case Op::EnumTag: move(s(in.dst), s(in.a), 1); return;
+        case Op::Wait:
+            put(Opc::Wait, s(in.a), in.dst == ir::kNoReg ? 0xFFFF : s(in.dst), in.imm);
+            word(in.dst == ir::kNoReg ? ir::kVoid : ty(in.dst));
+            return;
         case Op::EnumField: {
             const ir::VariantInfo& v = types.info(ty(in.a)).variants[in.imm];
             std::uint32_t off = offset_[in.a] + 1;

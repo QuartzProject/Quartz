@@ -477,6 +477,13 @@ Reg Lowerer::lowerInner(Expr* e) {
         emit(Op::Convert, r, v);
         return r;
     }
+    case ExprKind::Wait: {
+        auto* w = static_cast<WaitExpr*>(e);
+        Reg v = lowerExpr(w->value);
+        Reg dst = e->type == kVoid ? kNoReg : newReg(e->type);
+        emit(Op::Wait, dst, v, kNoReg, static_cast<std::uint32_t>(WaitKind::Wait));
+        return dst;
+    }
     case ExprKind::If: return lowerIf(static_cast<IfExpr*>(e), e->type, true);
     case ExprKind::Match: return lowerMatch(static_cast<MatchExpr*>(e), e->type, true);
     case ExprKind::Block: return lowerBlockValue(static_cast<BlockExpr*>(e), e->type);
