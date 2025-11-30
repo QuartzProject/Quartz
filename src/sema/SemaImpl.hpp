@@ -39,6 +39,8 @@ public:
 
     // CheckStmt.cpp
     void checkFunction(FnInfo* fn);
+    void checkAttributes(FnInfo* fn);
+    bool annotationArg(Expr* e, ir::AnnotationArg& out);
     TypeId checkBlock(BlockExpr* block, TypeId expected, bool wantValue);
     void checkStmt(Stmt* s);
     void checkLet(LetStmt* s);

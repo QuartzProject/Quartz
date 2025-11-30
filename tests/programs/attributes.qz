@@ -1,0 +1,21 @@
+// expect: joined 7
+
+struct JoinEvent {
+    level: i64
+    name: str
+}
+
+@on(PlayerJoin, priority = High, where = event.level > 3)
+fn onJoin(event: JoinEvent) {
+    print("joined {event.level}")
+}
+
+@command("heal", perm = "basalt.heal")
+fn heal(amount: i64) -> bool {
+    return amount > 0
+}
+
+fn main() -> i64 {
+    onJoin(JoinEvent(7, "Steve"))
+    return 0
+}

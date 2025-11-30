@@ -162,8 +162,27 @@ struct HostImport {
     TypeId result = kVoid;
 };
 
+/// One argument of a declaration attribute, kept for the host (`@command("heal", perm = "basalt.heal")`).
+struct AnnotationArg {
+    enum class Kind : std::uint8_t { Int, Float, Bool, Str, Name };
+    std::string key; // empty for positional arguments
+    Kind kind = Kind::Name;
+    std::int64_t intValue = 0;
+    double floatValue = 0;
+    std::string text; // Str value or dotted Name
+};
+
+/// A function attribute the host reads to register handlers (`@on`, `@command`, ...).
+struct Annotation {
+    std::string name;
+    std::uint32_t function = 0;
+    std::vector<AnnotationArg> args;
+    std::uint32_t filter = ~0U; // `@on(..., where = expr)`: exported function taking the first parameter
+};
+
 struct Module {
     TypeTable types;
+    std::vector<Annotation> annotations;
     std::vector<Constant> constants;
     std::vector<Function> functions;
     std::vector<HostImport> imports;

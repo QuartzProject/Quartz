@@ -594,6 +594,17 @@ std::unique_ptr<Module> Lowerer::run() {
     for (sema::FnInfo* fn : prog_.functions) {
         lowerFunction(fn, mod_->functions[fn->index]);
     }
+    for (sema::FnInfo* fn : prog_.functions) {
+        for (sema::AnnotationInfo& a : fn->annotations) {
+            Annotation out{a.name, fn->index, a.args, ~0U};
+            if (a.where != nullptr) {
+                out.filter = static_cast<std::uint32_t>(mod_->functions.size());
+                mod_->functions.emplace_back();
+                lowerFilter(a, fn, mod_->functions.back());
+            }
+            mod_->annotations.push_back(std::move(out));
+        }
+    }
     for (TypeId state : prog_.states) {
         mod_->states.push_back(state);
         mod_->stateInit.push_back(static_cast<std::uint32_t>(mod_->functions.size()));

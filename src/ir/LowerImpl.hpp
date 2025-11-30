@@ -18,6 +18,7 @@ public:
     // Lower.cpp: functions, statements, control flow
     void lowerFunction(sema::FnInfo* fn, Function& out);
     void lowerStateInit(TypeId state, Function& out);
+    void lowerFilter(sema::AnnotationInfo& a, sema::FnInfo* fn, Function& out);
     void lowerBlockStmts(BlockExpr* block);
     Reg lowerBlockValue(BlockExpr* block, TypeId want);
     void lowerStmt(Stmt* s);

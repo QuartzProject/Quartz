@@ -10,7 +10,108 @@ bool diverges(TypeId t) { return t == ir::kNever; }
 
 } // namespace
 
+bool Checker::annotationArg(Expr* e, ir::AnnotationArg& out) {
+    using K = ir::AnnotationArg::Kind;
+    switch (e->kind) {
+    case ExprKind::IntLit:
+        out.kind = K::Int;
+        out.intValue = static_cast<std::int64_t>(static_cast<IntLitExpr*>(e)->value);
+        return true;
+    case ExprKind::FloatLit:
+        out.kind = K::Float;
+        out.floatValue = static_cast<FloatLitExpr*>(e)->value;
+        return true;
+    case ExprKind::BoolLit:
+        out.kind = K::Bool;
+        out.intValue = static_cast<BoolLitExpr*>(e)->value ? 1 : 0;
+        return true;
+    case ExprKind::StringLit:
+        out.kind = K::Str;
+        out.text = std::string(static_cast<StringLitExpr*>(e)->value);
+        return true;
+    case ExprKind::Ident:
+        out.kind = K::Name;
+        out.text = std::string(str(static_cast<IdentExpr*>(e)->name));
+        return true;
+    case ExprKind::Member: {
+        auto* m = static_cast<MemberExpr*>(e);
+        ir::AnnotationArg base;
+        if (!annotationArg(m->object, base) || base.kind != K::Name) {
+            return false;
+        }
+        out.kind = K::Name;
+        out.text = base.text + "." + std::string(str(m->name));
+        return true;
+    }
+    default: return false;
+    }
+}
+
+void Checker::checkAttributes(FnInfo* fn) {
+    static const std::pair<std::string_view, bool> known[] = {
+        {"on", true},        {"command", true}, {"requires", true}, {"inline", false},
+        {"noinline", false}, {"property", false},
+    };
+    for (Attribute& a : fn->decl->attrs) {
+        std::string_view name = str(a.name);
+        bool exported = false;
+        bool found = false;
+        for (const auto& [n, e] : known) {
+            if (n == name) {
+                found = true;
+                exported = e;
+            }
+        }
+        if (!found) {
+            diags_.warning(a.span, std::format("unknown attribute '@{}'", name));
+            continue;
+        }
+        if (!exported) {
+            continue;
+        }
+        AnnotationInfo info;
+        info.name = std::string(name);
+        for (AttrArg& arg : a.args) {
+            if (name == "on" && arg.name.valid() && str(arg.name) == "where") {
+                if (fn->decl->params.empty()) {
+                    diags_.error(arg.value->span, "'where' needs the handler to take the event as its first parameter");
+                    continue;
+                }
+                pushScope();
+                Param& p = fn->decl->params[0];
+                info.whereParam = declareLocal(p.name, fn->params[fn->hasSelf ? 1 : 0], false, p.span);
+                FnInfo* saved = currentFn_;
+                currentFn_ = nullptr;
+                expectAssignable(checkValue(arg.value, ir::kBool), ir::kBool, arg.value->span);
+                currentFn_ = saved;
+                popScope();
+                info.where = arg.value;
+                continue;
+            }
+            ir::AnnotationArg out;
+            out.key = arg.name.valid() ? std::string(str(arg.name)) : std::string();
+            if (!annotationArg(arg.value, out)) {
+                diags_.error(arg.value->span, "attribute arguments must be literals or names");
+                continue;
+            }
+            info.args.push_back(std::move(out));
+        }
+        if ((name == "on" || name == "command") && (info.args.empty() || !info.args[0].key.empty())) {
+            diags_.error(a.span, std::format("'@{}' needs {} as its first argument", name,
+                                             name == "on" ? "the event name" : "the command name"));
+        }
+        if (name == "command" && !info.args.empty() && info.args[0].kind != ir::AnnotationArg::Kind::Str) {
+            diags_.error(a.span, "the command name must be a string");
+        }
+        if (fn->owner != ir::kError) {
+            diags_.error(a.span, std::format("'@{}' can only be used on top-level functions", name));
+        }
+        fn->annotations.push_back(std::move(info));
+    }
+}
+
 void Checker::checkFunction(FnInfo* fn) {
+    checkAttributes(fn);
     currentFn_ = fn;
     selfType_ = fn->owner;
     loopDepth_ = 0;

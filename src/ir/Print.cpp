@@ -53,6 +53,20 @@ const char* opName(Op op) {
 
 std::string print(const Module& m) {
     std::string out;
+    for (const Annotation& a : m.annotations) {
+        out += std::format("@{} on #{}", a.name, a.function);
+        for (const AnnotationArg& arg : a.args) {
+            std::string v = arg.kind == AnnotationArg::Kind::Str     ? std::format("\"{}\"", arg.text)
+                            : arg.kind == AnnotationArg::Kind::Name  ? arg.text
+                            : arg.kind == AnnotationArg::Kind::Float ? std::format("{}", arg.floatValue)
+                                                                     : std::format("{}", arg.intValue);
+            out += arg.key.empty() ? " " + v : std::format(" {}={}", arg.key, v);
+        }
+        if (a.filter != ~0U) {
+            out += std::format(" where #{}", a.filter);
+        }
+        out += '\n';
+    }
     for (std::size_t i = 0; i < m.imports.size(); ++i) {
         out += std::format("import #{} {}(", i, m.imports[i].name);
         for (std::size_t p = 0; p < m.imports[i].params.size(); ++p) {

@@ -193,6 +193,21 @@ void Lowerer::lowerStateInit(TypeId state, Function& out) {
     emit(Op::Return);
 }
 
+void Lowerer::lowerFilter(sema::AnnotationInfo& a, sema::FnInfo* fn, Function& out) {
+    fn_ = &out;
+    info_ = nullptr;
+    depth_ = 0;
+    loops_.clear();
+    out.name = fn->name + ".where";
+    out.result = kBool;
+    out.exported = true;
+    a.whereParam->reg = newReg(a.whereParam->type);
+    out.paramCount = 1;
+    setLine(a.where->span);
+    Reg v = lowerExpr(a.where, kBool);
+    emit(Op::Return, kNoReg, v);
+}
+
 void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     fn_ = &out;
     info_ = fn;

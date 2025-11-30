@@ -23,8 +23,16 @@ struct Local {
     std::uint32_t reg = ~0U; // assigned by lowering
 };
 
+struct AnnotationInfo {
+    std::string name;
+    std::vector<ir::AnnotationArg> args;
+    syntax::Expr* where = nullptr;
+    Local* whereParam = nullptr;
+};
+
 struct FnInfo {
     syntax::FnDecl* decl = nullptr;
+    std::vector<AnnotationInfo> annotations;
     std::string name;            // `Type.method` for methods
     TypeId owner = ir::kError;   // receiver type for methods
     bool hasSelf = false;

@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
     std::string_view cmd = argv[1];
     std::vector<quartz::SourceInput> inputs;
     std::string entry = "main";
-    bool wantStd = cmd == "run";
+    bool wantStd = true;
     for (int i = 2; i < argc; ++i) {
         if (std::strcmp(argv[i], "--entry") == 0 && i + 1 < argc) {
             entry = argv[++i];
