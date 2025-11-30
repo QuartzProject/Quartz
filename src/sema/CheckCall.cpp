@@ -242,6 +242,24 @@ TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expecte
         bindArgs(call, params, {}, {}, 0);
         return t;
     }
+    if (n == "Ok" || n == "Err") {
+        TypeId want = expected;
+        if (want != ir::kError && types_->kind(want) == ir::TypeKind::Nullable) {
+            want = types_->info(want).elem;
+        }
+        if (want == ir::kError || !types_->isResult(want)) {
+            diags_.error(call->span, std::format("cannot infer the Result type of '{}(...)'; annotate the type", n));
+            for (Arg& a : call->args) {
+                check(a.value, ir::kError);
+            }
+            return ir::kError;
+        }
+        std::uint32_t v = n == "Ok" ? 0 : 1;
+        call->callKind = CallKind::Variant;
+        call->variant = v;
+        bindArgs(call, types_->info(want).variants[v].payload, {}, {}, 0);
+        return want;
+    }
     if (n == "Map" || n == "List") {
         TypeId t = ir::kError;
         if (!ident->typeArgs.empty()) {
@@ -335,6 +353,30 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
         return finishCall(call, fn, callee->object);
     }
     call->receiver = callee->object;
+    std::string_view mname = str(callee->name);
+    bool isResult = types_->isResult(recv);
+    bool isNullable = types_->kind(recv) == ir::TypeKind::Nullable;
+    if (isResult || isNullable) {
+        TypeId inner = isResult ? types_->info(recv).variants[0].payload[0] : types_->info(recv).elem;
+        call->callKind = CallKind::Special;
+        if (isResult && (mname == "isOk" || mname == "isErr")) {
+            call->builtin = static_cast<std::uint16_t>(mname == "isOk" ? SpecialOp::ResultIsOk : SpecialOp::ResultIsErr);
+            bindArgs(call, {}, {}, {}, 0);
+            return ir::kBool;
+        }
+        if (mname == "unwrap") {
+            call->builtin = static_cast<std::uint16_t>(isResult ? SpecialOp::ResultUnwrap : SpecialOp::NullUnwrap);
+            bindArgs(call, {}, {}, {}, 0);
+            return inner;
+        }
+        if (mname == "unwrapOr") {
+            call->builtin = static_cast<std::uint16_t>(isResult ? SpecialOp::ResultUnwrapOr : SpecialOp::NullUnwrapOr);
+            bindArgs(call, {inner}, {}, {}, 0);
+            return inner;
+        }
+        diags_.error(callee->span, std::format("'{}' has no method '{}'", typeName(recv), mname));
+        return ir::kError;
+    }
     return checkBuiltinMethod(call, recv, callee->name, expected);
 }
 

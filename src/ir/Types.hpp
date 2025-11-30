@@ -96,6 +96,9 @@ public:
     TypeId nullable(TypeId inner);
     TypeId tuple(const std::vector<TypeId>& elems);
     TypeId fn(const std::vector<TypeId>& params, TypeId result);
+    /// `Result<T, E>` is an enum with variants `Ok(T)` and `Err(E)`.
+    TypeId result(TypeId ok, TypeId err);
+    [[nodiscard]] bool isResult(TypeId id) const;
     TypeId declareNominal(TypeKind kind, std::string name);
     TypeInfo& mutableInfo(TypeId id) { return types_[id]; }
     /// Adds a fully described type as read from a serialized module; structural types are interned.

@@ -133,8 +133,19 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
         if (inner == ir::kError) {
             return inner;
         }
+        if (types_->isResult(inner)) {
+            TypeId fr = currentFn_ != nullptr ? currentFn_->result : ir::kError;
+            if (!types_->isResult(fr)) {
+                diags_.error(e->span, "'?' on a Result can only be used in a function that returns a Result");
+            } else if (types_->info(fr).variants[1].payload[0] != types_->info(inner).variants[1].payload[0]) {
+                diags_.error(e->span, std::format("error type '{}' does not match the function's '{}'",
+                                                  typeName(types_->info(inner).variants[1].payload[0]),
+                                                  typeName(types_->info(fr).variants[1].payload[0])));
+            }
+            return types_->info(inner).variants[0].payload[0];
+        }
         if (types_->kind(inner) != ir::TypeKind::Nullable) {
-            diags_.error(e->span, std::format("'?' needs a nullable value, found '{}'", typeName(inner)));
+            diags_.error(e->span, std::format("'?' needs a nullable value or a Result, found '{}'", typeName(inner)));
             return ir::kError;
         }
         if (currentFn_ == nullptr || types_->kind(currentFn_->result) != ir::TypeKind::Nullable) {

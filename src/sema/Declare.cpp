@@ -165,6 +165,13 @@ TypeId Checker::resolveType(TypeExpr* t) {
         }
         Symbol last = n->path[n->path.size() - 1];
         std::string_view text = str(last);
+        if (text == "Result") {
+            if (n->args.size() != 2) {
+                diags_.error(t->span, "'Result' takes 2 type arguments");
+                return ir::kError;
+            }
+            return types_->result(resolveType(n->args[0]), resolveType(n->args[1]));
+        }
         if (text == "List" || text == "Map") {
             std::size_t want = text == "List" ? 1 : 2;
             if (n->args.size() != want) {

@@ -220,6 +220,62 @@ Reg Lowerer::lowerCall(CallExpr* e) {
         emitArgs(e->callKind == CallKind::Function ? Op::Call : Op::CallHost, dst, fn->index, args);
         return dst;
     }
+    case CallKind::Special: {
+        Reg recv = lowerExpr(e->receiver);
+        TypeId rt0 = e->receiver->type;
+        auto op = static_cast<SpecialOp>(e->builtin);
+        bool isResult = op == SpecialOp::ResultIsOk || op == SpecialOp::ResultIsErr || op == SpecialOp::ResultUnwrap ||
+                        op == SpecialOp::ResultUnwrapOr;
+        Reg present = newReg(kBool);
+        if (isResult) {
+            Reg tag = newReg(kI64);
+            emit(Op::EnumTag, tag, recv);
+            emit(Op::Eq, present, tag, constInt(0, kI64));
+        } else {
+            Reg isNull = newReg(kBool);
+            emit(Op::IsNull, isNull, recv);
+            emit(Op::Not, present, isNull);
+        }
+        if (op == SpecialOp::ResultIsOk) {
+            return present;
+        }
+        if (op == SpecialOp::ResultIsErr) {
+            emit(Op::Not, dst, present);
+            return dst;
+        }
+        auto extract = [&](Reg out) {
+            if (isResult) {
+                Inst& f = emit(Op::EnumField, out, recv, kNoReg, 0);
+                f.b = 0;
+            } else {
+                emit(Op::Unwrap, out, recv);
+            }
+        };
+        (void)rt0;
+        if (op == SpecialOp::ResultUnwrap || op == SpecialOp::NullUnwrap) {
+            std::size_t done = depth_;
+            open(Op::Block);
+            brIf(present, done);
+            emit(Op::Trap, kNoReg, kNoReg, kNoReg,
+                 static_cast<std::uint32_t>(isResult ? TrapCode::Panic : TrapCode::NullUnwrap));
+            close();
+            extract(dst);
+            return dst;
+        }
+        std::size_t endFrame = depth_;
+        open(Op::Block);
+        std::size_t elseFrame = depth_;
+        open(Op::Block);
+        Reg absent = newReg(kBool);
+        emit(Op::Not, absent, present);
+        brIf(absent, elseFrame);
+        extract(dst);
+        br(endFrame);
+        close();
+        emit(Op::Move, dst, lowerExpr(e->ordered[0], rt));
+        close();
+        return dst;
+    }
     case CallKind::Construct: {
         const TypeInfo& info = types_->info(rt);
         for (std::size_t i = 0; i < e->ordered.size(); ++i) {
@@ -341,6 +397,29 @@ Reg Lowerer::lowerInner(Expr* e) {
     case ExprKind::Propagate: {
         auto* p = static_cast<PropagateExpr*>(e);
         Reg v = lowerExpr(p->inner);
+        if (types_->isResult(p->inner->type)) {
+            Reg tag = newReg(kI64);
+            emit(Op::EnumTag, tag, v);
+            Reg errTag = constInt(1, kI64);
+            Reg isErr = newReg(kBool);
+            emit(Op::Eq, isErr, tag, errTag);
+            std::size_t ok = depth_;
+            open(Op::Block);
+            Reg isOk = newReg(kBool);
+            emit(Op::Not, isOk, isErr);
+            brIf(isOk, ok);
+            Reg err = newReg(types_->info(p->inner->type).variants[1].payload[0]);
+            Inst& ef = emit(Op::EnumField, err, v, kNoReg, 1);
+            ef.b = 0;
+            Reg out = newReg(fn_->result);
+            emitArgs(Op::EnumMake, out, 1, {err});
+            emit(Op::Return, kNoReg, out);
+            close();
+            Reg r = newReg(e->type);
+            Inst& vf = emit(Op::EnumField, r, v, kNoReg, 0);
+            vf.b = 0;
+            return r;
+        }
         Reg isNull = newReg(kBool);
         emit(Op::IsNull, isNull, v);
         open(Op::If, isNull);

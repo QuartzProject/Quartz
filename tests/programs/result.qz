@@ -1,0 +1,50 @@
+// expect: 21 ok
+// expect: error: bad digit x
+// expect: 7 0 true false
+// expect: 5 9
+
+enum ParseError { Empty, BadDigit(str) }
+
+fn describe(e: ParseError) -> str {
+    return match e {
+        Empty => "empty"
+        BadDigit(d) => "bad digit {d}"
+    }
+}
+
+fn digit(s: str, i: i64) -> Result<i64, ParseError> {
+    let b = s.byteAt(i)
+    if b < 48 || b > 57 {
+        return Err(ParseError.BadDigit(s.slice(i, i + 1)))
+    }
+    return Ok(b - 48)
+}
+
+fn parse(s: str) -> Result<i64, ParseError> {
+    if s.len() == 0 {
+        return Err(ParseError.Empty)
+    }
+    var n = 0
+    for i in 0..s.len() {
+        n = n * 10 + digit(s, i)?
+    }
+    return Ok(n)
+}
+
+fn main() -> i64 {
+    match parse("21") {
+        Ok(v) => print("{v} ok")
+        Err(e) => print("error: {describe(e)}")
+    }
+    match parse("2x") {
+        Ok(v) => print("{v} ok")
+        Err(e) => print("error: {describe(e)}")
+    }
+    let r: Result<i64, ParseError> = Ok(7)
+    let bad = parse("")
+    print("{r.unwrap()} {bad.unwrapOr(0)} {r.isOk()} {bad.isOk()}")
+    let some: i64? = 5
+    let none: i64? = null
+    print("{some.unwrap()} {none.unwrapOr(9)}")
+    return 0
+}

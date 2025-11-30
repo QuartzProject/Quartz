@@ -80,6 +80,21 @@ TypeId TypeTable::fn(const std::vector<TypeId>& params, TypeId result) {
     return intern(std::move(t), key);
 }
 
+TypeId TypeTable::result(TypeId ok, TypeId err) {
+    TypeInfo t;
+    t.kind = TypeKind::Enum;
+    t.name = std::format("Result<{}, {}>", name(ok), name(err));
+    t.variants.push_back({"Ok", {ok}});
+    t.variants.push_back({"Err", {err}});
+    return intern(std::move(t), std::format("R{},{}", ok, err));
+}
+
+bool TypeTable::isResult(TypeId id) const {
+    const TypeInfo& t = types_[id];
+    return t.kind == TypeKind::Enum && t.variants.size() == 2 && t.variants[0].name == "Ok" &&
+           t.variants[1].name == "Err" && t.name.starts_with("Result<");
+}
+
 TypeId TypeTable::declareNominal(TypeKind k, std::string name) {
     TypeInfo t;
     t.kind = k;
