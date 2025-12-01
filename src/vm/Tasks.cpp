@@ -7,14 +7,15 @@ namespace quartz::vm {
 using ir::TypeId;
 using ir::TypeKind;
 
-bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyState) {
+bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level) {
     const ir::TypeTable& types = program_->module->types;
     const Layouts& lay = *program_->layouts;
     const ir::TypeInfo& info = types.info(type);
     switch (info.kind) {
     case TypeKind::Str: {
         const auto* s = static_cast<const Str*>(src->p);
-        if (s == nullptr || s->owner == Owner::Static || (onlyState && s->owner != Owner::State)) {
+        if (s == nullptr || s->owner == Owner::Static || (mode == Copy::StateOnly && s->owner != Owner::State) ||
+            (mode == Copy::NewerThan && (s->owner != Owner::Arena || s->level <= level))) {
             dst->p = src->p;
             return true;
         }
@@ -33,12 +34,16 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyStat
             dst->p = nullptr;
             return true;
         }
-        if (onlyState && l->owner != Owner::State) {
+        if (mode == Copy::NewerThan && (l->owner != Owner::Arena || l->level <= level)) {
+            dst->p = l;
+            return true;
+        }
+        if (mode == Copy::StateOnly && l->owner != Owner::State) {
             dst->p = l;
             if (l->elemHasRefs) {
                 for (std::uint32_t i = 0; i < l->len; ++i) {
                     Slot* e = l->data + static_cast<std::size_t>(i) * l->elemSlots;
-                    if (!copyToArena(l->elemType, e, e, true)) {
+                    if (!copyToArena(l->elemType, e, e, mode, level)) {
                         return false;
                     }
                 }
@@ -51,7 +56,7 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyStat
         }
         for (std::uint32_t i = 0; i < l->len; ++i) {
             std::size_t off = static_cast<std::size_t>(i) * l->elemSlots;
-            if (!copyToArena(l->elemType, l->data + off, out->data + off, false)) {
+            if (!copyToArena(l->elemType, l->data + off, out->data + off, mode, level)) {
                 return false;
             }
             out->len = i + 1;
@@ -66,13 +71,17 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyStat
             return true;
         }
         std::uint32_t es = 1u + m->valueSlots;
-        if (onlyState && m->owner != Owner::State) {
+        if (mode == Copy::NewerThan && (m->owner != Owner::Arena || m->level <= level)) {
+            dst->p = m;
+            return true;
+        }
+        if (mode == Copy::StateOnly && m->owner != Owner::State) {
             dst->p = m;
             for (std::uint32_t i = 0; i < m->cap; ++i) {
                 if (m->hashes[i] >= 2) {
                     Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                    if ((m->strKeys && !copyToArena(ir::kStr, e, e, true)) ||
-                        (m->valueHasRefs && !copyToArena(m->valueType, e + 1, e + 1, true))) {
+                    if ((m->strKeys && !copyToArena(ir::kStr, e, e, mode, level)) ||
+                        (m->valueHasRefs && !copyToArena(m->valueType, e + 1, e + 1, mode, level))) {
                         return false;
                     }
                 }
@@ -89,8 +98,9 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyStat
         for (std::uint32_t i = 0; i < m->cap; ++i) {
             if (m->hashes[i] >= 2) {
                 const Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                if (!copyToArena(m->keyType, e, tmp.data(), false) ||
-                    !copyToArena(m->valueType, e + 1, tmp.data() + 1, false) || !mapSet(out, tmp.data(), tmp.data() + 1)) {
+                if (!copyToArena(m->keyType, e, tmp.data(), mode, level) ||
+                    !copyToArena(m->valueType, e + 1, tmp.data() + 1, mode, level) ||
+                    !mapSet(out, tmp.data(), tmp.data() + 1)) {
                     return false;
                 }
             }
@@ -104,17 +114,17 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyStat
                 dst->p = nullptr;
                 return true;
             }
-            return copyToArena(info.elem, src, dst, onlyState);
+            return copyToArena(info.elem, src, dst, mode, level);
         }
         dst[0] = src[0];
-        return src[0].u == 0 || copyToArena(info.elem, src + 1, dst + 1, onlyState);
+        return src[0].u == 0 || copyToArena(info.elem, src + 1, dst + 1, mode, level);
     case TypeKind::Struct:
     case TypeKind::Tuple: {
         std::size_t count = info.kind == TypeKind::Struct ? info.fields.size() : info.elems.size();
         for (std::uint32_t i = 0; i < count; ++i) {
             TypeId ft = info.kind == TypeKind::Struct ? info.fields[i].type : info.elems[i];
             std::uint32_t off = lay.fieldOffset(type, i);
-            if (!copyToArena(ft, src + off, dst + off, onlyState)) {
+            if (!copyToArena(ft, src + off, dst + off, mode, level)) {
                 return false;
             }
         }
@@ -128,7 +138,7 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, bool onlyStat
         }
         std::uint32_t off = 1;
         for (TypeId p : info.variants[tag].payload) {
-            if (!copyToArena(p, src + off, dst + off, onlyState)) {
+            if (!copyToArena(p, src + off, dst + off, mode, level)) {
                 return false;
             }
             off += lay.slots(p);
@@ -147,17 +157,28 @@ std::expected<TaskOutcome, Trap> Sandbox::runTask(std::uint32_t id, const Compil
                                                   std::size_t entryDepth) {
     Task& task = tasks_[id];
     taskMode_ = true;
-    cur_ = task.arena.get();
+    resetRegions(task.arena.get());
+    for (auto& sc : task.scopes) {
+        regions_.push_back(sc.get());
+        scopeArenas_.push_back(std::move(sc));
+    }
+    task.scopes.clear();
+    cur_ = regions_.back();
+    curLevel_ = static_cast<std::uint32_t>(regions_.size() - 1);
     inCall_ = true;
     Status st = execute(fn, pc, R, stack_.data(), entryDepth);
     inCall_ = false;
+    InvocationArena* savedCur = cur_;
+    std::uint32_t savedLevel = curLevel_;
+    cur_ = regions_[0]; // relocated copies must outlive every open scope
+    curLevel_ = 0;
     TaskOutcome out;
     out.task = id;
     if (st == Status::Suspended) {
         // Views into state memory must not outlive this invocation (D27): give the task its own copies.
         auto relocate = [&](const CompiledFunction* f, Slot* base) {
             for (const auto& [off, type] : f->refSlots) {
-                if (!copyToArena(type, base + off, base + off, true)) {
+                if (!copyToArena(type, base + off, base + off, Copy::StateOnly)) {
                     return false;
                 }
             }
@@ -171,8 +192,13 @@ std::expected<TaskOutcome, Trap> Sandbox::runTask(std::uint32_t id, const Compil
             st = Status::Trapped;
         }
     }
+    cur_ = savedCur;
+    curLevel_ = savedLevel;
     taskMode_ = false;
-    cur_ = &arena_;
+    if (st == Status::Suspended) {
+        task.scopes = takeScopes();
+    }
+    resetRegions(&arena_);
     const Program& P = *program_;
     auto fnIndex = [&](const CompiledFunction* f) { return static_cast<std::uint32_t>(f - P.functions.data()); };
     if (st == Status::Suspended) {
@@ -235,10 +261,11 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     Task& task = tasks_[id];
     task.live = true;
     task.arena = std::make_unique<InvocationArena>(quota_);
+    task.scopes.clear();
     const ir::Module& m = *program_->module;
     std::size_t next = 0;
     std::uint32_t slot = 0;
-    cur_ = task.arena.get();
+    resetRegions(task.arena.get());
     trapped_ = false;
     bool ok = true;
     for (ir::TypeId p : fn.params) {
@@ -256,10 +283,10 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
             break;
         }
         stack_[slot] = args[next++];
-        ok = copyToArena(p, &stack_[slot], &stack_[slot], false);
+        ok = copyToArena(p, &stack_[slot], &stack_[slot], Copy::All);
         ++slot;
     }
-    cur_ = &arena_;
+    resetRegions(&arena_);
     if (!ok || next != args.size()) {
         retired_.push_back(std::move(task.arena));
         task.live = false;
@@ -294,7 +321,8 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     if (task.waitDst != 0xFFFF) {
         R[task.waitDst] = value;
         cur_ = task.arena.get();
-        bool ok = copyToArena(task.waitType, &R[task.waitDst], &R[task.waitDst], false);
+        curLevel_ = 0;
+        bool ok = copyToArena(task.waitType, &R[task.waitDst], &R[task.waitDst], Copy::All);
         cur_ = &arena_;
         if (!ok) {
             calls_.resize(entryDepth);
@@ -310,6 +338,10 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
 void Sandbox::cancel(std::uint32_t id) {
     if (id < tasks_.size() && tasks_[id].live) {
         retired_.push_back(std::move(tasks_[id].arena));
+        for (auto& sc : tasks_[id].scopes) {
+            retired_.push_back(std::move(sc));
+        }
+        tasks_[id].scopes.clear();
         tasks_[id].live = false;
         tasks_[id].slots.clear();
         tasks_[id].frames.clear();

@@ -259,7 +259,7 @@ void Checker::checkStmt(Stmt* s) {
         loopDepth_ = savedLoops;
         return;
     }
-    case StmtKind::Scope: diags_.error(s->span, "'scope' is not supported yet"); return;
+    case StmtKind::Scope: checkBlock(static_cast<ScopeStmt*>(s)->body, ir::kError, false); return;
     }
 }
 

@@ -1,0 +1,57 @@
+// expect: kept a0,a1,a2
+// expect: last a2 count 3
+// expect: inner 7
+// expect: lines 3 mem ok
+
+struct Pair {
+    name: str
+    tags: [str]
+}
+
+fn build(n: i64) -> str {
+    var out = ""
+    scope {
+        let tmp = "x{n}"
+        out = tmp + "!"
+    }
+    return out
+}
+
+fn early(n: i64) -> str {
+    scope {
+        let s = "inner {n}"
+        return s
+    }
+    return ""
+}
+
+suspend fn main() -> i64 {
+    var kept: [str] = []
+    var last = ""
+    var pair = Pair("p", [])
+    var i = 0
+    every 1.ticks {
+        let label = "a{i}"
+        kept.push(label)
+        last = label
+        pair.tags.push("t{i}")
+        i += 1
+        if i == 3 {
+            break
+        }
+    }
+    print("kept {kept.join(",")}")
+    print("last {last} count {pair.tags.len()}")
+    print(early(7))
+    var lines = 0
+    for k in 0..3 {
+        scope {
+            let s = build(k)
+            if s.len() == 3 {
+                lines += 1
+            }
+        }
+    }
+    print("lines {lines} mem ok")
+    return 0
+}

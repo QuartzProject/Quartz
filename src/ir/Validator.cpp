@@ -16,19 +16,22 @@ namespace {
 
 struct InitState {
     bool unreachable = false;
+    std::uint32_t scopes = 0; // open `scope` regions on this path
     std::vector<bool> init;
 
-    void meet(const InitState& other) {
+    /// Returns false when two reachable paths disagree on the open scopes.
+    bool meet(const InitState& other) {
         if (other.unreachable) {
-            return;
+            return true;
         }
         if (unreachable) {
             *this = other;
-            return;
+            return true;
         }
         for (std::size_t i = 0; i < init.size(); ++i) {
             init[i] = init[i] && other.init[i];
         }
+        return scopes == other.scopes;
     }
 };
 
@@ -289,8 +292,11 @@ private:
             return fail("branch depth out of range");
         }
         Frame& target = frames_[frames_.size() - 1 - depth];
-        if (target.op != Op::Loop) {
-            target.exits.meet(state_);
+        if (!state_.unreachable && state_.scopes != target.entry.scopes) {
+            return fail("branch leaves a scope open");
+        }
+        if (target.op != Op::Loop && !target.exits.meet(state_)) {
+            return fail("branch leaves a scope open");
         }
         if (!conditional) {
             state_.unreachable = true;
@@ -343,11 +349,18 @@ private:
             }
             Frame f = std::move(frames_.back());
             frames_.pop_back();
-            InitState merged = f.exits;
-            if (f.op == Op::If) {
-                merged.meet(f.sawElse ? f.thenEnd : f.entry);
+            if (!state_.unreachable && state_.scopes != f.entry.scopes) {
+                return fail("block ends with a scope open");
             }
-            merged.meet(state_);
+            InitState merged = f.exits;
+            bool same = true;
+            if (f.op == Op::If) {
+                same = merged.meet(f.sawElse ? f.thenEnd : f.entry);
+            }
+            same = merged.meet(state_) && same;
+            if (!same) {
+                return fail("paths disagree on open scopes");
+            }
             state_ = merged;
             if (state_.unreachable && !f.entry.unreachable && f.op != Op::Loop) {
                 // A block whose every path branched elsewhere is still unreachable after it.
@@ -364,6 +377,9 @@ private:
             }
             return branch(in.imm, true);
         case Op::Return:
+            if (!state_.unreachable && state_.scopes != 0) {
+                return fail("return with a scope open");
+            }
             if (fn_.result == kVoid) {
                 if (in.a != kNoReg) {
                     return fail("void function returns a value");
@@ -617,6 +633,33 @@ private:
                 return fail("enum.tag type mismatch");
             }
             return def(in.dst);
+        case Op::ScopeEnter:
+            if (!state_.unreachable) {
+                ++state_.scopes;
+            }
+            return {};
+        case Op::ScopeExit:
+            if (in.a > in.b || in.b > fn_.regs.size()) {
+                return fail("bad scope register range");
+            }
+            if (!state_.unreachable) {
+                if (state_.scopes == 0) {
+                    return fail("scope exit without scope");
+                }
+                --state_.scopes;
+                for (Reg r = in.a; r < in.b; ++r) {
+                    state_.init[r] = false;
+                }
+            }
+            return {};
+        case Op::Persist:
+            if (auto r = needA(); !r) {
+                return r;
+            }
+            if (in.imm == 0 || (!state_.unreachable && in.imm > state_.scopes)) {
+                return fail("persist beyond the open scopes");
+            }
+            return {};
         case Op::Wait: {
             if (!fn_.isSuspend) {
                 return fail("wait outside a suspend function");

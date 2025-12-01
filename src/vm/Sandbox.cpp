@@ -12,7 +12,7 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
     stack_ = std::span<Slot>(stackMem_.get(), limits_.stackSlots);
     bindings_.resize(program_->module->imports.size());
     calls_.reserve(limits_.maxDepth + 1);
-    cur_ = &arena_;
+    resetRegions(&arena_);
 }
 
 Sandbox::~Sandbox() {
@@ -88,6 +88,7 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     }
     const CompiledFunction& fn = program_->functions[function];
     const ir::Module& m = *program_->module;
+    resetRegions(&arena_);
     arena_.reset();
     hostArena_ ^= 1;
     hostArenas_[hostArena_ ^ 1].reset();

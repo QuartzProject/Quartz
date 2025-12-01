@@ -115,8 +115,8 @@ int main(int argc, char** argv) {
         return 3;
     }
     if (ticks > 0 || yields > 0) {
-        std::fprintf(stderr, "[%llu ticks waited, %llu fuel yields]\n", static_cast<unsigned long long>(ticks),
-                     static_cast<unsigned long long>(yields));
+        std::fprintf(stderr, "[%llu ticks waited, %llu fuel yields, %zu bytes in use]\n",
+                     static_cast<unsigned long long>(ticks), static_cast<unsigned long long>(yields), sb.memoryUsed());
     }
     auto r = std::expected<quartz::vm::Slot, quartz::vm::Trap>(t->value);
     const auto& f = out.program->functions[fn];

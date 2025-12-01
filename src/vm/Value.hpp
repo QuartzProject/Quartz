@@ -24,6 +24,7 @@ struct Str {
     std::uint32_t len;
     std::uint32_t hash;
     Owner owner;
+    std::uint8_t level; // arena region (`scope` nesting) it lives in
     char data[1];
 
     [[nodiscard]] std::string_view view() const { return {data, len}; }
@@ -39,6 +40,7 @@ struct List {
     std::uint16_t elemSlots;
     bool elemHasRefs;
     Owner owner;
+    std::uint16_t level;
 };
 
 struct Map {
@@ -54,6 +56,7 @@ struct Map {
     bool valueHasRefs;
     bool valuePtrNullable; // Map.get returns a single pointer slot instead of flag plus payload
     Owner owner;
+    std::uint16_t level;
 };
 
 inline std::uint32_t hashBytes(std::string_view s) {

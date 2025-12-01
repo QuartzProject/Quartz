@@ -23,6 +23,8 @@ public:
     Reg lowerBlockValue(BlockExpr* block, TypeId want);
     void lowerStmt(Stmt* s);
     void lowerLet(LetStmt* s);
+    void lowerScoped(BlockExpr* body);
+    sema::Local* rootLocal(Expr* target);
     void lowerAssign(AssignStmt* s);
     void assignPlace(Expr* target, Reg value);
     void lowerWhile(WhileStmt* s);
@@ -72,7 +74,18 @@ public:
     struct LoopTarget {
         std::size_t breakFrame;
         std::size_t continueFrame;
+        std::size_t scopes; // open `scope`s when the loop started
     };
+    struct OpenScope {
+        Reg firstReg;
+        std::vector<std::size_t> exits; // ScopeExit instructions whose register range ends at the scope's end
+    };
+    std::vector<OpenScope> scopes_;
+    Reg retReg_ = kNoReg; // created before any scope so a return value survives the scope exits
+    void enterScope();
+    void exitScope();
+    void exitScopesTo(std::size_t depth);
+    Reg persistTo(Reg value, TypeId type, std::size_t depth);
     std::vector<LoopTarget> loops_;
     std::map<std::tuple<int, std::uint64_t, TypeId, std::string>, std::uint32_t> constIndex_;
 };

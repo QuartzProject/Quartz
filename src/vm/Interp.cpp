@@ -710,6 +710,17 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             CASE(Cos) RA.f = std::cos(RB.f);
             NEXT();
             CASE(Panic) TRAP(ir::TrapCode::Panic, std::string(STR(RA)->view()));
+            CASE(ScopeIn) CHECK(scopeIn());
+            NEXT();
+            CASE(ScopeOut) scopeOut();
+            NEXT();
+            CASE(Zero) std::memset(&RA, 0, ins.c * sizeof(Slot));
+            NEXT();
+            CASE(Persist) {
+                ir::TypeId t = WORD();
+                CHECK(curLevel_ < ins.c || promoteInto(t, &RA, curLevel_ - ins.c));
+                NEXT();
+            }
             CASE(Wait) {
                 ir::TypeId t = WORD();
                 if (!taskMode_) {

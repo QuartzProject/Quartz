@@ -58,6 +58,7 @@ public:
             out.params.push_back(fn_.regs[p]);
         }
         regSlots_ = next;
+        origOffset_ = offset_;
         analyze();
         for (pc_ = 0; pc_ < fn_.code.size(); ++pc_) {
             if (skip_ > 0) {
@@ -112,6 +113,15 @@ private:
         uses_.assign(fn_.regs.size(), 0);
         hoisted_.assign(fn_.regs.size(), false);
         for (const Inst& in : fn_.code) {
+            if (in.op == Op::ScopeExit) {
+                // Clearing counts as a write, so nothing outside the scope may alias these registers.
+                for (Reg r = in.a; r < in.b; ++r) {
+                    if (prog_.module->types.hasRefs(fn_.regs[r])) {
+                        ++defs_[r];
+                    }
+                }
+                continue;
+            }
             if (in.dst != ir::kNoReg) {
                 ++defs_[in.dst];
             }
@@ -760,6 +770,21 @@ private:
             return;
         }
         case Op::EnumTag: move(s(in.dst), s(in.a), 1); return;
+        case Op::ScopeEnter: put(Opc::ScopeIn); return;
+        case Op::ScopeExit: {
+            put(Opc::ScopeOut);
+            // Registers written inside the scope may point into the region just freed.
+            for (Reg r = in.a; r < in.b; ++r) {
+                if (types.hasRefs(ty(r)) && !hoisted_[r] && offset_[r] == origOffset_[r]) {
+                    put(Opc::Zero, offset_[r], 0, n(r));
+                }
+            }
+            return;
+        }
+        case Op::Persist:
+            put(Opc::Persist, s(in.a), 0, in.imm);
+            word(ty(in.a));
+            return;
         case Op::Wait:
             put(Opc::Wait, s(in.a), in.dst == ir::kNoReg ? 0xFFFF : s(in.dst), in.imm);
             word(in.dst == ir::kNoReg ? ir::kVoid : ty(in.dst));
@@ -789,6 +814,7 @@ private:
     std::uint32_t line_ = 0;
     bool tooBig_ = false;
     bool tooFar_ = false;
+    std::vector<std::uint32_t> origOffset_;
     std::vector<std::uint32_t> defs_;
     std::vector<std::uint32_t> uses_;
     std::vector<bool> hoisted_;

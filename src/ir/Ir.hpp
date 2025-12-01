@@ -60,6 +60,9 @@ enum class Op : std::uint8_t {
     EnumTag,    // dst i64, a enum
     EnumField,  // dst, a enum, imm = variant, b = payload index
     Wait,       // dst (optional, value given on resume), a = awaited handle, imm = WaitKind; suspend functions only
+    ScopeEnter, // opens an arena region
+    ScopeExit,  // closes the innermost region; registers [a, b) are cleared and count as unwritten after it
+    Persist,    // a = value: copies what it references from inner regions into the region imm levels out
 };
 
 enum class WaitKind : std::uint8_t { Wait, AtEnter, AtLeave, Yield };

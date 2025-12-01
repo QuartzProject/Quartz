@@ -98,6 +98,9 @@ public:
     bool storeState(ir::TypeId type, const Slot* src, Slot* dst);
     void releaseState(ir::TypeId type, Slot* slots);
 
+    bool scopeIn();
+    void scopeOut();
+
     // Interp.cpp
     enum class Status : std::uint8_t { Done, Trapped, Suspended };
     bool run(std::uint32_t function, Slot* base);
@@ -123,12 +126,18 @@ private:
         std::uint32_t function = 0;     // innermost frame
         std::uint32_t pc = 0;
         std::uint32_t base = 0;
+        std::vector<std::unique_ptr<InvocationArena>> scopes; // regions of `scope`s open at the suspension
         std::uint16_t waitDst = 0xFFFF;
         ir::TypeId waitType = ir::kVoid;
     };
     std::expected<TaskOutcome, Trap> runTask(std::uint32_t id, const CompiledFunction* fn, const Ins* pc, Slot* R,
                                              std::size_t entryDepth);
-    bool copyToArena(ir::TypeId type, const Slot* src, Slot* dst, bool onlyState);
+    enum class Copy : std::uint8_t { All, StateOnly, NewerThan };
+    bool copyToArena(ir::TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level = 0);
+    bool promoteInto(ir::TypeId type, Slot* slot, std::uint32_t level);
+    void resetRegions(InvocationArena* base);
+    std::vector<std::unique_ptr<InvocationArena>> takeScopes();
+    InvocationArena* regionFor(Owner owner, std::uint32_t level);
     bool copyIntoState(ir::TypeId type, const Slot* src, Slot* dst);
     bool growList(List* l, std::uint32_t need);
     bool growMap(Map* m);
@@ -149,6 +158,10 @@ private:
     std::vector<Task> tasks_;
     std::vector<std::unique_ptr<InvocationArena>> retired_;
     InvocationArena* cur_ = nullptr; // where arena values go: the invocation arena or the running task's
+    std::uint32_t curLevel_ = 0;
+    std::vector<InvocationArena*> regions_;                     // level 0 is the invocation or task arena
+    std::vector<std::unique_ptr<InvocationArena>> scopeArenas_; // owners of levels 1..
+    std::vector<std::unique_ptr<InvocationArena>> spare_;
     bool taskMode_ = false;
     // Set by the interpreter when a task suspends.
     const CompiledFunction* suspendFn_ = nullptr;

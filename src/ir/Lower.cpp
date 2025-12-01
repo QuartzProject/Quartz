@@ -217,10 +217,13 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     out.result = fn->result;
     out.isSuspend = fn->isSuspend;
     out.exported = fn->owner == kError;
+    scopes_.clear();
     for (sema::Local* l : fn->paramLocals) {
         l->reg = newReg(l->type);
+        l->scopeDepth = 0;
     }
     out.paramCount = static_cast<std::uint32_t>(out.regs.size());
+    retReg_ = fn->result != kVoid ? newReg(fn->result) : kNoReg;
     setLine(fn->decl->span);
     lowerBlockStmts(fn->decl->body);
     if (fn->result == kVoid) {
@@ -274,11 +277,24 @@ void Lowerer::lowerStmt(Stmt* s) {
     case StmtKind::Return: {
         auto* r = static_cast<ReturnStmt*>(s);
         Reg v = r->value != nullptr ? lowerExpr(r->value, fn_->result) : kNoReg;
+        if (!scopes_.empty() && v != kNoReg) {
+            persistTo(v, fn_->result, 0);
+            emit(Op::Move, retReg_, v);
+            v = retReg_;
+        }
+        exitScopesTo(0);
         emit(Op::Return, kNoReg, v);
         return;
     }
-    case StmtKind::Break: br(loops_.back().breakFrame); return;
-    case StmtKind::Continue: br(loops_.back().continueFrame); return;
+    case StmtKind::Break:
+        exitScopesTo(loops_.back().scopes);
+        br(loops_.back().breakFrame);
+        return;
+    case StmtKind::Continue:
+        exitScopesTo(loops_.back().scopes);
+        br(loops_.back().continueFrame);
+        return;
+    case StmtKind::Scope: lowerScoped(static_cast<ScopeStmt*>(s)->body); return;
     case StmtKind::Every: {
         auto* ev = static_cast<EveryStmt*>(s);
         std::size_t exit = depth_;
@@ -291,8 +307,8 @@ void Lowerer::lowerStmt(Stmt* s) {
         TypeId produced = ev->interval->type;
         (void)produced;
         emit(Op::Wait, kNoReg, v, kNoReg, static_cast<std::uint32_t>(WaitKind::Wait));
-        loops_.push_back({exit, cont});
-        lowerBlockStmts(ev->body);
+        loops_.push_back({exit, cont, scopes_.size()});
+        lowerScoped(ev->body);
         loops_.pop_back();
         close();
         br(loop);
@@ -308,13 +324,69 @@ void Lowerer::lowerStmt(Stmt* s) {
         emit(Op::Wait, kNoReg, ctx, kNoReg, static_cast<std::uint32_t>(WaitKind::AtLeave));
         return;
     }
-    case StmtKind::Scope: return;
+
+    }
+}
+
+void Lowerer::enterScope() {
+    emit(Op::ScopeEnter);
+    scopes_.push_back({static_cast<Reg>(fn_->regs.size()), {}});
+}
+
+void Lowerer::exitScope() {
+    OpenScope sc = std::move(scopes_.back());
+    scopes_.pop_back();
+    auto end = static_cast<Reg>(fn_->regs.size());
+    Inst& in = emit(Op::ScopeExit, kNoReg, sc.firstReg, end);
+    (void)in;
+    for (std::size_t at : sc.exits) {
+        fn_->code[at].b = end;
+    }
+}
+
+void Lowerer::exitScopesTo(std::size_t depth) {
+    for (std::size_t i = scopes_.size(); i > depth; --i) {
+        scopes_[i - 1].exits.push_back(fn_->code.size());
+        emit(Op::ScopeExit, kNoReg, scopes_[i - 1].firstReg, scopes_[i - 1].firstReg);
+    }
+}
+
+Reg Lowerer::persistTo(Reg value, TypeId type, std::size_t depth) {
+    if (value == kNoReg || scopes_.size() <= depth || !types_->hasRefs(type)) {
+        return value;
+    }
+    emit(Op::Persist, kNoReg, value, kNoReg, static_cast<std::uint32_t>(scopes_.size() - depth));
+    return value;
+}
+
+void Lowerer::lowerScoped(BlockExpr* body) {
+    enterScope();
+    lowerBlockStmts(body);
+    exitScope();
+}
+
+sema::Local* Lowerer::rootLocal(Expr* target) {
+    while (true) {
+        if (target->kind == ExprKind::Ident) {
+            auto* id = static_cast<IdentExpr*>(target);
+            return id->ref == IdentRef::Local ? id->local : nullptr;
+        }
+        if (target->kind == ExprKind::SelfRef) {
+            return static_cast<SelfExpr*>(target)->local;
+        }
+        if (target->kind == ExprKind::Member && types_->kind(static_cast<MemberExpr*>(target)->object->type) !=
+                                                    TypeKind::State) {
+            target = static_cast<MemberExpr*>(target)->object;
+            continue;
+        }
+        return nullptr;
     }
 }
 
 void Lowerer::lowerLet(LetStmt* s) {
     sema::Local* l = s->local;
     Reg v = s->init != nullptr ? lowerExpr(s->init, l->type) : zeroValue(l->type, s->span);
+    l->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
     l->reg = newReg(l->type);
     emit(Op::Move, l->reg, v);
 }
@@ -356,6 +428,9 @@ void Lowerer::lowerAssign(AssignStmt* s) {
     TypeId tt = s->target->type;
     if (s->op == AssignOp::Set) {
         Reg v = lowerExpr(s->value, tt);
+        if (sema::Local* root = rootLocal(s->target)) {
+            persistTo(v, tt, root->scopeDepth);
+        }
         assignPlace(s->target, v);
         return;
     }
@@ -409,7 +484,7 @@ void Lowerer::lowerWhile(WhileStmt* s) {
     open(Op::Loop);
     std::size_t cont = depth_;
     open(Op::Block);
-    loops_.push_back({exit, cont});
+    loops_.push_back({exit, cont, scopes_.size()});
     lowerBlockStmts(s->body);
     loops_.pop_back();
     close();
@@ -428,6 +503,7 @@ void Lowerer::lowerFor(ForStmt* s) {
         Reg hi = lowerExpr(r->hi, t);
         Reg i = newReg(t);
         s->local->reg = i;
+        s->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
         emit(Op::Move, i, lo);
         Reg one = constInt(1, t);
         open(Op::Block);
@@ -438,7 +514,7 @@ void Lowerer::lowerFor(ForStmt* s) {
         open(Op::Loop);
         std::size_t cont = depth_;
         open(Op::Block);
-        loops_.push_back({exit, cont});
+        loops_.push_back({exit, cont, scopes_.size()});
         lowerBlockStmts(s->body);
         loops_.pop_back();
         close();
@@ -476,6 +552,7 @@ void Lowerer::lowerFor(ForStmt* s) {
     open(Op::Loop);
     Reg x = newReg(elem);
     s->local->reg = x;
+    s->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
     emitArgs(Op::Intrinsic, x, static_cast<std::uint32_t>(Intrinsic::ListGet), {list, idx});
     if (s->indexLocal != nullptr) {
         s->indexLocal->reg = newReg(kI64);
@@ -483,7 +560,7 @@ void Lowerer::lowerFor(ForStmt* s) {
     }
     std::size_t cont = depth_;
     open(Op::Block);
-    loops_.push_back({exit, cont});
+    loops_.push_back({exit, cont, scopes_.size()});
     lowerBlockStmts(s->body);
     loops_.pop_back();
     close();

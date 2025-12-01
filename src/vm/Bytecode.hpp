@@ -76,7 +76,10 @@ namespace quartz::vm {
     X(StrFromI) X(StrFromU) X(StrFromF) X(StrFromB) X(StrFromC)                                                        \
     X(Sqrt) X(Floor) X(Ceil) X(AbsF) X(AbsI) X(MinI) X(MaxI) X(MinF) X(MaxF) X(Pow) X(Sin) X(Cos)                       \
     X(Panic)                                                                                                           \
-    X(Wait)      /* suspend the task on handle a; resume value goes to b unless 0xFFFF; c = kind; type in next word */
+    X(Wait)      /* suspend the task on handle a; resume value goes to b unless 0xFFFF; c = kind; type in next word */ \
+    X(ScopeIn) X(ScopeOut)                                                                                             \
+    X(Zero)      /* slots a..a+c = 0 */                                                                                \
+    X(Persist)   /* copy what slot a references out of inner regions, c levels up; type in next word */
 
 enum class Opc : std::uint8_t {
 #define QUARTZ_OPC_ENUM(name) name,

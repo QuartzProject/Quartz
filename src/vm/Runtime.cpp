@@ -39,6 +39,72 @@ bool Sandbox::fail(ir::TrapCode code, std::string message) {
     return false;
 }
 
+InvocationArena* Sandbox::regionFor(Owner owner, std::uint32_t level) {
+    (void)owner;
+    return level < regions_.size() ? regions_[level] : cur_;
+}
+
+void Sandbox::resetRegions(InvocationArena* base) {
+    for (auto& a : scopeArenas_) {
+        a->reset();
+        spare_.push_back(std::move(a));
+    }
+    scopeArenas_.clear();
+    regions_.assign(1, base);
+    cur_ = base;
+    curLevel_ = 0;
+}
+
+std::vector<std::unique_ptr<InvocationArena>> Sandbox::takeScopes() {
+    std::vector<std::unique_ptr<InvocationArena>> out = std::move(scopeArenas_);
+    scopeArenas_.clear();
+    return out;
+}
+
+bool Sandbox::scopeIn() {
+    if (regions_.size() >= 250) {
+        return fail(ir::TrapCode::StackOverflow, "too many nested scopes");
+    }
+    std::unique_ptr<InvocationArena> a;
+    if (!spare_.empty()) {
+        a = std::move(spare_.back());
+        spare_.pop_back();
+    } else {
+        a = std::make_unique<InvocationArena>(quota_);
+    }
+    regions_.push_back(a.get());
+    scopeArenas_.push_back(std::move(a));
+    cur_ = regions_.back();
+    curLevel_ = static_cast<std::uint32_t>(regions_.size() - 1);
+    return true;
+}
+
+void Sandbox::scopeOut() {
+    if (scopeArenas_.empty()) {
+        return;
+    }
+    scopeArenas_.back()->reset();
+    spare_.push_back(std::move(scopeArenas_.back()));
+    scopeArenas_.pop_back();
+    regions_.pop_back();
+    cur_ = regions_.back();
+    curLevel_ = static_cast<std::uint32_t>(regions_.size() - 1);
+}
+
+bool Sandbox::promoteInto(TypeId type, Slot* slot, std::uint32_t level) {
+    if (level >= curLevel_) {
+        return true;
+    }
+    InvocationArena* savedCur = cur_;
+    std::uint32_t savedLevel = curLevel_;
+    cur_ = regions_[level];
+    curLevel_ = level;
+    bool ok = copyToArena(type, slot, slot, Copy::NewerThan, level);
+    cur_ = savedCur;
+    curLevel_ = savedLevel;
+    return ok;
+}
+
 void* Sandbox::allocFor(Owner owner, std::size_t bytes) {
     void* p = owner == Owner::State ? heap_.allocate(bytes) : cur_->allocate(bytes);
     if (p == nullptr) {
@@ -60,6 +126,7 @@ Str* Sandbox::allocStr(std::size_t len) {
     s->len = static_cast<std::uint32_t>(len);
     s->hash = 0;
     s->owner = Owner::Arena;
+    s->level = static_cast<std::uint8_t>(curLevel_);
     s->data[len] = '\0';
     return s;
 }
@@ -73,6 +140,7 @@ Str* Sandbox::newStr(std::string_view text) {
         h->len = static_cast<std::uint32_t>(text.size());
         h->hash = 0;
         h->owner = Owner::Arena;
+        h->level = 0;
         std::memcpy(h->data, text.data(), text.size());
         h->data[text.size()] = '\0';
         return h;
@@ -190,6 +258,7 @@ List* Sandbox::newList(TypeId elem) {
     l->elemSlots = static_cast<std::uint16_t>(program_->layouts->slots(elem));
     l->elemHasRefs = program_->module->types.hasRefs(elem);
     l->owner = Owner::Arena;
+    l->level = static_cast<std::uint16_t>(curLevel_);
     return l;
 }
 
@@ -199,7 +268,12 @@ bool Sandbox::growList(List* l, std::uint32_t need) {
     if (cap * l->elemSlots > (1ULL << 28)) {
         return fail(ir::TrapCode::OutOfMemory, "list too large");
     }
-    auto* data = static_cast<Slot*>(allocFor(l->owner, cap * l->elemSlots * sizeof(Slot)));
+    auto* data = static_cast<Slot*>(l->owner == Owner::State
+                                        ? allocFor(l->owner, cap * l->elemSlots * sizeof(Slot))
+                                        : regionFor(l->owner, l->level)->allocate(cap * l->elemSlots * sizeof(Slot)));
+    if (data == nullptr && l->owner != Owner::State) {
+        return fail(ir::TrapCode::OutOfMemory);
+    }
     if (data == nullptr) {
         return false;
     }
@@ -246,6 +320,10 @@ bool Sandbox::listPush(List* l, const Slot* value) {
         }
     } else {
         std::memcpy(dst, value, l->elemSlots * sizeof(Slot));
+        if (l->elemHasRefs && l->level < curLevel_ && l->owner == Owner::Arena &&
+            !promoteInto(l->elemType, dst, l->level)) {
+            return false;
+        }
     }
     ++l->len;
     return true;
@@ -260,6 +338,9 @@ bool Sandbox::listSet(List* l, std::int64_t index, const Slot* value) {
         return storeState(l->elemType, value, dst);
     }
     std::memcpy(dst, value, l->elemSlots * sizeof(Slot));
+    if (l->elemHasRefs && l->level < curLevel_ && l->owner == Owner::Arena) {
+        return promoteInto(l->elemType, dst, l->level);
+    }
     return true;
 }
 
@@ -330,6 +411,7 @@ Map* Sandbox::newMap(TypeId mapType) {
     m->valuePtrNullable = program_->module->types.isRefKind(info.elem) ||
                           program_->module->types.kind(info.elem) == TypeKind::Handle;
     m->owner = Owner::Arena;
+    m->level = static_cast<std::uint16_t>(curLevel_);
     return m;
 }
 
@@ -371,8 +453,14 @@ bool Sandbox::growMap(Map* m) {
         return fail(ir::TrapCode::OutOfMemory, "map too large");
     }
     std::uint32_t es = 1u + m->valueSlots;
+    InvocationArena* region = regionFor(m->owner, m->level);
+    InvocationArena* savedCur = cur_;
+    if (m->owner == Owner::Arena) {
+        cur_ = region;
+    }
     auto* hashes = static_cast<std::uint64_t*>(allocFor(m->owner, sizeof(std::uint64_t) * cap));
     auto* entries = static_cast<Slot*>(allocFor(m->owner, sizeof(Slot) * es * cap));
+    cur_ = savedCur;
     if (hashes == nullptr || entries == nullptr) {
         return false;
     }
@@ -403,12 +491,13 @@ bool Sandbox::growMap(Map* m) {
 
 bool Sandbox::mapSet(Map* m, const Slot* key, const Slot* value) {
     bool state = m->owner == Owner::State;
+    bool promote = !state && m->owner == Owner::Arena && m->level < curLevel_;
     if (Slot* e = mapFind(m, key)) {
         if (state && m->valueHasRefs) {
             return storeState(m->valueType, value, e + 1);
         }
         std::memcpy(e + 1, value, m->valueSlots * sizeof(Slot));
-        return true;
+        return !(promote && m->valueHasRefs) || promoteInto(m->valueType, e + 1, m->level);
     }
     if ((static_cast<std::uint64_t>(m->used) + 1) * 4 > static_cast<std::uint64_t>(m->cap) * 3 && !growMap(m)) {
         return false;
@@ -436,6 +525,10 @@ bool Sandbox::mapSet(Map* m, const Slot* key, const Slot* value) {
         }
     } else {
         std::memcpy(e + 1, value, m->valueSlots * sizeof(Slot));
+    }
+    if (promote && ((m->strKeys && !promoteInto(ir::kStr, e, m->level)) ||
+                    (m->valueHasRefs && !promoteInto(m->valueType, e + 1, m->level)))) {
+        return false;
     }
     m->hashes[i] = h;
     ++m->count;

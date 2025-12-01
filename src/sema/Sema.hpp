@@ -22,6 +22,7 @@ struct Local {
     bool stateView = false; // holds a value read from a state
     Span span;
     std::uint32_t reg = ~0U; // assigned by lowering
+    std::uint32_t scopeDepth = 0; // `scope` nesting where it was declared, set by lowering
 };
 
 struct AnnotationInfo {
