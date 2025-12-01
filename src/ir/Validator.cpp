@@ -91,7 +91,7 @@ private:
         if (t == kVoid) {
             return allowVoid;
         }
-        return t != kError && t != kNull && t != kNever;
+        return t != kError && t != kNull && t != kNever && !t_.hasParams(t) && !t_.isGenericBase(t);
     }
 
     bool reg(Reg r) const { return r < fn_.regs.size(); }
@@ -737,7 +737,8 @@ std::expected<void, ValidationError> validateTypes(const TypeTable& t) {
             }
             break;
         case TypeKind::Fn:
-        case TypeKind::Handle: break;
+        case TypeKind::Handle:
+        case TypeKind::Param: break;
         default: good = false; break;
         }
         if (info.kind == TypeKind::Nullable && t.kind(info.elem) == TypeKind::Nullable) {

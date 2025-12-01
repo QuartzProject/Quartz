@@ -150,13 +150,34 @@ bool Checker::bindArgs(CallExpr* call, const std::vector<TypeId>& params, const 
 }
 
 TypeId Checker::finishCall(CallExpr* call, FnInfo* fn, Expr* receiver) {
-    call->fn = fn;
-    call->receiver = receiver;
-    call->callKind = fn->isHost ? CallKind::Host : CallKind::Function;
     if (fn->isSuspend && (currentFn_ == nullptr || !currentFn_->isSuspend)) {
         diags_.error(call->span, std::format("suspend function '{}' can only be called from a suspend function",
                                              fn->name));
     }
+    if (fn->generic()) {
+        ir::TypeSubst bindings;
+        if (receiver != nullptr && fn->hasSelf) {
+            unify(fn->owner, receiver->type, bindings);
+        }
+        std::span<TypeExpr*> explicitArgs;
+        if (call->callee->kind == ExprKind::Ident) {
+            explicitArgs = static_cast<IdentExpr*>(call->callee)->typeArgs;
+        }
+        std::size_t own = fn->typeParams.size() - (fn->decl != nullptr ? fn->decl->typeParams.size() : 0);
+        if (!explicitArgs.empty()) {
+            if (explicitArgs.size() != fn->decl->typeParams.size()) {
+                diags_.error(call->span, std::format("'{}' takes {} type argument(s)", fn->name,
+                                                     fn->decl->typeParams.size()));
+            }
+            for (std::size_t i = 0; i < explicitArgs.size() && own + i < fn->typeParams.size(); ++i) {
+                bindings.emplace_back(fn->typeParams[own + i], resolveType(explicitArgs[i]));
+            }
+        }
+        return finishGenericCall(call, fn, receiver, std::move(bindings));
+    }
+    call->fn = fn;
+    call->receiver = receiver;
+    call->callKind = fn->isHost ? CallKind::Host : CallKind::Function;
     bindArgs(call, fn->params, fn->paramNames, fn->defaults, receiver != nullptr ? 1 : 0);
     return fn->result;
 }
@@ -174,7 +195,7 @@ TypeId Checker::checkConstruct(CallExpr* call, TypeId type) {
     std::vector<TypeId> params;
     std::vector<Symbol> names;
     std::vector<Expr*> defaults;
-    StructDecl* decl = prog_->structDecls[type];
+    StructDecl* decl = structDeclOf(type);
     for (std::size_t i = 0; i < info.fields.size(); ++i) {
         params.push_back(info.fields[i].type);
         names.push_back(decl->fields[i].name);
@@ -321,7 +342,13 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
                     if (info.variants[v].name == str(callee->name)) {
                         call->callKind = CallKind::Variant;
                         call->variant = v;
-                        std::vector<TypeId> payload = info.variants[v].payload;
+                        if (types_->isGenericBase(et)) {
+                            et = inferInstance(et, info.variants[v].payload, call->args, expected, call->span);
+                            if (et == ir::kError) {
+                                return et;
+                            }
+                        }
+                        std::vector<TypeId> payload = types_->info(et).variants[v].payload;
                         bindArgs(call, payload, {}, {}, 0);
                         return et;
                     }
@@ -338,6 +365,19 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
             check(a.value, ir::kError);
         }
         return ir::kError;
+    }
+    if (types_->kind(recv) == ir::TypeKind::Param) {
+        return checkTraitCall(call, callee, recv);
+    }
+    if (types_->info(recv).genericBase != 0 && !methods_.contains({recv, callee->name.id})) {
+        auto git = genericMethods_.find({types_->info(recv).genericBase, callee->name.id});
+        if (git != genericMethods_.end()) {
+            if (!git->second->hasSelf) {
+                diags_.error(callee->span, std::format("'{}' is not a method", git->second->name));
+                return ir::kError;
+            }
+            return finishCall(call, git->second, callee->object);
+        }
     }
     if (callee->safe) {
         diags_.error(callee->span, "'?.' method calls are not supported yet; use 'if let'");
@@ -404,6 +444,30 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
         TypeId tt = lookupTypeName(id->name, id->span, false);
         if (tt != ir::kError) {
             id->ref = IdentRef::Type;
+            if (types_->isGenericBase(tt)) {
+                const ir::TypeInfo& base = types_->info(tt);
+                if (!id->typeArgs.empty()) {
+                    std::vector<TypeId> args;
+                    for (TypeExpr* a : id->typeArgs) {
+                        args.push_back(resolveType(a));
+                    }
+                    if (args.size() != base.typeParams.size()) {
+                        diags_.error(id->span, std::format("'{}' takes {} type argument(s)", base.name,
+                                                           base.typeParams.size()));
+                        return ir::kError;
+                    }
+                    tt = types_->instantiate(tt, args);
+                } else {
+                    std::vector<TypeId> fields;
+                    for (const ir::Field& f : base.fields) {
+                        fields.push_back(f.type);
+                    }
+                    tt = inferInstance(tt, fields, e->args, expected, e->span);
+                    if (tt == ir::kError) {
+                        return tt;
+                    }
+                }
+            }
             return checkConstruct(e, tt);
         }
         diags_.error(id->span, std::format("unknown function '{}'", str(id->name)));
@@ -417,11 +481,23 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
 }
 
 TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
-    (void)expected;
     if (e->object->kind == ExprKind::Ident && !e->safe) {
         auto* id = static_cast<IdentExpr*>(e->object);
         if (findLocal(id->name) == nullptr && !globals_.contains(id->name)) {
             TypeId et = lookupTypeName(id->name, id->span, false);
+            if (et != ir::kError && types_->isGenericBase(et) && types_->kind(et) == ir::TypeKind::Enum) {
+                TypeId want = expected;
+                if (want != ir::kError && types_->kind(want) == ir::TypeKind::Nullable) {
+                    want = types_->info(want).elem;
+                }
+                if (want != ir::kError && types_->info(want).genericBase == et) {
+                    et = want;
+                } else {
+                    diags_.error(e->span, std::format("cannot infer the type arguments of '{}'; annotate the type",
+                                                      types_->info(et).name));
+                    return ir::kError;
+                }
+            }
             if (et != ir::kError) {
                 const ir::TypeInfo& info = types_->info(et);
                 if (info.kind == ir::TypeKind::Enum) {

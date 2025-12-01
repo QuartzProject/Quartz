@@ -112,6 +112,17 @@ void Checker::checkAttributes(FnInfo* fn) {
 
 void Checker::checkFunction(FnInfo* fn) {
     checkAttributes(fn);
+    typeScopes_.emplace_back();
+    for (std::size_t i = 0; i < fn->typeParams.size(); ++i) {
+        typeScopes_.back()[fn->typeParamNames[i]] = fn->typeParams[i];
+    }
+    struct PopScope {
+        std::vector<std::unordered_map<Symbol, TypeId>>& s;
+        ~PopScope() { s.pop_back(); }
+    } pop{typeScopes_};
+    if (fn->generic() && !fn->decl->attrs.empty() && !fn->annotations.empty()) {
+        diags_.error(fn->decl->span, "generic functions cannot be host handlers");
+    }
     currentFn_ = fn;
     selfType_ = fn->owner;
     loopDepth_ = 0;

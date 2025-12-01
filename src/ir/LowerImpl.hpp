@@ -51,6 +51,15 @@ public:
 
     // emission
     Reg newReg(TypeId t);
+    TypeId T(TypeId t) { return types_->subst(t, subst_); }
+    std::uint32_t allocFunction();
+    std::uint32_t instance(sema::FnInfo* fn, const std::vector<TypeId>& args);
+    Function& function(std::uint32_t index);
+    ir::TypeSubst subst_;
+    std::uint32_t nextFn_ = 0;
+    std::map<std::uint32_t, Function> extra_; // functions created while lowering (stable addresses)
+    std::map<std::pair<sema::FnInfo*, std::vector<TypeId>>, std::uint32_t> instances_;
+    std::vector<std::tuple<sema::FnInfo*, std::vector<TypeId>, std::uint32_t>> work_;
     Inst& emit(Op op, Reg dst = kNoReg, Reg a = kNoReg, Reg b = kNoReg, std::uint32_t imm = 0);
     Inst& emitArgs(Op op, Reg dst, std::uint32_t imm, const std::vector<Reg>& args);
     Reg constInt(std::int64_t v, TypeId t);

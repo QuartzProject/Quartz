@@ -182,6 +182,8 @@ struct CallExpr : Expr {
     std::span<Arg> args;
     CallKind callKind = CallKind::Unresolved;
     sema::FnInfo* fn = nullptr;
+    std::span<std::uint32_t> typeArgs; // generic calls: the callee's type arguments (may contain parameters)
+    bool traitCall = false;            // resolved per instantiation from the receiver's concrete type
     std::uint16_t builtin = 0;  // ir::Intrinsic for CallKind::Builtin
     std::uint32_t variant = 0;  // CallKind::Variant
     Expr* receiver = nullptr; // for methods: the object
@@ -398,6 +400,7 @@ struct Decl {
 struct TypeParam {
     Symbol name;
     Span span;
+    std::span<Symbol> bounds; // `T: Show + Eq`
 };
 
 struct FnDecl : Decl {
@@ -430,10 +433,12 @@ struct Variant {
 };
 
 struct EnumDecl : Decl {
+    std::span<TypeParam> typeParams;
     std::span<Variant> variants;
 };
 
 struct ImplDecl : Decl {
+    std::span<TypeParam> typeParams;
     TypeExpr* target;
     TypeExpr* trait;
     std::span<FnDecl*> methods;

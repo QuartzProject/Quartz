@@ -89,6 +89,150 @@ TypeId TypeTable::result(TypeId ok, TypeId err) {
     return intern(std::move(t), std::format("R{},{}", ok, err));
 }
 
+TypeId TypeTable::param(std::string name) {
+    TypeInfo t;
+    t.kind = TypeKind::Param;
+    t.name = std::move(name);
+    auto id = static_cast<TypeId>(types_.size());
+    types_.push_back(std::move(t));
+    return id;
+}
+
+TypeId TypeTable::instantiate(TypeId base, const std::vector<TypeId>& args) {
+    auto key = std::make_pair(base, args);
+    auto it = instances_.find(key);
+    if (it != instances_.end()) {
+        return it->second;
+    }
+    std::string name = types_[base].name + "<";
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        name += (i ? ", " : "") + this->name(args[i]);
+    }
+    name += ">";
+    TypeInfo t;
+    t.kind = types_[base].kind;
+    t.name = std::move(name);
+    t.genericBase = base;
+    t.typeArgs = args;
+    auto id = static_cast<TypeId>(types_.size());
+    types_.push_back(std::move(t));
+    instances_.emplace(key, id);
+    TypeSubst map;
+    for (std::size_t i = 0; i < args.size() && i < types_[base].typeParams.size(); ++i) {
+        map.emplace_back(types_[base].typeParams[i], args[i]);
+    }
+    std::vector<Field> fields;
+    for (const Field& f : std::vector<Field>(types_[base].fields)) {
+        fields.push_back({f.name, subst(f.type, map)});
+    }
+    std::vector<VariantInfo> variants;
+    for (const VariantInfo& v : std::vector<VariantInfo>(types_[base].variants)) {
+        VariantInfo nv{v.name, {}};
+        for (TypeId p : v.payload) {
+            nv.payload.push_back(subst(p, map));
+        }
+        variants.push_back(std::move(nv));
+    }
+    types_[id].fields = std::move(fields);
+    types_[id].variants = std::move(variants);
+    return id;
+}
+
+void TypeTable::refreshInstances() {
+    for (TypeId id = 0; id < types_.size(); ++id) {
+        if (types_[id].genericBase == 0) {
+            continue;
+        }
+        TypeId base = types_[id].genericBase;
+        std::vector<TypeId> args = types_[id].typeArgs;
+        TypeSubst map;
+        for (std::size_t i = 0; i < args.size() && i < types_[base].typeParams.size(); ++i) {
+            map.emplace_back(types_[base].typeParams[i], args[i]);
+        }
+        std::vector<Field> fields;
+        for (const Field& f : std::vector<Field>(types_[base].fields)) {
+            fields.push_back({f.name, subst(f.type, map)});
+        }
+        std::vector<VariantInfo> variants;
+        for (const VariantInfo& v : std::vector<VariantInfo>(types_[base].variants)) {
+            VariantInfo nv{v.name, {}};
+            for (TypeId p : v.payload) {
+                nv.payload.push_back(subst(p, map));
+            }
+            variants.push_back(std::move(nv));
+        }
+        types_[id].fields = std::move(fields);
+        types_[id].variants = std::move(variants);
+    }
+}
+
+TypeId TypeTable::subst(TypeId t, const TypeSubst& map) {
+    if (map.empty() || !hasParams(t)) {
+        return t;
+    }
+    TypeInfo info = types_[t];
+    switch (info.kind) {
+    case TypeKind::Param:
+        for (const auto& [from, to] : map) {
+            if (from == t) {
+                return to;
+            }
+        }
+        return t;
+    case TypeKind::List: return list(subst(info.elem, map));
+    case TypeKind::Map: return this->map(subst(info.key, map), subst(info.elem, map));
+    case TypeKind::Nullable: return nullable(subst(info.elem, map));
+    case TypeKind::Tuple:
+    case TypeKind::Fn: {
+        std::vector<TypeId> elems;
+        for (TypeId e : info.elems) {
+            elems.push_back(subst(e, map));
+        }
+        return info.kind == TypeKind::Tuple ? tuple(elems) : fn(elems, subst(info.result, map));
+    }
+    default: break;
+    }
+    if (isResult(t)) {
+        return result(subst(info.variants[0].payload[0], map), subst(info.variants[1].payload[0], map));
+    }
+    if (info.genericBase != 0) {
+        std::vector<TypeId> args;
+        for (TypeId a : info.typeArgs) {
+            args.push_back(subst(a, map));
+        }
+        return instantiate(info.genericBase, args);
+    }
+    return t;
+}
+
+bool TypeTable::hasParams(TypeId t) const {
+    const TypeInfo& info = types_[t];
+    switch (info.kind) {
+    case TypeKind::Param: return true;
+    case TypeKind::List:
+    case TypeKind::Nullable: return hasParams(info.elem);
+    case TypeKind::Map: return hasParams(info.key) || hasParams(info.elem);
+    case TypeKind::Tuple:
+    case TypeKind::Fn:
+        for (TypeId e : info.elems) {
+            if (hasParams(e)) {
+                return true;
+            }
+        }
+        return info.kind == TypeKind::Fn && hasParams(info.result);
+    default: break;
+    }
+    if (isResult(t)) {
+        return hasParams(info.variants[0].payload[0]) || hasParams(info.variants[1].payload[0]);
+    }
+    for (TypeId a : info.typeArgs) {
+        if (hasParams(a)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool TypeTable::isResult(TypeId id) const {
     const TypeInfo& t = types_[id];
     return t.kind == TypeKind::Enum && t.variants.size() == 2 && t.variants[0].name == "Ok" &&

@@ -5,6 +5,7 @@
 #include "support/Interner.hpp"
 #include "syntax/Ast.hpp"
 
+#include <map>
 #include <memory>
 #include <span>
 #include <string>
@@ -32,8 +33,15 @@ struct AnnotationInfo {
     Local* whereParam = nullptr;
 };
 
+struct TraitInfo;
+
 struct FnInfo {
     syntax::FnDecl* decl = nullptr;
+    std::vector<TypeId> typeParams;          // impl parameters first, then the function's own
+    std::vector<Symbol> typeParamNames;
+    std::vector<std::vector<TraitInfo*>> bounds; // per type parameter
+    TraitInfo* trait = nullptr;              // set on the abstract methods of a trait declaration
+    [[nodiscard]] bool generic() const { return !typeParams.empty(); }
     std::vector<AnnotationInfo> annotations;
     std::string name;            // `Type.method` for methods
     TypeId owner = ir::kError;   // receiver type for methods
@@ -50,6 +58,12 @@ struct FnInfo {
     Local* selfLocal = nullptr;
 };
 
+struct TraitInfo {
+    std::string name;
+    TypeId self = ir::kError; // the `Self` parameter in method signatures
+    std::vector<FnInfo*> methods;
+};
+
 struct GlobalInfo {
     syntax::ConstDecl* decl = nullptr;
     TypeId type = ir::kError;
@@ -64,7 +78,11 @@ struct Property {
 
 struct Program {
     ir::TypeTable types;
-    std::vector<FnInfo*> functions; // functions with bodies, in index order
+    std::vector<FnInfo*> functions; // non-generic functions with bodies, in index order
+    std::vector<FnInfo*> generics;  // generic functions with bodies, instantiated by lowering
+    /// Methods by receiver: a concrete type, or the generic base of an instance type.
+    std::map<std::pair<TypeId, std::string>, FnInfo*> methodTable;
+    std::vector<std::unique_ptr<TraitInfo>> traitStorage;
     std::vector<FnInfo*> imports;   // host functions and handle getters, in import order
     std::vector<TypeId> states;
     std::unordered_map<TypeId, syntax::StructDecl*> structDecls;

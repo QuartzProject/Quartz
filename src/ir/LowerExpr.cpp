@@ -46,11 +46,11 @@ Reg Lowerer::coerce(Reg r, TypeId from, TypeId to) {
 
 Reg Lowerer::lowerExpr(Expr* e, TypeId want) {
     Reg r = lowerInner(e);
-    if (e->type == kNever) {
+    if (T(e->type) == kNever) {
         TypeId t = want != kError ? want : kI64;
         return newReg(t == kVoid ? kI64 : t);
     }
-    return coerce(r, e->type, want);
+    return coerce(r, T(e->type), want);
 }
 
 Reg Lowerer::toStr(Reg r, TypeId t) {
@@ -89,7 +89,7 @@ Reg Lowerer::lowerInterp(InterpExpr* e) {
             parts.push_back(constStr(e->texts[i]));
         }
         if (i < e->exprs.size()) {
-            parts.push_back(toStr(lowerExpr(e->exprs[i]), e->exprs[i]->type));
+            parts.push_back(toStr(lowerExpr(e->exprs[i]), T(e->exprs[i]->type)));
         }
     }
     if (parts.size() == 1) {
@@ -101,7 +101,7 @@ Reg Lowerer::lowerInterp(InterpExpr* e) {
 }
 
 Reg Lowerer::lowerBinary(BinaryExpr* e) {
-    TypeId t = e->type;
+    TypeId t = T(e->type);
     if (e->op == BinaryOp::And || e->op == BinaryOp::Or) {
         Reg res = newReg(kBool);
         Reg l = lowerExpr(e->lhs, kBool);
@@ -123,7 +123,7 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
         emit(Op::IsNull, isNull, l);
         open(Op::If, isNull);
         Reg r = lowerExpr(e->rhs, t);
-        if (e->rhs->type != kNever) {
+        if (T(e->rhs->type) != kNever) {
             emit(Op::Move, res, r);
         }
         emit(Op::Else);
@@ -136,15 +136,15 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
         return res;
     }
     bool compare = e->op >= BinaryOp::Eq && e->op <= BinaryOp::Ge;
-    TypeId operand = e->lhs->type;
-    if (compare && e->lhs->type != e->rhs->type) {
-        operand = types_->kind(e->lhs->type) == TypeKind::Nullable || e->rhs->type == kNull ? e->lhs->type
-                                                                                            : e->rhs->type;
+    TypeId operand = T(e->lhs->type);
+    if (compare && T(e->lhs->type) != T(e->rhs->type)) {
+        operand = types_->kind(T(e->lhs->type)) == TypeKind::Nullable || T(e->rhs->type) == kNull ? T(e->lhs->type)
+                                                                                            : T(e->rhs->type);
     }
     bool shift = e->op == BinaryOp::Shl || e->op == BinaryOp::Shr;
     Reg l = lowerExpr(e->lhs, compare ? operand : kError);
     Reg r = lowerExpr(e->rhs, compare ? operand : kError);
-    if (shift && e->rhs->type != t) {
+    if (shift && T(e->rhs->type) != t) {
         Reg conv = newReg(t);
         emit(Op::Convert, conv, r);
         r = conv;
@@ -160,14 +160,14 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
 
 Reg Lowerer::lowerMember(MemberExpr* e) {
     if (e->isVariant) {
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emitArgs(Op::EnumMake, r, e->fieldIndex, {});
         return r;
     }
     Reg obj = lowerExpr(e->object);
-    TypeId fieldType = e->safe ? types_->info(e->type).elem : e->type;
-    if (types_->kind(e->type) == TypeKind::Nullable && e->safe) {
-        TypeId objInner = types_->info(e->object->type).elem;
+    TypeId fieldType = e->safe ? types_->info(T(e->type)).elem : T(e->type);
+    if (types_->kind(T(e->type)) == TypeKind::Nullable && e->safe) {
+        TypeId objInner = types_->info(T(e->object->type)).elem;
         (void)objInner;
     }
     auto read = [&](Reg base) {
@@ -183,13 +183,13 @@ Reg Lowerer::lowerMember(MemberExpr* e) {
         return read(obj);
     }
     // `a?.b`: null stays null, otherwise read the member and wrap it.
-    Reg res = newReg(e->type);
+    Reg res = newReg(T(e->type));
     Reg isNull = newReg(kBool);
     emit(Op::IsNull, isNull, obj);
     open(Op::If, isNull);
     emit(Op::NullOf, res);
     emit(Op::Else);
-    Reg inner = newReg(types_->info(e->object->type).elem);
+    Reg inner = newReg(types_->info(T(e->object->type)).elem);
     emit(Op::Unwrap, inner, obj);
     Reg v = read(inner);
     if (types_->kind(fieldType) == TypeKind::Nullable) {
@@ -202,27 +202,50 @@ Reg Lowerer::lowerMember(MemberExpr* e) {
 }
 
 Reg Lowerer::lowerCall(CallExpr* e) {
-    TypeId rt = e->type;
+    TypeId rt = T(e->type);
     Reg dst = rt == kVoid || rt == kNever ? kNoReg : newReg(rt);
     std::vector<Reg> args;
     switch (e->callKind) {
     case CallKind::Function:
     case CallKind::Host: {
         sema::FnInfo* fn = e->fn;
+        std::vector<TypeId> targs;
+        for (std::uint32_t a : e->typeArgs) {
+            targs.push_back(T(a));
+        }
+        if (e->traitCall) {
+            // Static dispatch: the receiver's concrete type picks the impl.
+            TypeId recvType = T(e->receiver->type);
+            const TypeInfo& recvInfo = types_->info(recvType);
+            std::string method = fn->name.substr(fn->name.rfind('.') + 1);
+            auto it = prog_.methodTable.find({recvInfo.genericBase != 0 ? recvInfo.genericBase : recvType, method});
+            if (it == prog_.methodTable.end()) {
+                diags_.error(e->span, std::format("no implementation of '{}' for '{}'", fn->name, types_->name(recvType)));
+                return dst;
+            }
+            fn = it->second;
+            targs = recvInfo.genericBase != 0 ? recvInfo.typeArgs : std::vector<TypeId>{};
+        }
+        ir::TypeSubst callee;
+        for (std::size_t i = 0; i < fn->typeParams.size() && i < targs.size(); ++i) {
+            callee.emplace_back(fn->typeParams[i], targs[i]);
+        }
+        auto paramType = [&](std::size_t i) { return types_->subst(fn->params[i], callee); };
         std::size_t p = 0;
         if (e->receiver != nullptr) {
-            args.push_back(lowerExpr(e->receiver, fn->params[0]));
+            args.push_back(lowerExpr(e->receiver, paramType(0)));
             p = 1;
         }
         for (Expr* a : e->ordered) {
-            args.push_back(lowerExpr(a, fn->params[p++]));
+            args.push_back(lowerExpr(a, paramType(p++)));
         }
-        emitArgs(e->callKind == CallKind::Function ? Op::Call : Op::CallHost, dst, fn->index, args);
+        std::uint32_t target = fn->generic() ? instance(fn, targs) : fn->index;
+        emitArgs(e->callKind == CallKind::Function ? Op::Call : Op::CallHost, dst, target, args);
         return dst;
     }
     case CallKind::Special: {
         Reg recv = lowerExpr(e->receiver);
-        TypeId rt0 = e->receiver->type;
+        TypeId rt0 = T(e->receiver->type);
         auto op = static_cast<SpecialOp>(e->builtin);
         bool isResult = op == SpecialOp::ResultIsOk || op == SpecialOp::ResultIsErr || op == SpecialOp::ResultUnwrap ||
                         op == SpecialOp::ResultUnwrapOr;
@@ -301,17 +324,17 @@ Reg Lowerer::lowerCall(CallExpr* e) {
         for (Expr* a : e->ordered) {
             TypeId want = kError;
             if (op == Intrinsic::ListPush || op == Intrinsic::MapSet) {
-                const TypeInfo& recv = types_->info(e->receiver->type);
+                const TypeInfo& recv = types_->info(T(e->receiver->type));
                 want = op == Intrinsic::ListPush ? recv.elem : (a == e->ordered[0] ? recv.key : recv.elem);
             } else if (op == Intrinsic::MapGet || op == Intrinsic::MapHas || op == Intrinsic::MapRemove) {
-                want = types_->info(e->receiver->type).key;
-            } else if (types_->isNumeric(a->type) && op != Intrinsic::MathAbsI && op != Intrinsic::MathAbsF &&
+                want = types_->info(T(e->receiver->type)).key;
+            } else if (types_->isNumeric(T(a->type)) && op != Intrinsic::MathAbsI && op != Intrinsic::MathAbsF &&
                        op != Intrinsic::MathMinI && op != Intrinsic::MathMaxI && op != Intrinsic::MathMinF &&
                        op != Intrinsic::MathMaxF) {
-                want = a->type;
+                want = T(a->type);
             }
             Reg r = lowerExpr(a, want);
-            if ((op == Intrinsic::StrSlice || op == Intrinsic::StrByteAt) && a->type != kI64) {
+            if ((op == Intrinsic::StrSlice || op == Intrinsic::StrByteAt) && T(a->type) != kI64) {
                 Reg c = newReg(kI64);
                 emit(Op::Convert, c, r);
                 r = c;
@@ -333,14 +356,14 @@ Reg Lowerer::lowerInner(Expr* e) {
     switch (e->kind) {
     case ExprKind::IntLit: {
         auto v = static_cast<std::int64_t>(static_cast<IntLitExpr*>(e)->value);
-        return types_->isFloat(e->type) ? constFloat(static_cast<double>(v), e->type) : constInt(v, e->type);
+        return types_->isFloat(T(e->type)) ? constFloat(static_cast<double>(v), T(e->type)) : constInt(v, T(e->type));
     }
-    case ExprKind::FloatLit: return constFloat(static_cast<FloatLitExpr*>(e)->value, e->type);
+    case ExprKind::FloatLit: return constFloat(static_cast<FloatLitExpr*>(e)->value, T(e->type));
     case ExprKind::BoolLit: return constInt(static_cast<BoolLitExpr*>(e)->value ? 1 : 0, kBool);
     case ExprKind::CharLit: return constInt(static_cast<CharLitExpr*>(e)->value, kChar);
     case ExprKind::StringLit: return constStr(static_cast<StringLitExpr*>(e)->value);
     case ExprKind::NullLit: {
-        Reg r = newReg(e->type == kNull ? types_->nullable(kI64) : e->type);
+        Reg r = newReg(T(e->type) == kNull ? types_->nullable(kI64) : T(e->type));
         emit(Op::NullOf, r);
         return r;
     }
@@ -351,7 +374,7 @@ Reg Lowerer::lowerInner(Expr* e) {
             return id->local->reg;
         }
         if (id->ref == IdentRef::Const) {
-            return lowerExpr(id->global->decl->value, id->global->type);
+            return lowerExpr(id->global->decl->value, T(id->global->type));
         }
         return newReg(kError);
     }
@@ -360,13 +383,13 @@ Reg Lowerer::lowerInner(Expr* e) {
         auto* u = static_cast<UnaryExpr*>(e);
         if (u->op == UnaryOp::Neg && u->operand->kind == ExprKind::IntLit) {
             auto v = static_cast<std::int64_t>(0ULL - static_cast<IntLitExpr*>(u->operand)->value);
-            return types_->isFloat(e->type) ? constFloat(static_cast<double>(v), e->type) : constInt(v, e->type);
+            return types_->isFloat(T(e->type)) ? constFloat(static_cast<double>(v), T(e->type)) : constInt(v, T(e->type));
         }
         if (u->op == UnaryOp::Neg && u->operand->kind == ExprKind::FloatLit) {
-            return constFloat(-static_cast<FloatLitExpr*>(u->operand)->value, e->type);
+            return constFloat(-static_cast<FloatLitExpr*>(u->operand)->value, T(e->type));
         }
         Reg v = lowerExpr(u->operand);
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emit(u->op == UnaryOp::Neg ? Op::Neg : u->op == UnaryOp::Not ? Op::Not : Op::BitNot, r, v);
         return r;
     }
@@ -376,28 +399,28 @@ Reg Lowerer::lowerInner(Expr* e) {
     case ExprKind::Index: {
         auto* ix = static_cast<IndexExpr*>(e);
         Reg obj = lowerExpr(ix->object);
-        bool isMap = types_->kind(ix->object->type) == TypeKind::Map;
-        Reg idx = lowerExpr(ix->index, isMap ? types_->info(ix->object->type).key : kError);
-        if (!isMap && ix->index->type != kI64) {
+        bool isMap = types_->kind(T(ix->object->type)) == TypeKind::Map;
+        Reg idx = lowerExpr(ix->index, isMap ? types_->info(T(ix->object->type)).key : kError);
+        if (!isMap && T(ix->index->type) != kI64) {
             Reg c = newReg(kI64);
             emit(Op::Convert, c, idx);
             idx = c;
         }
         if (isMap) {
-            Reg opt = newReg(types_->nullable(e->type));
+            Reg opt = newReg(types_->nullable(T(e->type)));
             emitArgs(Op::Intrinsic, opt, static_cast<std::uint32_t>(Intrinsic::MapGet), {obj, idx});
-            Reg r = newReg(e->type);
+            Reg r = newReg(T(e->type));
             emit(Op::Unwrap, r, opt);
             return r;
         }
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emitArgs(Op::Intrinsic, r, static_cast<std::uint32_t>(Intrinsic::ListGet), {obj, idx});
         return r;
     }
     case ExprKind::Propagate: {
         auto* p = static_cast<PropagateExpr*>(e);
         Reg v = lowerExpr(p->inner);
-        if (types_->isResult(p->inner->type)) {
+        if (types_->isResult(T(p->inner->type))) {
             Reg tag = newReg(kI64);
             emit(Op::EnumTag, tag, v);
             Reg errTag = constInt(1, kI64);
@@ -408,14 +431,14 @@ Reg Lowerer::lowerInner(Expr* e) {
             Reg isOk = newReg(kBool);
             emit(Op::Not, isOk, isErr);
             brIf(isOk, ok);
-            Reg err = newReg(types_->info(p->inner->type).variants[1].payload[0]);
+            Reg err = newReg(types_->info(T(p->inner->type)).variants[1].payload[0]);
             Inst& ef = emit(Op::EnumField, err, v, kNoReg, 1);
             ef.b = 0;
             Reg out = newReg(fn_->result);
             emitArgs(Op::EnumMake, out, 1, {err});
             emit(Op::Return, kNoReg, out);
             close();
-            Reg r = newReg(e->type);
+            Reg r = newReg(T(e->type));
             Inst& vf = emit(Op::EnumField, r, v, kNoReg, 0);
             vf.b = 0;
             return r;
@@ -427,14 +450,14 @@ Reg Lowerer::lowerInner(Expr* e) {
         emit(Op::NullOf, n);
         emit(Op::Return, kNoReg, n);
         close();
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emit(Op::Unwrap, r, v);
         return r;
     }
     case ExprKind::ListLit: {
         auto* l = static_cast<ListLitExpr*>(e);
-        TypeId elem = types_->info(e->type).elem;
-        Reg r = newReg(e->type);
+        TypeId elem = types_->info(T(e->type)).elem;
+        Reg r = newReg(T(e->type));
         emitArgs(Op::Intrinsic, r, static_cast<std::uint32_t>(Intrinsic::ListNew), {});
         for (Expr* x : l->elems) {
             Reg v = lowerExpr(x, elem);
@@ -444,49 +467,49 @@ Reg Lowerer::lowerInner(Expr* e) {
     }
     case ExprKind::ListRepeat: {
         auto* l = static_cast<ListRepeatExpr*>(e);
-        TypeId elem = types_->info(e->type).elem;
+        TypeId elem = types_->info(T(e->type)).elem;
         Reg n = lowerExpr(l->count);
-        if (l->count->type != kI64) {
+        if (T(l->count->type) != kI64) {
             Reg c = newReg(kI64);
             emit(Op::Convert, c, n);
             n = c;
         }
         Reg v = lowerExpr(l->value, elem);
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emitArgs(Op::Intrinsic, r, static_cast<std::uint32_t>(Intrinsic::ListFilled), {n, v});
         return r;
     }
     case ExprKind::TupleLit: {
         auto* t = static_cast<TupleLitExpr*>(e);
         std::vector<Reg> parts;
-        const TypeInfo& info = types_->info(e->type);
+        const TypeInfo& info = types_->info(T(e->type));
         for (std::size_t i = 0; i < t->elems.size(); ++i) {
             parts.push_back(lowerExpr(t->elems[i], info.elems[i]));
         }
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emitArgs(Op::Make, r, 0, parts);
         return r;
     }
     case ExprKind::Cast: {
         auto* c = static_cast<CastExpr*>(e);
         Reg v = lowerExpr(c->value);
-        if (c->value->type == e->type) {
+        if (T(c->value->type) == T(e->type)) {
             return v;
         }
-        Reg r = newReg(e->type);
+        Reg r = newReg(T(e->type));
         emit(Op::Convert, r, v);
         return r;
     }
     case ExprKind::Wait: {
         auto* w = static_cast<WaitExpr*>(e);
         Reg v = lowerExpr(w->value);
-        Reg dst = e->type == kVoid ? kNoReg : newReg(e->type);
+        Reg dst = T(e->type) == kVoid ? kNoReg : newReg(T(e->type));
         emit(Op::Wait, dst, v, kNoReg, static_cast<std::uint32_t>(WaitKind::Wait));
         return dst;
     }
-    case ExprKind::If: return lowerIf(static_cast<IfExpr*>(e), e->type, true);
-    case ExprKind::Match: return lowerMatch(static_cast<MatchExpr*>(e), e->type, true);
-    case ExprKind::Block: return lowerBlockValue(static_cast<BlockExpr*>(e), e->type);
+    case ExprKind::If: return lowerIf(static_cast<IfExpr*>(e), T(e->type), true);
+    case ExprKind::Match: return lowerMatch(static_cast<MatchExpr*>(e), T(e->type), true);
+    case ExprKind::Block: return lowerBlockValue(static_cast<BlockExpr*>(e), T(e->type));
     default: break;
     }
     return newReg(kError);
@@ -559,9 +582,9 @@ Reg Lowerer::lowerArmBody(Expr* body, TypeId want, bool wantValue) {
 }
 
 Reg Lowerer::lowerMatch(MatchExpr* m, TypeId want, bool wantValue) {
-    TypeId st = m->subject->type;
+    TypeId st = T(m->subject->type);
     Reg subject = lowerExpr(m->subject);
-    TypeId rt = wantValue ? (want != kError ? want : m->type) : kError;
+    TypeId rt = wantValue ? (want != kError ? want : T(m->type)) : kError;
     Reg result = wantValue && rt != kVoid && rt != kNever ? newReg(rt) : kNoReg;
     std::size_t exit = depth_;
     open(Op::Block);
@@ -582,7 +605,7 @@ Reg Lowerer::lowerMatch(MatchExpr* m, TypeId want, bool wantValue) {
             brIf(miss, next);
         }
         Reg v = lowerArmBody(arm.body, rt, wantValue);
-        if (result != kNoReg && v != kNoReg && arm.body->type != kNever) {
+        if (result != kNoReg && v != kNoReg && T(arm.body->type) != kNever) {
             emit(Op::Move, result, v);
         }
         br(exit);
@@ -595,6 +618,7 @@ Reg Lowerer::lowerMatch(MatchExpr* m, TypeId want, bool wantValue) {
 
 std::unique_ptr<Module> Lowerer::run() {
     mod_->functions.resize(prog_.functions.size());
+    nextFn_ = static_cast<std::uint32_t>(prog_.functions.size());
     for (sema::FnInfo* imp : prog_.imports) {
         mod_->imports.push_back({imp->name, imp->params, imp->result});
     }
@@ -605,19 +629,31 @@ std::unique_ptr<Module> Lowerer::run() {
         for (sema::AnnotationInfo& a : fn->annotations) {
             Annotation out{a.name, fn->index, a.args, ~0U};
             if (a.where != nullptr) {
-                out.filter = static_cast<std::uint32_t>(mod_->functions.size());
-                mod_->functions.emplace_back();
-                lowerFilter(a, fn, mod_->functions.back());
+                out.filter = allocFunction();
+                lowerFilter(a, fn, function(out.filter));
             }
             mod_->annotations.push_back(std::move(out));
         }
     }
     for (TypeId state : prog_.states) {
         mod_->states.push_back(state);
-        mod_->stateInit.push_back(static_cast<std::uint32_t>(mod_->functions.size()));
-        Function init;
-        mod_->functions.push_back(std::move(init));
-        lowerStateInit(state, mod_->functions.back());
+        std::uint32_t idx = allocFunction();
+        mod_->stateInit.push_back(idx);
+        lowerStateInit(state, function(idx));
+    }
+    while (!work_.empty()) {
+        auto [fn, args, idx] = work_.back();
+        work_.pop_back();
+        subst_.clear();
+        for (std::size_t i = 0; i < fn->typeParams.size() && i < args.size(); ++i) {
+            subst_.emplace_back(fn->typeParams[i], args[i]);
+        }
+        lowerFunction(fn, function(idx));
+        function(idx).exported = false;
+    }
+    subst_.clear();
+    for (auto& [idx, f] : extra_) {
+        mod_->functions.push_back(std::move(f));
     }
     return std::move(mod_);
 }

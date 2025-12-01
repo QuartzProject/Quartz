@@ -41,14 +41,26 @@ void Checker::declareTypes() {
             }
             TypeEntry entry;
             entry.type = types_->declareNominal(kind, std::string(str(d->name)));
+            std::span<TypeParam> tps;
             if (d->kind == DeclKind::Enum) {
                 entry.enumDecl = static_cast<EnumDecl*>(d);
+                tps = entry.enumDecl->typeParams;
             } else {
                 entry.decl = static_cast<StructDecl*>(d);
                 prog_->structDecls[entry.type] = entry.decl;
-                if (!entry.decl->typeParams.empty()) {
-                    diags_.error(d->span, "generic structs are not supported yet");
+                tps = entry.decl->typeParams;
+                if (!tps.empty() && kind != ir::TypeKind::Struct) {
+                    diags_.error(d->span, "only structs and enums can be generic");
+                    tps = {};
                 }
+            }
+            for (const TypeParam& tp : tps) {
+                if (!tp.bounds.empty()) {
+                    diags_.error(tp.span, "bounds on type parameters of types are not supported; bound the functions");
+                }
+                TypeId pid = types_->param(std::string(str(tp.name)));
+                types_->mutableInfo(entry.type).typeParams.push_back(pid);
+                baseParams_[entry.type].emplace_back(tp.name, pid);
             }
             typeNames_[d->name] = entry;
             if (kind == ir::TypeKind::State) {
@@ -58,8 +70,22 @@ void Checker::declareTypes() {
     }
 }
 
+syntax::StructDecl* Checker::structDeclOf(TypeId t) {
+    const ir::TypeInfo& info = types_->info(t);
+    auto it = prog_->structDecls.find(info.genericBase != 0 ? info.genericBase : t);
+    return it != prog_->structDecls.end() ? it->second : nullptr;
+}
+
 void Checker::completeTypes() {
     for (auto& [name, entry] : typeNames_) {
+        typeScopes_.emplace_back();
+        for (const auto& [sym, pid] : baseParams_[entry.type]) {
+            typeScopes_.back()[sym] = pid;
+        }
+        struct PopScope {
+            std::vector<std::unordered_map<Symbol, TypeId>>& s;
+            ~PopScope() { s.pop_back(); }
+        } pop{typeScopes_};
         ir::TypeInfo& info = types_->mutableInfo(entry.type);
         if (entry.enumDecl != nullptr) {
             for (const Variant& v : entry.enumDecl->variants) {
@@ -124,6 +150,7 @@ void Checker::completeTypes() {
         }
         done.complete = true;
     }
+    types_->refreshInstances();
     // A struct that contains itself by value has no finite size.
     for (auto& [name, entry] : typeNames_) {
         if (entry.decl == nullptr || types_->kind(entry.type) != ir::TypeKind::Struct) {
@@ -164,6 +191,12 @@ TypeId Checker::lookupTypeName(Symbol name, Span span, bool report) {
     }
     if (text == "Self" && selfType_ != ir::kError) {
         return selfType_;
+    }
+    for (auto it = typeScopes_.rbegin(); it != typeScopes_.rend(); ++it) {
+        auto found = it->find(name);
+        if (found != it->end()) {
+            return found->second;
+        }
     }
     auto it = typeNames_.find(name);
     if (it != typeNames_.end()) {
@@ -212,10 +245,23 @@ TypeId Checker::resolveType(TypeExpr* t) {
             }
             return types_->map(a, v);
         }
+        TypeId found = lookupTypeName(last, t->span, true);
+        if (found != ir::kError && types_->isGenericBase(found)) {
+            const ir::TypeInfo& base = types_->info(found);
+            if (n->args.size() != base.typeParams.size()) {
+                diags_.error(t->span, std::format("'{}' takes {} type argument(s)", text, base.typeParams.size()));
+                return ir::kError;
+            }
+            std::vector<TypeId> args;
+            for (TypeExpr* a : n->args) {
+                args.push_back(resolveType(a));
+            }
+            return types_->instantiate(found, args);
+        }
         if (!n->args.empty()) {
             diags_.error(t->span, std::format("type '{}' takes no type arguments", text));
         }
-        return lookupTypeName(last, t->span, true);
+        return found;
     }
     case TypeExprKind::List: return types_->list(resolveType(static_cast<ListTypeExpr*>(t)->elem));
     case TypeExprKind::Array:
@@ -251,7 +297,7 @@ TypeId Checker::resolveType(TypeExpr* t) {
     return ir::kError;
 }
 
-void Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface) {
+FnInfo* Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface, const ImplParams& impl) {
     auto* info = prog_->fnStorage.emplace_back(std::make_unique<FnInfo>()).get();
     info->decl = fn;
     fn->info = info;
@@ -259,8 +305,16 @@ void Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface) {
     info->hasSelf = fn->hasSelf;
     info->isSuspend = fn->isSuspend;
     info->isHost = fn->body == nullptr;
-    if (!fn->typeParams.empty()) {
-        diags_.error(fn->span, "generic functions are not supported yet");
+    info->typeParams = impl.ids;
+    info->typeParamNames = impl.names;
+    info->bounds = impl.bounds;
+    pushTypeParams(fn->typeParams, info->typeParams, info->typeParamNames, info->bounds);
+    struct PopScope {
+        std::vector<std::unordered_map<Symbol, TypeId>>& s;
+        ~PopScope() { s.pop_back(); }
+    } pop{typeScopes_};
+    if (info->generic() && info->isHost) {
+        diags_.error(fn->span, "host functions cannot be generic");
     }
     if (info->isHost && !inInterface) {
         diags_.error(fn->span, "a function without a body can only be declared in a host interface (.qzi)");
@@ -300,22 +354,30 @@ void Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface) {
     if (info->isHost) {
         info->index = static_cast<std::uint32_t>(prog_->imports.size());
         prog_->imports.push_back(info);
+    } else if (info->generic()) {
+        prog_->generics.push_back(info);
     } else {
         info->index = static_cast<std::uint32_t>(prog_->functions.size());
         prog_->functions.push_back(info);
     }
     if (owner != ir::kError) {
-        auto key = std::make_pair(owner, fn->name.id);
-        if (methods_.contains(key) || properties_.contains(key)) {
+        const ir::TypeInfo& oinfo = types_->info(owner);
+        bool genericOwner = oinfo.genericBase != 0 && types_->hasParams(owner);
+        TypeId key0 = genericOwner ? oinfo.genericBase : owner;
+        auto key = std::make_pair(key0, fn->name.id);
+        auto& table = genericOwner ? genericMethods_ : methods_;
+        if (table.contains(key) || properties_.contains(key)) {
             diags_.error(fn->span, std::format("'{}' is already declared", info->name));
         }
-        methods_[key] = info;
+        table[key] = info;
+        prog_->methodTable[{key0, std::string(str(fn->name))}] = info;
     } else {
         if (functions_.contains(fn->name) || globals_.contains(fn->name)) {
             diags_.error(fn->span, std::format("'{}' is already declared", info->name));
         }
         functions_[fn->name] = info;
     }
+    return info;
 }
 
 void Checker::declareFunctions() {
@@ -326,16 +388,23 @@ void Checker::declareFunctions() {
                 declareFn(static_cast<FnDecl*>(d), ir::kError, iface);
             } else if (d->kind == DeclKind::Impl) {
                 auto* impl = static_cast<ImplDecl*>(d);
-                if (impl->trait != nullptr) {
-                    diags_.error(impl->span, "trait implementations are not supported yet");
-                }
+                ImplParams ip;
+                pushTypeParams(impl->typeParams, ip.ids, ip.names, ip.bounds);
                 TypeId owner = resolveType(impl->target);
                 if (owner == ir::kError) {
+                    typeScopes_.pop_back();
                     continue;
                 }
-                for (FnDecl* m : impl->methods) {
-                    declareFn(m, owner, iface);
+                const ir::TypeInfo& oinfo = types_->info(owner);
+                if (!ip.ids.empty() && (oinfo.typeArgs != ip.ids)) {
+                    diags_.error(impl->span, "a generic impl must target its type with exactly its parameters, in order");
                 }
+                std::vector<FnInfo*> methods;
+                for (FnDecl* m : impl->methods) {
+                    methods.push_back(declareFn(m, owner, iface, ip));
+                }
+                typeScopes_.pop_back();
+                declareImplTrait(impl, owner, methods);
             } else if (d->kind == DeclKind::Const) {
                 auto* c = static_cast<ConstDecl*>(d);
                 auto* g = prog_->globalStorage.emplace_back(std::make_unique<GlobalInfo>()).get();
@@ -345,8 +414,6 @@ void Checker::declareFunctions() {
                     diags_.error(c->span, std::format("'{}' is already declared", str(c->name)));
                 }
                 globals_[c->name] = g;
-            } else if (d->kind == DeclKind::Trait) {
-                diags_.error(d->span, "traits are not supported yet");
             }
         }
     }
@@ -355,6 +422,7 @@ void Checker::declareFunctions() {
 std::unique_ptr<Program> Checker::run() {
     declareTypes();
     completeTypes();
+    declareTraits();
     declareFunctions();
     for (auto& [name, g] : globals_) {
         if (g->type == ir::kError && !g->checking) {
@@ -384,6 +452,9 @@ std::unique_ptr<Program> Checker::run() {
     }
     for (std::size_t i = 0; i < prog_->functions.size(); ++i) {
         checkFunction(prog_->functions[i]);
+    }
+    for (std::size_t i = 0; i < prog_->generics.size(); ++i) {
+        checkFunction(prog_->generics[i]);
     }
     return std::move(prog_);
 }

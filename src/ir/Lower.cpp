@@ -19,7 +19,7 @@ void Lowerer::setLine(Span span) {
 }
 
 Reg Lowerer::newReg(TypeId t) {
-    fn_->regs.push_back(t);
+    fn_->regs.push_back(T(t));
     return static_cast<Reg>(fn_->regs.size() - 1);
 }
 
@@ -43,7 +43,30 @@ Inst& Lowerer::emitArgs(Op op, Reg dst, std::uint32_t imm, const std::vector<Reg
     return in;
 }
 
+std::uint32_t Lowerer::allocFunction() {
+    std::uint32_t idx = nextFn_++;
+    extra_[idx];
+    return idx;
+}
+
+Function& Lowerer::function(std::uint32_t index) {
+    return index < mod_->functions.size() ? mod_->functions[index] : extra_[index];
+}
+
+std::uint32_t Lowerer::instance(sema::FnInfo* fn, const std::vector<TypeId>& args) {
+    auto key = std::make_pair(fn, args);
+    auto it = instances_.find(key);
+    if (it != instances_.end()) {
+        return it->second;
+    }
+    std::uint32_t idx = allocFunction();
+    instances_.emplace(key, idx);
+    work_.emplace_back(fn, args, idx);
+    return idx;
+}
+
 Reg Lowerer::constInt(std::int64_t v, TypeId t) {
+    t = T(t);
     auto key = std::make_tuple(0, static_cast<std::uint64_t>(v), t, std::string());
     auto it = constIndex_.find(key);
     std::uint32_t idx = 0;
@@ -60,6 +83,7 @@ Reg Lowerer::constInt(std::int64_t v, TypeId t) {
 }
 
 Reg Lowerer::constFloat(double v, TypeId t) {
+    t = T(t);
     if (t == kF32) {
         v = static_cast<double>(static_cast<float>(v));
     }
@@ -201,7 +225,7 @@ void Lowerer::lowerFilter(sema::AnnotationInfo& a, sema::FnInfo* fn, Function& o
     out.name = fn->name + ".where";
     out.result = kBool;
     out.exported = true;
-    a.whereParam->reg = newReg(a.whereParam->type);
+    a.whereParam->reg = newReg(T(a.whereParam->type));
     out.paramCount = 1;
     setLine(a.where->span);
     Reg v = lowerExpr(a.where, kBool);
@@ -214,12 +238,19 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     depth_ = 0;
     loops_.clear();
     out.name = fn->name;
-    out.result = fn->result;
+    if (!subst_.empty()) {
+        out.name += "<";
+        for (std::size_t i = 0; i < subst_.size(); ++i) {
+            out.name += (i ? ", " : "") + types_->name(subst_[i].second);
+        }
+        out.name += ">";
+    }
+    out.result = T(fn->result);
     out.isSuspend = fn->isSuspend;
     out.exported = fn->owner == kError;
     scopes_.clear();
     for (sema::Local* l : fn->paramLocals) {
-        l->reg = newReg(l->type);
+        l->reg = newReg(T(l->type));
         l->scopeDepth = 0;
     }
     out.paramCount = static_cast<std::uint32_t>(out.regs.size());
@@ -304,7 +335,7 @@ void Lowerer::lowerStmt(Stmt* s) {
         std::size_t cont = depth_;
         open(Op::Block);
         Reg v = lowerExpr(ev->interval);
-        TypeId produced = ev->interval->type;
+        TypeId produced = T(ev->interval->type);
         (void)produced;
         emit(Op::Wait, kNoReg, v, kNoReg, static_cast<std::uint32_t>(WaitKind::Wait));
         loops_.push_back({exit, cont, scopes_.size()});
@@ -374,7 +405,7 @@ sema::Local* Lowerer::rootLocal(Expr* target) {
         if (target->kind == ExprKind::SelfRef) {
             return static_cast<SelfExpr*>(target)->local;
         }
-        if (target->kind == ExprKind::Member && types_->kind(static_cast<MemberExpr*>(target)->object->type) !=
+        if (target->kind == ExprKind::Member && types_->kind(T(static_cast<MemberExpr*>(target)->object->type)) !=
                                                     TypeKind::State) {
             target = static_cast<MemberExpr*>(target)->object;
             continue;
@@ -385,9 +416,9 @@ sema::Local* Lowerer::rootLocal(Expr* target) {
 
 void Lowerer::lowerLet(LetStmt* s) {
     sema::Local* l = s->local;
-    Reg v = s->init != nullptr ? lowerExpr(s->init, l->type) : zeroValue(l->type, s->span);
+    Reg v = s->init != nullptr ? lowerExpr(s->init, T(l->type)) : zeroValue(T(l->type), s->span);
     l->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
-    l->reg = newReg(l->type);
+    l->reg = newReg(T(l->type));
     emit(Op::Move, l->reg, v);
 }
 
@@ -400,7 +431,7 @@ void Lowerer::assignPlace(Expr* target, Reg value) {
     }
     case ExprKind::Member: {
         auto* m = static_cast<MemberExpr*>(target);
-        TypeId ot = m->object->type;
+        TypeId ot = T(m->object->type);
         Reg obj = lowerExpr(m->object);
         emit(Op::FieldSet, kNoReg, obj, value, m->fieldIndex);
         bool inPlace = types_->kind(ot) == TypeKind::State ||
@@ -414,8 +445,8 @@ void Lowerer::assignPlace(Expr* target, Reg value) {
     case ExprKind::Index: {
         auto* ix = static_cast<IndexExpr*>(target);
         Reg obj = lowerExpr(ix->object);
-        bool isMap = types_->kind(ix->object->type) == TypeKind::Map;
-        Reg idx = lowerExpr(ix->index, isMap ? types_->info(ix->object->type).key : kI64);
+        bool isMap = types_->kind(T(ix->object->type)) == TypeKind::Map;
+        Reg idx = lowerExpr(ix->index, isMap ? types_->info(T(ix->object->type)).key : kI64);
         emitArgs(Op::Intrinsic, kNoReg, static_cast<std::uint32_t>(isMap ? Intrinsic::MapSet : Intrinsic::ListSet),
                  {obj, idx, value});
         return;
@@ -425,7 +456,7 @@ void Lowerer::assignPlace(Expr* target, Reg value) {
 }
 
 void Lowerer::lowerAssign(AssignStmt* s) {
-    TypeId tt = s->target->type;
+    TypeId tt = T(s->target->type);
     if (s->op == AssignOp::Set) {
         Reg v = lowerExpr(s->value, tt);
         if (sema::Local* root = rootLocal(s->target)) {
@@ -441,9 +472,9 @@ void Lowerer::lowerAssign(AssignStmt* s) {
     // Evaluate the container and index once for `xs[i] op= v`.
     if (s->target->kind == ExprKind::Index) {
         auto* ix = static_cast<IndexExpr*>(s->target);
-        bool isMap = types_->kind(ix->object->type) == TypeKind::Map;
+        bool isMap = types_->kind(T(ix->object->type)) == TypeKind::Map;
         Reg obj = lowerExpr(ix->object);
-        Reg idx = lowerExpr(ix->index, isMap ? types_->info(ix->object->type).key : kI64);
+        Reg idx = lowerExpr(ix->index, isMap ? types_->info(T(ix->object->type)).key : kI64);
         Reg cur = newReg(isMap ? types_->nullable(tt) : tt);
         emitArgs(Op::Intrinsic, cur, static_cast<std::uint32_t>(isMap ? Intrinsic::MapGet : Intrinsic::ListGet),
                  {obj, idx});
@@ -498,7 +529,7 @@ void Lowerer::lowerFor(ForStmt* s) {
     std::size_t exit = depth_;
     if (s->iterable->kind == ExprKind::Range) {
         auto* r = static_cast<RangeExpr*>(s->iterable);
-        TypeId t = r->type;
+        TypeId t = T(r->type);
         Reg lo = lowerExpr(r->lo, t);
         Reg hi = lowerExpr(r->hi, t);
         Reg i = newReg(t);
@@ -536,7 +567,7 @@ void Lowerer::lowerFor(ForStmt* s) {
         close();
         return;
     }
-    TypeId lt = s->iterable->type;
+    TypeId lt = T(s->iterable->type);
     TypeId elem = types_->info(lt).elem;
     Reg list = lowerExpr(s->iterable);
     Reg idx = newReg(kI64);
@@ -626,7 +657,7 @@ void Lowerer::branchIfTrue(Expr* e, std::size_t frame) {
 }
 
 Reg Lowerer::lowerIf(IfExpr* e, TypeId want, bool wantValue) {
-    TypeId rt = wantValue ? (want != kError ? want : e->type) : kError;
+    TypeId rt = wantValue ? (want != kError ? want : T(e->type)) : kError;
     Reg result = wantValue && rt != kVoid && rt != kNever ? newReg(rt) : kNoReg;
     // block $end { block $else { test; then; br $end } else }
     std::size_t endFrame = depth_;
@@ -638,14 +669,14 @@ Reg Lowerer::lowerIf(IfExpr* e, TypeId want, bool wantValue) {
         Reg isNull = newReg(kBool);
         emit(Op::IsNull, isNull, bound);
         brIf(isNull, elseFrame);
-        e->bindLocal->reg = newReg(e->bindLocal->type);
+        e->bindLocal->reg = newReg(T(e->bindLocal->type));
         emit(Op::Unwrap, e->bindLocal->reg, bound);
     } else {
         branchIfFalse(e->cond, elseFrame);
     }
     if (result != kNoReg) {
         Reg v = lowerBlockValue(e->then, rt);
-        if (v != kNoReg && e->then->type != kNever) {
+        if (v != kNoReg && T(e->then->type) != kNever) {
             emit(Op::Move, result, v);
         }
     } else {
@@ -658,12 +689,12 @@ Reg Lowerer::lowerIf(IfExpr* e, TypeId want, bool wantValue) {
     if (e->otherwise != nullptr) {
         if (e->otherwise->kind == ExprKind::If) {
             Reg v = lowerIf(static_cast<IfExpr*>(e->otherwise), rt, wantValue);
-            if (result != kNoReg && v != kNoReg && e->otherwise->type != kNever) {
+            if (result != kNoReg && v != kNoReg && T(e->otherwise->type) != kNever) {
                 emit(Op::Move, result, v);
             }
         } else if (result != kNoReg) {
             Reg v = lowerBlockValue(static_cast<BlockExpr*>(e->otherwise), rt);
-            if (v != kNoReg && e->otherwise->type != kNever) {
+            if (v != kNoReg && T(e->otherwise->type) != kNever) {
                 emit(Op::Move, result, v);
             }
         } else {

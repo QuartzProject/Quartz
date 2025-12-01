@@ -208,6 +208,13 @@ std::span<TypeParam> Parser::parseTypeParams() {
             TypeParam p{};
             p.span = cur().span;
             p.name = expectIdent("type parameter");
+            if (accept(Tok::Colon)) {
+                std::vector<Symbol> bounds;
+                do {
+                    bounds.push_back(expectIdent("trait name"));
+                } while (accept(Tok::Plus));
+                p.bounds = list(bounds);
+            }
             params.push_back(p);
             if (!accept(Tok::Comma)) {
                 break;
@@ -308,6 +315,7 @@ Decl* Parser::parseEnum(std::span<Attribute> attrs, Visibility vis) {
     e->attrs = attrs;
     e->visibility = vis;
     e->name = expectIdent("enum name");
+    e->typeParams = parseTypeParams();
     std::vector<Variant> variants;
     expect(Tok::LBrace, "to start the variant list");
     while (!at(Tok::RBrace) && !at(Tok::Eof)) {
@@ -344,6 +352,7 @@ Decl* Parser::parseImpl(std::span<Attribute> attrs, Visibility vis) {
     impl->kind = DeclKind::Impl;
     impl->attrs = attrs;
     impl->visibility = vis;
+    impl->typeParams = parseTypeParams();
     TypeExpr* first = parseType();
     if (accept(Tok::KwFor)) {
         impl->trait = first;

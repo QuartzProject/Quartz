@@ -4,6 +4,7 @@
 #include "sema/Sema.hpp"
 
 #include <map>
+#include <set>
 #include <optional>
 
 namespace quartz::sema {
@@ -32,7 +33,14 @@ public:
     void declareTypes();
     void completeTypes();
     void declareFunctions();
-    void declareFn(FnDecl* fn, TypeId owner, bool inInterface);
+    struct ImplParams {
+        std::vector<TypeId> ids;
+        std::vector<Symbol> names;
+        std::vector<std::vector<TraitInfo*>> bounds;
+    };
+    FnInfo* declareFn(FnDecl* fn, TypeId owner, bool inInterface, const ImplParams& impl = {});
+    std::unordered_map<TypeId, std::vector<std::pair<Symbol, TypeId>>> baseParams_;
+    syntax::StructDecl* structDeclOf(TypeId t);
     TypeId resolveType(TypeExpr* t);
     TypeId lookupTypeName(Symbol name, Span span, bool report);
     bool hasAttr(std::span<Attribute> attrs, std::string_view name) const;
@@ -81,6 +89,23 @@ public:
     bool bindArgs(CallExpr* call, const std::vector<TypeId>& params, const std::vector<Symbol>& names,
                   const std::vector<Expr*>& defaults, std::size_t skip);
     std::optional<BuiltinSig> builtinMethod(TypeId recv, std::string_view name);
+
+    // Generics.cpp
+    void declareTraits();
+    void declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<FnInfo*>& methods);
+    void pushTypeParams(std::span<TypeParam> params, std::vector<TypeId>& ids, std::vector<Symbol>& names,
+                        std::vector<std::vector<TraitInfo*>>& bounds);
+    bool unify(TypeId pattern, TypeId actual, ir::TypeSubst& bindings);
+    TypeId finishGenericCall(CallExpr* call, FnInfo* fn, Expr* receiver, ir::TypeSubst bindings);
+    bool implements(TypeId type, TraitInfo* trait);
+    TypeId checkTraitCall(CallExpr* call, MemberExpr* callee, TypeId recv);
+    TypeId inferInstance(TypeId base, const std::vector<TypeId>& patterns, std::span<Arg> args, TypeId expected,
+                         Span span);
+    std::vector<std::unordered_map<Symbol, TypeId>> typeScopes_;
+    std::unordered_map<TypeId, std::vector<TraitInfo*>> paramBounds_;
+    std::unordered_map<Symbol, TraitInfo*> traits_;
+    std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> genericMethods_; // (generic base, method)
+    std::set<std::pair<TraitInfo*, TypeId>> traitImpls_;                // (trait, concrete type or base)
 
     // scopes
     void pushScope() { scopes_.emplace_back(); }

@@ -38,6 +38,7 @@ enum class TypeKind : std::uint8_t {
     Enum,
     Nullable,
     Fn,
+    Param, // a generic type parameter; never reaches validated IR
 };
 
 inline constexpr TypeId kError = 0;
@@ -80,7 +81,12 @@ struct TypeInfo {
     std::vector<Field> fields;   // Struct, State
     std::vector<VariantInfo> variants;
     bool complete = true;        // nominal types are declared first and completed later
+    std::vector<TypeId> typeParams; // generic bases: their parameters (Param types)
+    TypeId genericBase = 0;         // instances: the generic base they come from (0 = none)
+    std::vector<TypeId> typeArgs;   // instances: the arguments
 };
+
+using TypeSubst = std::vector<std::pair<TypeId, TypeId>>;
 
 /// Owns every type of a program; structural types are interned so equal types share one id.
 class TypeTable {
@@ -99,6 +105,14 @@ public:
     /// `Result<T, E>` is an enum with variants `Ok(T)` and `Err(E)`.
     TypeId result(TypeId ok, TypeId err);
     [[nodiscard]] bool isResult(TypeId id) const;
+    TypeId param(std::string name);
+    /// `Base<args>`: a nominal type whose fields are the base's with parameters replaced.
+    TypeId instantiate(TypeId base, const std::vector<TypeId>& args);
+    TypeId subst(TypeId t, const TypeSubst& map);
+    [[nodiscard]] bool hasParams(TypeId t) const;
+    /// Recomputes instance fields once every generic base is complete.
+    void refreshInstances();
+    [[nodiscard]] bool isGenericBase(TypeId t) const { return !types_[t].typeParams.empty(); }
     TypeId declareNominal(TypeKind kind, std::string name);
     TypeInfo& mutableInfo(TypeId id) { return types_[id]; }
     /// Adds a fully described type as read from a serialized module; structural types are interned.
@@ -121,6 +135,7 @@ private:
 
     std::vector<TypeInfo> types_;
     std::map<std::string, TypeId> structural_;
+    std::map<std::pair<TypeId, std::vector<TypeId>>, TypeId> instances_;
 };
 
 } // namespace quartz::ir

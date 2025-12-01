@@ -1,0 +1,97 @@
+// expect: 3 hello
+// expect: 7 none
+// expect: Box(5) Box(hi)
+// expect: P(1, 2) and 42
+// expect: [1, 2, 3] [x, y]
+// expect: swap 2 1
+
+trait Show {
+    fn show(self) -> str
+}
+
+struct P {
+    x: i64
+    y: i64
+}
+
+impl Show for P {
+    fn show(self) -> str {
+        return "P({self.x}, {self.y})"
+    }
+}
+
+impl Show for i64 {
+    fn show(self) -> str {
+        return "{self}"
+    }
+}
+
+impl Show for str {
+    fn show(self) -> str {
+        return self
+    }
+}
+
+struct Box<T> {
+    value: T
+}
+
+impl<T> Box<T> {
+    fn get(self) -> T {
+        return self.value
+    }
+}
+
+impl<T: Show> Show for Box<T> {
+    fn show(self) -> str {
+        return "Box({self.value.show()})"
+    }
+}
+
+enum Maybe<T> {
+    Just(T)
+    Nothing
+}
+
+fn first<T>(xs: [T]) -> T? {
+    if xs.len() == 0 {
+        return null
+    }
+    return xs[0]
+}
+
+fn orElse<T>(m: Maybe<T>, fallback: T) -> T {
+    return match m {
+        Just(v) => v
+        Nothing => fallback
+    }
+}
+
+fn describe<T: Show>(items: [T]) -> str {
+    var parts: [str] = []
+    for it in items {
+        parts.push(it.show())
+    }
+    return "[" + parts.join(", ") + "]"
+}
+
+fn swap<A, B>(pair: (A, B)) -> (B, A) {
+    return (pair.1, pair.0)
+}
+
+fn main() -> i64 {
+    let xs = [3, 4]
+    let words = ["hello"]
+    print("{first(xs) ?? 0} {first(words) ?? "-"}")
+    let some: Maybe<i64> = Maybe.Just(7)
+    let none: Maybe<str> = Maybe.Nothing
+    print("{orElse(some, 0)} {orElse(none, "none")}")
+    let b = Box(5)
+    let s = Box::<str>("hi")
+    print("{b.show()} {s.show()}")
+    print("{P(1, 2).show()} and {Box(42).get()}")
+    print("{describe([1, 2, 3])} {describe(["x", "y"])}")
+    let t = swap((1, 2))
+    print("swap {t.0} {t.1}")
+    return 0
+}
