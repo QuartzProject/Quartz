@@ -556,6 +556,22 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
                 l->data[RB.u] = RC;
                 NEXT();
             }
+            CASE(ListGetB) {
+                const List* l = LIST(RB);
+                if (RC.u >= l->len) {
+                    TRAP(ir::TrapCode::IndexOutOfBounds, {});
+                }
+                RA.u = l->bytes()[RC.u];
+                NEXT();
+            }
+            CASE(ListSetB) {
+                List* l = LIST(RA);
+                if (RB.u >= l->len) {
+                    TRAP(ir::TrapCode::IndexOutOfBounds, {});
+                }
+                l->bytes()[RB.u] = static_cast<std::uint8_t>(RC.u);
+                NEXT();
+            }
             CASE(ListSetN) {
                 List* l = LIST(RA);
                 if (l->elemSlots == 1 && !(l->owner == Owner::State && l->elemHasRefs)) {

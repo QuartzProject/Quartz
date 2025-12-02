@@ -54,6 +54,12 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
         if (out == nullptr || (l->len > 0 && !growList(out, l->len))) {
             return false;
         }
+        if (!l->elemHasRefs) {
+            std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
+            out->len = l->len;
+            dst->p = out;
+            return true;
+        }
         for (std::uint32_t i = 0; i < l->len; ++i) {
             std::size_t off = static_cast<std::size_t>(i) * l->elemSlots;
             if (!copyToArena(l->elemType, l->data + off, out->data + off, mode, level)) {

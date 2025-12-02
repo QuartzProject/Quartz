@@ -41,6 +41,10 @@ struct List {
     bool elemHasRefs;
     Owner owner;
     std::uint16_t level;
+    bool packed; // `[bool]`: one byte per element (D38)
+
+    [[nodiscard]] std::size_t stride() const { return packed ? 1 : elemSlots * sizeof(Slot); }
+    [[nodiscard]] std::uint8_t* bytes() const { return reinterpret_cast<std::uint8_t*>(data); }
 };
 
 struct Map {

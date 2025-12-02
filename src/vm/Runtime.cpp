@@ -256,6 +256,7 @@ List* Sandbox::newList(TypeId elem) {
     l->cap = 0;
     l->elemType = elem;
     l->elemSlots = static_cast<std::uint16_t>(program_->layouts->slots(elem));
+    l->packed = elem == ir::kBool;
     l->elemHasRefs = program_->module->types.hasRefs(elem);
     l->owner = Owner::Arena;
     l->level = static_cast<std::uint16_t>(curLevel_);
@@ -265,12 +266,12 @@ List* Sandbox::newList(TypeId elem) {
 bool Sandbox::growList(List* l, std::uint32_t need) {
     std::uint64_t cap = l->cap == 0 ? 4 : static_cast<std::uint64_t>(l->cap) * 2;
     cap = std::max<std::uint64_t>(cap, need);
-    if (cap * l->elemSlots > (1ULL << 28)) {
+    if (cap * l->stride() > (1ULL << 31)) {
         return fail(ir::TrapCode::OutOfMemory, "list too large");
     }
-    auto* data = static_cast<Slot*>(l->owner == Owner::State
-                                        ? allocFor(l->owner, cap * l->elemSlots * sizeof(Slot))
-                                        : regionFor(l->owner, l->level)->allocate(cap * l->elemSlots * sizeof(Slot)));
+    std::size_t bytes = std::max<std::size_t>(cap * l->stride(), sizeof(Slot));
+    auto* data = static_cast<Slot*>(l->owner == Owner::State ? allocFor(l->owner, bytes)
+                                                              : regionFor(l->owner, l->level)->allocate(bytes));
     if (data == nullptr && l->owner != Owner::State) {
         return fail(ir::TrapCode::OutOfMemory);
     }
@@ -278,7 +279,7 @@ bool Sandbox::growList(List* l, std::uint32_t need) {
         return false;
     }
     if (l->len > 0) {
-        std::memcpy(data, l->data, static_cast<std::size_t>(l->len) * l->elemSlots * sizeof(Slot));
+        std::memcpy(data, l->data, static_cast<std::size_t>(l->len) * l->stride());
     }
     if (l->owner == Owner::State) {
         heap_.release(l->data);
@@ -298,7 +299,9 @@ List* Sandbox::filledList(std::int64_t n, const Slot* value, TypeId elem) {
         return nullptr;
     }
     std::uint16_t es = l->elemSlots;
-    if (es == 1) {
+    if (l->packed) {
+        std::memset(l->data, static_cast<int>(value->u & 1), static_cast<std::size_t>(n));
+    } else if (es == 1) {
         std::fill_n(l->data, n, *value);
     } else {
         for (std::int64_t i = 0; i < n; ++i) {
@@ -312,6 +315,10 @@ List* Sandbox::filledList(std::int64_t n, const Slot* value, TypeId elem) {
 bool Sandbox::listPush(List* l, const Slot* value) {
     if (l->len == l->cap && !growList(l, l->len + 1)) {
         return false;
+    }
+    if (l->packed) {
+        l->bytes()[l->len++] = static_cast<std::uint8_t>(value->u & 1);
+        return true;
     }
     Slot* dst = l->data + static_cast<std::size_t>(l->len) * l->elemSlots;
     if (l->owner == Owner::State && l->elemHasRefs) {
@@ -333,6 +340,10 @@ bool Sandbox::listSet(List* l, std::int64_t index, const Slot* value) {
     if (static_cast<std::uint64_t>(index) >= l->len) {
         return fail(ir::TrapCode::IndexOutOfBounds, std::format("index {} of a list of {}", index, l->len));
     }
+    if (l->packed) {
+        l->bytes()[index] = static_cast<std::uint8_t>(value->u & 1);
+        return true;
+    }
     Slot* dst = l->data + static_cast<std::size_t>(index) * l->elemSlots;
     if (l->owner == Owner::State && l->elemHasRefs) {
         return storeState(l->elemType, value, dst);
@@ -352,6 +363,11 @@ void Sandbox::listPop(List* l, Slot* dst) {
         return;
     }
     --l->len;
+    if (l->packed) {
+        dst[0].u = 1;
+        dst[1].u = l->bytes()[l->len];
+        return;
+    }
     Slot* src = l->data + static_cast<std::size_t>(l->len) * l->elemSlots;
     if (ptr) {
         dst[0] = src[0];
@@ -595,6 +611,11 @@ bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {
         dst->p = out;
         if (l->len > 0 && !growList(out, l->len)) {
             return false;
+        }
+        if (!l->elemHasRefs) {
+            std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
+            out->len = l->len;
+            return true;
         }
         for (std::uint32_t i = 0; i < l->len; ++i) {
             std::size_t off = static_cast<std::size_t>(i) * l->elemSlots;

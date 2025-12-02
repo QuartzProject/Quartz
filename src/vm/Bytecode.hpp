@@ -59,6 +59,7 @@ namespace quartz::vm {
     X(ListGet)   /* a = list(b)[c] for one-slot elements */                                                            \
     X(ListGetN)  /* a.. = list(b)[c] */                                                                                \
     X(ListSet)   /* list(a)[b] = c, one slot, no refs or arena owned */                                                \
+    X(ListGetB) X(ListSetB) /* packed `[bool]` lists */                                                                \
     X(ListSetN)  /* list(a)[b] = c.., generic */                                                                       \
     X(ListPush)  /* list(a).push(b..) */                                                                               \
     X(ListPop)   /* a = list(b).pop() as nullable */                                                                   \

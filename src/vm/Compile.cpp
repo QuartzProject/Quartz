@@ -521,11 +521,14 @@ private:
             word(prog_.module->types.info(ty(in.dst)).elem);
             return;
         case Intrinsic::ListLen: put(Opc::ListLen, d, sa(0)); return;
-        case Intrinsic::ListGet: put(n(in.dst) == 1 ? Opc::ListGet : Opc::ListGetN, d, sa(0), sa(1)); return;
+        case Intrinsic::ListGet:
+            put(ty(in.dst) == ir::kBool ? Opc::ListGetB : n(in.dst) == 1 ? Opc::ListGet : Opc::ListGetN, d, sa(0),
+                sa(1));
+            return;
         case Intrinsic::ListSet: {
             TypeId elem = prog_.module->types.info(ty(a[0])).elem;
             bool simple = lay_.slots(elem) == 1 && !prog_.module->types.hasRefs(elem);
-            put(simple ? Opc::ListSet : Opc::ListSetN, sa(0), sa(1), sa(2));
+            put(elem == ir::kBool ? Opc::ListSetB : simple ? Opc::ListSet : Opc::ListSetN, sa(0), sa(1), sa(2));
             return;
         }
         case Intrinsic::ListPush: put(Opc::ListPush, sa(0), sa(1)); return;
