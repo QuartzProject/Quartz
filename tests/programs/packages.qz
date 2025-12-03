@@ -1,0 +1,56 @@
+// expect: 3 alice 2 shared
+package app
+
+import geo.Point
+import geo.{distance}
+import text.*
+import geo.Origin as Zero
+
+fn main() -> i64 {
+    let p = Point(3, 4)
+    print("{distance(Zero, p)} {shout("alice")} {count()} {helper()}")
+    return 0
+}
+
+fn helper() -> str {
+    return "shared"
+}
+
+// file: geo.qz
+package geo
+
+pub struct Point {
+    x: i64
+    y: i64
+}
+
+pub const Origin = Point(0, 0)
+
+pub fn distance(a: Point, b: Point) -> i64 {
+    return max(abs(b.x - a.x), abs(b.y - a.y)) - 1
+}
+
+fn secret() -> i64 {
+    return 1
+}
+
+// file: text.qz
+package text
+
+pub fn shout(s: str) -> str {
+    return s.lower()
+}
+
+pub fn count() -> i64 {
+    return calls + 2
+}
+
+const calls = 0
+
+// file: app2.qz
+package app
+
+fn other() -> i64 {
+    return 7
+}
+

@@ -103,7 +103,7 @@ public:
                          Span span);
     std::vector<std::unordered_map<Symbol, TypeId>> typeScopes_;
     std::unordered_map<TypeId, std::vector<TraitInfo*>> paramBounds_;
-    std::unordered_map<Symbol, TraitInfo*> traits_;
+    std::vector<std::pair<TraitDecl*, TraitInfo*>> traitList_;
     std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> genericMethods_; // (generic base, method)
     std::set<std::pair<TraitInfo*, TypeId>> traitImpls_;                // (trait, concrete type or base)
 
@@ -123,9 +123,36 @@ public:
     std::unique_ptr<Program> prog_;
     ir::TypeTable* types_ = nullptr;
 
-    std::unordered_map<Symbol, TypeEntry> typeNames_;
-    std::unordered_map<Symbol, FnInfo*> functions_;
-    std::unordered_map<Symbol, GlobalInfo*> globals_;
+    // Names.cpp: one table for every top-level name, filtered by what the current file can see.
+    enum class NameKind : std::uint8_t { Type, Function, Global, Trait };
+    struct NameEntry {
+        NameKind kind;
+        void* target;
+        std::uint32_t file;
+        Visibility vis;
+    };
+    struct FileScope {
+        std::string package;
+        bool interface = false;
+        Module* module = nullptr;
+        std::vector<std::string> starImports;
+        std::unordered_map<Symbol, std::pair<std::string, Symbol>> symbolImports; // local name -> (package, name)
+    };
+    void indexFiles();
+    void addName(Symbol name, NameKind kind, void* target, const Decl* decl, std::uint32_t file);
+    bool visibleFrom(const NameEntry& e, Symbol name, std::uint32_t file) const;
+    bool imported(const NameEntry& e, Symbol alias, std::uint32_t file) const;
+    void* findName(Symbol name, NameKind kind, Span span = {});
+    TypeEntry* findType(Symbol n) { return static_cast<TypeEntry*>(findName(n, NameKind::Type)); }
+    FnInfo* findFunction(Symbol n) { return static_cast<FnInfo*>(findName(n, NameKind::Function)); }
+    GlobalInfo* findGlobal(Symbol n) { return static_cast<GlobalInfo*>(findName(n, NameKind::Global)); }
+    TraitInfo* findTrait(Symbol n) { return static_cast<TraitInfo*>(findName(n, NameKind::Trait)); }
+    std::unordered_map<Symbol, std::vector<NameEntry>> table_;
+    std::vector<FileScope> files_;
+    std::set<std::string> packages_;
+    std::uint32_t currentFile_ = 0;
+    std::vector<std::unique_ptr<TypeEntry>> typeEntries_;
+    std::vector<GlobalInfo*> globalList_;
     std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> methods_;
     std::map<std::pair<TypeId, std::uint32_t>, Property> properties_;
     std::unordered_map<TypeId, TypeId> awaitable_; // handle type -> value produced by `wait`

@@ -14,11 +14,10 @@ void Checker::pushTypeParams(std::span<TypeParam> params, std::vector<TypeId>& i
         names.push_back(p.name);
         std::vector<TraitInfo*> bs;
         for (Symbol b : p.bounds) {
-            auto it = traits_.find(b);
-            if (it == traits_.end()) {
-                diags_.error(p.span, std::format("unknown trait '{}'", str(b)));
+            if (TraitInfo* t = findTrait(b)) {
+                bs.push_back(t);
             } else {
-                bs.push_back(it->second);
+                diags_.error(p.span, std::format("unknown trait '{}'", str(b)));
             }
         }
         paramBounds_[id] = bs;
@@ -33,26 +32,16 @@ void Checker::declareTraits() {
                 continue;
             }
             auto* t = static_cast<TraitDecl*>(d);
-            if (traits_.contains(t->name)) {
-                diags_.error(t->span, std::format("trait '{}' is already declared", str(t->name)));
-                continue;
-            }
             auto* info = prog_->traitStorage.emplace_back(std::make_unique<TraitInfo>()).get();
             info->name = std::string(str(t->name));
             info->self = types_->param("Self");
-            traits_[t->name] = info;
+            addName(t->name, NameKind::Trait, info, t, mod->file->id());
+            traitList_.emplace_back(t, info);
         }
     }
-    for (Module* mod : modules_) {
-        for (Decl* d : mod->decls) {
-            if (d->kind != DeclKind::Trait) {
-                continue;
-            }
-            auto* t = static_cast<TraitDecl*>(d);
-            TraitInfo* info = traits_[t->name];
-            if (info == nullptr || !info->methods.empty()) {
-                continue;
-            }
+    for (auto& [t, info] : traitList_) {
+        currentFile_ = t->span.file;
+        {
             for (FnDecl* m : t->methods) {
                 if (m->body != nullptr) {
                     diags_.error(m->span, "trait methods cannot have a default body yet");
@@ -93,12 +82,11 @@ void Checker::declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<F
         return;
     }
     auto* named = static_cast<NamedTypeExpr*>(impl->trait);
-    auto it = traits_.find(named->path[named->path.size() - 1]);
-    if (it == traits_.end()) {
+    TraitInfo* trait = findTrait(named->path[named->path.size() - 1]);
+    if (trait == nullptr) {
         diags_.error(impl->trait->span, "unknown trait");
         return;
     }
-    TraitInfo* trait = it->second;
     const ir::TypeInfo& oinfo = types_->info(owner);
     TypeId key = oinfo.genericBase != 0 ? oinfo.genericBase : owner;
     if (!traitImpls_.insert({trait, key}).second) {

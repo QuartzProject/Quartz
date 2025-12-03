@@ -20,12 +20,17 @@ bool Checker::hasAttr(std::span<Attribute> attrs, std::string_view name) const {
 
 void Checker::declareTypes() {
     for (Module* mod : modules_) {
+        currentFile_ = mod->file->id();
         for (Decl* d : mod->decls) {
             if (d->kind != DeclKind::Struct && d->kind != DeclKind::State && d->kind != DeclKind::Enum) {
                 continue;
             }
-            if (typeNames_.contains(d->name) || lookupTypeName(d->name, d->span, false) != ir::kError) {
-                diags_.error(d->span, std::format("type '{}' is already declared", str(d->name)));
+            std::size_t savedScopes = typeScopes_.size();
+            typeScopes_.clear();
+            bool builtin = lookupTypeName(d->name, d->span, false) != ir::kError && findType(d->name) == nullptr;
+            typeScopes_.resize(savedScopes);
+            if (builtin) {
+                diags_.error(d->span, std::format("'{}' is a builtin type name", str(d->name)));
                 continue;
             }
             ir::TypeKind kind = ir::TypeKind::Struct;
@@ -62,7 +67,8 @@ void Checker::declareTypes() {
                 types_->mutableInfo(entry.type).typeParams.push_back(pid);
                 baseParams_[entry.type].emplace_back(tp.name, pid);
             }
-            typeNames_[d->name] = entry;
+            auto* stored = typeEntries_.emplace_back(std::make_unique<TypeEntry>(entry)).get();
+            addName(d->name, NameKind::Type, stored, d, currentFile_);
             if (kind == ir::TypeKind::State) {
                 prog_->states.push_back(entry.type);
             }
@@ -77,7 +83,11 @@ syntax::StructDecl* Checker::structDeclOf(TypeId t) {
 }
 
 void Checker::completeTypes() {
-    for (auto& [name, entry] : typeNames_) {
+    for (auto& entryPtr : typeEntries_) {
+        TypeEntry& entry = *entryPtr;
+        Decl* owner = entry.enumDecl != nullptr ? static_cast<Decl*>(entry.enumDecl) : entry.decl;
+        currentFile_ = owner->span.file;
+        Symbol name = owner->name;
         typeScopes_.emplace_back();
         for (const auto& [sym, pid] : baseParams_[entry.type]) {
             typeScopes_.back()[sym] = pid;
@@ -152,7 +162,9 @@ void Checker::completeTypes() {
     }
     types_->refreshInstances();
     // A struct that contains itself by value has no finite size.
-    for (auto& [name, entry] : typeNames_) {
+    for (auto& entryPtr : typeEntries_) {
+        TypeEntry& entry = *entryPtr;
+        Symbol name = entry.decl != nullptr ? entry.decl->name : Symbol{};
         if (entry.decl == nullptr || types_->kind(entry.type) != ir::TypeKind::Struct) {
             continue;
         }
@@ -198,9 +210,8 @@ TypeId Checker::lookupTypeName(Symbol name, Span span, bool report) {
             return found->second;
         }
     }
-    auto it = typeNames_.find(name);
-    if (it != typeNames_.end()) {
-        return it->second.type;
+    if (TypeEntry* e = findType(name)) {
+        return e->type;
     }
     if (report) {
         diags_.error(span, std::format("unknown type '{}'", text));
@@ -372,16 +383,14 @@ FnInfo* Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface, const Imp
         table[key] = info;
         prog_->methodTable[{key0, std::string(str(fn->name))}] = info;
     } else {
-        if (functions_.contains(fn->name) || globals_.contains(fn->name)) {
-            diags_.error(fn->span, std::format("'{}' is already declared", info->name));
-        }
-        functions_[fn->name] = info;
+        addName(fn->name, NameKind::Function, info, fn, fn->span.file);
     }
     return info;
 }
 
 void Checker::declareFunctions() {
     for (Module* mod : modules_) {
+        currentFile_ = mod->file->id();
         bool iface = mod->file->isInterface();
         for (Decl* d : mod->decls) {
             if (d->kind == DeclKind::Fn) {
@@ -410,21 +419,21 @@ void Checker::declareFunctions() {
                 auto* g = prog_->globalStorage.emplace_back(std::make_unique<GlobalInfo>()).get();
                 g->decl = c;
                 c->info = g;
-                if (functions_.contains(c->name) || globals_.contains(c->name)) {
-                    diags_.error(c->span, std::format("'{}' is already declared", str(c->name)));
-                }
-                globals_[c->name] = g;
+                addName(c->name, NameKind::Global, g, c, currentFile_);
+                globalList_.push_back(g);
             }
         }
     }
 }
 
 std::unique_ptr<Program> Checker::run() {
+    indexFiles();
     declareTypes();
     completeTypes();
     declareTraits();
     declareFunctions();
-    for (auto& [name, g] : globals_) {
+    for (GlobalInfo* g : globalList_) {
+        currentFile_ = g->decl->span.file;
         if (g->type == ir::kError && !g->checking) {
             g->checking = true;
             TypeId declared = g->decl->type != nullptr ? resolveType(g->decl->type) : ir::kError;
@@ -436,6 +445,7 @@ std::unique_ptr<Program> Checker::run() {
         }
     }
     for (auto& [type, decl] : prog_->structDecls) {
+        currentFile_ = decl->span.file;
         selfType_ = type;
         for (FieldDecl& f : decl->fields) {
             if (f.defaultValue != nullptr) {

@@ -239,9 +239,7 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
         }
         return l->type;
     }
-    auto git = globals_.find(e->name);
-    if (git != globals_.end()) {
-        GlobalInfo* g = git->second;
+    if (GlobalInfo* g = findGlobal(e->name)) {
         e->ref = IdentRef::Const;
         e->global = g;
         if (g->type == ir::kError) {
@@ -252,6 +250,8 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
             g->checking = true;
             auto saved = std::move(scopes_);
             scopes_.clear();
+            std::uint32_t savedFile = currentFile_;
+            currentFile_ = g->decl->span.file;
             TypeId declared = g->decl->type != nullptr ? resolveType(g->decl->type) : ir::kError;
             g->type = checkValue(g->decl->value, declared);
             if (declared != ir::kError) {
@@ -259,10 +259,11 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
                 g->type = declared;
             }
             scopes_ = std::move(saved);
+            currentFile_ = savedFile;
         }
         return g->type;
     }
-    if (functions_.contains(e->name)) {
+    if (findFunction(e->name) != nullptr) {
         diags_.error(e->span, std::format("function '{}' must be called; functions are not values yet", str(e->name)));
         return ir::kError;
     }

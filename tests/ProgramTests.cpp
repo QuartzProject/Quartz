@@ -42,8 +42,18 @@ impl i64 {
 }
 )";
 
+// `// file: name` lines split one test into several source files.
 std::vector<quartz::SourceInput> withInterface(const fs::path& path, const std::string& text) {
-    std::vector<quartz::SourceInput> inputs{{path.string(), text}};
+    std::vector<quartz::SourceInput> inputs{{path.string(), ""}};
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.starts_with("// file: ")) {
+            inputs.push_back({line.substr(9), ""});
+            continue;
+        }
+        inputs.back().text += line + "\n";
+    }
     fs::path iface = path;
     iface.replace_extension(".qzi");
     if (fs::exists(iface)) {

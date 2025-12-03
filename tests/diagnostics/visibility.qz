@@ -1,0 +1,25 @@
+// error: unknown function 'secret'
+// error: unknown function 'internalHelper'
+// error: unknown name 'hidden'
+// error: unknown package 'nowhere'
+package app
+
+import lib.*
+import nowhere.Thing
+
+fn main() -> i64 {
+    return secret() + internalHelper() + hidden
+}
+
+// file: lib.qz
+package lib
+
+fn secret() -> i64 {
+    return 1
+}
+
+internal fn internalHelper() -> i64 {
+    return 2
+}
+
+const hidden = 3

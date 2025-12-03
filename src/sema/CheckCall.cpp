@@ -334,7 +334,7 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
     // `Enum.Variant(payload)`
     if (callee->object->kind == ExprKind::Ident && !callee->safe) {
         auto* id = static_cast<IdentExpr*>(callee->object);
-        if (findLocal(id->name) == nullptr && !globals_.contains(id->name)) {
+        if (findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {
             TypeId et = lookupTypeName(id->name, id->span, false);
             if (et != ir::kError && types_->kind(et) == ir::TypeKind::Enum) {
                 const ir::TypeInfo& info = types_->info(et);
@@ -430,11 +430,10 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
             diags_.error(e->callee->span, "calling a value is not supported yet");
             return ir::kError;
         }
-        auto fit = functions_.find(id->name);
-        if (fit != functions_.end()) {
+        if (FnInfo* target = findFunction(id->name)) {
             id->ref = IdentRef::Function;
-            id->fn = fit->second;
-            return finishCall(e, fit->second, nullptr);
+            id->fn = target;
+            return finishCall(e, target, nullptr);
         }
         bool found = false;
         TypeId bt = checkBuiltinFunction(e, id->name, expected, found);
@@ -483,7 +482,7 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
 TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
     if (e->object->kind == ExprKind::Ident && !e->safe) {
         auto* id = static_cast<IdentExpr*>(e->object);
-        if (findLocal(id->name) == nullptr && !globals_.contains(id->name)) {
+        if (findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {
             TypeId et = lookupTypeName(id->name, id->span, false);
             if (et != ir::kError && types_->isGenericBase(et) && types_->kind(et) == ir::TypeKind::Enum) {
                 TypeId want = expected;

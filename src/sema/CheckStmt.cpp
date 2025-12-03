@@ -111,6 +111,7 @@ void Checker::checkAttributes(FnInfo* fn) {
 }
 
 void Checker::checkFunction(FnInfo* fn) {
+    currentFile_ = fn->decl->span.file;
     checkAttributes(fn);
     typeScopes_.emplace_back();
     for (std::size_t i = 0; i < fn->typeParams.size(); ++i) {
