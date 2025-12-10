@@ -1,0 +1,181 @@
+// file header comment
+
+/// doc for the package
+package demo.app // trailing on package
+import a.b.*
+import c.d.{x, y} as z
+
+/* block
+   comment */
+@on(PlayerJoin, priority = Normal) // why
+pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> i64 {
+    let x = (a + b) * c // keep parens
+    let y = a + (b * c)
+    var z: Map<str, List<i64>> = Map()
+    z >>= 1
+    z <<= 2
+    let s = "hi {a + b} and {"nested {x}"} \{ esc }"
+    let t = """multi
+  line {x} """
+    if a && b || !c {
+        return 1
+    } else if let v = opt {
+        return v
+    } else {}
+    match y {
+        0 => {} // zero
+        1..=5 if y > 2 => y = 3
+        Shape.Rect(w, h) => w * h
+        -1 => return -1
+        _ => {
+            // only a comment
+        }
+    }
+    let f = (x: i64, y) => x * 2
+    let g = ((x) => x)(1)
+    let h = (x?).y
+    let q = x?.y ?? -1
+    let big = foo(
+        1,
+        2, // two
+        3,
+    )
+    let w = wait 20.ticks
+    let cast = (300.7) as u8 + (-1) as u64
+    let r = x is Foo
+    let chain = a &&
+        b
+    let chain2 = a ||
+        b
+    let m = obj
+        .method()
+        .other()
+    every 20.ticks {
+        tick()
+    }
+    at io {
+        work()
+    }
+    scope {}
+    for i, v in xs { /* inline */
+        print(v)
+    }
+    while i < 10 {
+        i += 1
+    }
+    let lst = [1, 2, 3]
+    let rep = [0; n + 1]
+    let tup = (1,)
+    let tup2 = (1, "a")
+    let empty = ()
+    let call = f::<i32>(x, name = 3)
+    let fl = 1_000.5e-3 + 0xFF + 0b1010_0101
+    let ch = '\n'
+    let neg = - -x
+    let sh = 1 >> 2 << 3
+
+    // trailing comment in block
+}
+
+struct P {
+    x: i64 = 0
+    @renamed("old")
+    y: i64
+}
+
+state S<T> {
+    // field comment
+    a: [i64; 3]
+
+    b: (i64, str)?
+    c: (i64) -> bool
+}
+@handle
+struct Player
+enum E {
+    A
+    B(i64, [str])
+    C
+}
+impl Show for P {
+    fn show(self) -> str {
+        return "p"
+    }
+
+    pub fn other(self, n: i64) {}
+}
+trait Show {
+    fn show(self) -> str
+    suspend fn later(self)
+}
+const MAX: i64 = 100 // max
+private fn hidden() {}
+// end of file
+fn f() {
+    let a = 1 + /* mid */ 2
+    let b = foo( // after open
+        x,
+    )
+    let c = [
+        // leading in list
+        1,
+        2, /* two */
+    ]
+    let d = "{x /* in interp */}"
+    let e = 1 + // trailing op
+        2
+    let g = (wait x) + 1
+    let h = (wait a) ?? b
+    let i = (a) + 1
+    let j = ((x) => x * 2)
+    let k = (x as T) < y
+    let l = (a < b) == c
+    let m = a ?? b ?? c
+    let n = (a ?? b) ?? c
+    let o = a - (b - c)
+    let p = (a - b) - c
+    let q = -(x as i64)
+    let r = (-x) as i64
+    let s = !(a && b)
+    let t = (a..b)
+    let u = x?.y?.z
+    let v = (x?)?
+    if x {
+        a()
+    }
+    // before else
+    else {
+        b()
+    }
+    foo(
+        a, // c1
+        /* c2 */ b,
+    )
+    bar()
+    baz(/* nothing */)
+    let w = x
+        // between
+        .y
+    return
+}
+
+fn g(
+    a: i64, // first
+    b: i64,
+) {}
+fn f() {
+    let a = "x {"in {"deep"} er"} y \{ not } \u{1F600} \" q"
+    let b = """
+        multi {a + b} line "quoted" {f([x, 1])}
+    """
+    let c = 'a'
+    let d = '\''
+    let e = '\u{41}'
+    let g = "{{
+        1
+    }}"
+    let h = 0o17 + 0b1_0 + 1e5 + 2.5E+3 + 20.ticks
+    let i = (x?).0
+    /* outer /* inner */ still comment */
+    let j = "naïve ñ {x}"
+}

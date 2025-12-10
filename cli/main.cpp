@@ -1,3 +1,4 @@
+#include "Fmt.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <cstdio>
@@ -33,7 +34,8 @@ bool hostPrint(quartz::vm::HostCall& call, void*) {
 }
 
 int usage() {
-    std::fprintf(stderr, "usage: quartz check|ir|run|dis <file.qz|file.qzi>... [--entry name]\n");
+    std::fputs("usage: quartz check|ir|run|dis <file.qz|file.qzi>... [--entry name]\n", stderr);
+    std::fputs("       quartz fmt [--check] <file|dir>... | quartz fmt -\n", stderr);
     return 2;
 }
 
@@ -44,6 +46,9 @@ int main(int argc, char** argv) {
         return usage();
     }
     std::string_view cmd = argv[1];
+    if (cmd == "fmt") {
+        return runFmt(argc, argv);
+    }
     std::vector<quartz::SourceInput> inputs;
     std::string entry = "main";
     bool wantStd = true;
