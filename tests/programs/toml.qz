@@ -1,0 +1,43 @@
+// expect: {"database": {"enabled": true, "ports": [8000, 8001], "server": "192.168.1.1"}, "owner": {"dob": "1979-05-27T07:32:00-08:00", "name": "Tom"}, "products": [{"name": "Hammer", "sku": 738594937}, {"color": "gray", "name": "Nail"}], "title": "TOML Example", "x": {"y": {"z": -0.5}}}
+// expect: hex 255 big 1000000 lit C:\Users
+// expect: error toml line 2: key 'a' is defined twice
+
+import std.data.*
+
+fn main() -> i64 {
+    let doc = """
+# comment
+title = "TOML Example"
+x.y.z = -5e-1
+
+[owner]
+name = "Tom" # trailing
+dob = 1979-05-27T07:32:00-08:00
+
+[database]
+server = "192.168.1.1"
+ports = [ 8000,
+          8001, ]
+enabled = true
+
+[[products]]
+name = "Hammer"
+sku = 738594937
+
+[[products]]
+name = "Nail"
+color = "gray"
+"""
+    print(toJson(parseToml(doc).unwrap()))
+    let more = parseToml("""h = 0xff
+n = 1_000_000
+p = 'C:\\Users'
+inline = \{ a = 1, b = [true] }
+""").unwrap()
+    print("hex {more.get("h")?.asInt() ?? 0} big {more.get("n")?.asInt() ?? 0} lit {more.get("p")?.asStr() ?? "?"}")
+    match parseToml("a = 1\na = 2\n") {
+        Ok(v) => print("bad")
+        Err(e) => print("error {e}")
+    }
+    return 0
+}

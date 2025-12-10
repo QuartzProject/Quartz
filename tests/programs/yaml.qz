@@ -1,0 +1,36 @@
+// expect: {"empty": null, "items": [{"count": 2, "name": "sword"}, {"count": 64, "name": "dirt"}], "motd": "Welcome to\nthe server\n", "name": "Hub", "ports": [25565, 25566], "settings": {"pvp": false, "ratio": 1.5, "tags": ["a", "b c"]}, "words": "one two"}
+// expect: error yaml line 2: duplicate key 'a'
+
+import std.data.*
+
+fn main() -> i64 {
+    let doc = """
+# server config
+name: Hub
+ports: [25565, 25566]
+settings:
+  pvp: false      # no pvp
+  ratio: 1.5
+  tags:
+    - a
+    - "b c"
+items:
+  - name: sword
+    count: 2
+  - name: dirt
+    count: 64
+motd: |
+  Welcome to
+  the server
+words: >-
+  one
+  two
+empty:
+"""
+    print(toJson(parseYaml(doc).unwrap()))
+    match parseYaml("a: 1\na: 2\n") {
+        Ok(v) => print("bad")
+        Err(e) => print("error {e}")
+    }
+    return 0
+}
