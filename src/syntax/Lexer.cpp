@@ -127,8 +127,8 @@ enum class Mode : std::uint8_t { Brace, Interp, InterpMultiline };
 
 class Lexer {
 public:
-    Lexer(const SourceFile& file, Arena& arena, Diagnostics& diags)
-        : file_(file), src_(file.text()), arena_(arena), diags_(diags) {}
+    Lexer(const SourceFile& file, Arena& arena, Diagnostics& diags, std::vector<Span>* comments)
+        : file_(file), src_(file.text()), arena_(arena), diags_(diags), comments_(comments) {}
 
     std::vector<Token> run() {
         std::vector<Token> out;
@@ -182,16 +182,26 @@ private:
             } else if (c == ' ' || c == '\t' || c == '\r') {
                 ++pos_;
             } else if (c == '/' && peek(1) == '/') {
+                std::size_t begin = pos_;
                 while (pos_ < src_.size() && src_[pos_] != '\n') {
                     ++pos_;
                 }
+                recordComment(begin);
             } else if (c == '/' && peek(1) == '*') {
+                std::size_t begin = pos_;
                 skipBlockComment();
+                recordComment(begin);
             } else {
                 break;
             }
         }
         return newline;
+    }
+
+    void recordComment(std::size_t begin) {
+        if (comments_ != nullptr) {
+            comments_->push_back({file_.id(), static_cast<std::uint32_t>(begin), static_cast<std::uint32_t>(pos_)});
+        }
     }
 
     void skipBlockComment() {
@@ -529,14 +539,15 @@ private:
     std::string_view src_;
     Arena& arena_;
     Diagnostics& diags_;
+    std::vector<Span>* comments_;
     std::size_t pos_ = 0;
     std::vector<Mode> modes_;
 };
 
 } // namespace
 
-std::vector<Token> tokenize(const SourceFile& file, Arena& arena, Diagnostics& diags) {
-    return Lexer(file, arena, diags).run();
+std::vector<Token> tokenize(const SourceFile& file, Arena& arena, Diagnostics& diags, std::vector<Span>* comments) {
+    return Lexer(file, arena, diags, comments).run();
 }
 
 } // namespace quartz::syntax
