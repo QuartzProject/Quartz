@@ -45,6 +45,9 @@ Reg Lowerer::coerce(Reg r, TypeId from, TypeId to) {
 }
 
 Reg Lowerer::lowerExpr(Expr* e, TypeId want) {
+    if (auto pre = preLowered_.find(e); pre != preLowered_.end()) {
+        return pre->second;
+    }
     Reg r = lowerInner(e);
     if (T(e->type) == kNever) {
         TypeId t = want != kError ? want : kI64;
@@ -202,7 +205,43 @@ Reg Lowerer::lowerMember(MemberExpr* e) {
 }
 
 Reg Lowerer::lowerCall(CallExpr* e) {
-    TypeId rt = T(e->type);
+    if (!e->safeCall) {
+        return lowerCallCore(e);
+    }
+    // `a?.m(...)`: null stays null, otherwise call on the unwrapped receiver.
+    TypeId outer = T(e->type);
+    Reg res = outer == kVoid ? kNoReg : newReg(outer);
+    Reg obj = lowerInner(e->receiver);
+    Reg isNull = newReg(kBool);
+    emit(Op::IsNull, isNull, obj);
+    std::size_t endFrame = depth_;
+    open(Op::Block);
+    std::size_t nullFrame = depth_;
+    open(Op::Block);
+    brIf(isNull, nullFrame);
+    Reg inner = newReg(types_->info(T(e->receiver->type)).elem);
+    emit(Op::Unwrap, inner, obj);
+    preLowered_[e->receiver] = inner;
+    Reg v = lowerCallCore(e);
+    preLowered_.erase(e->receiver);
+    if (res != kNoReg) {
+        if (T(e->innerType) == outer) {
+            emit(Op::Move, res, v);
+        } else {
+            emit(Op::Wrap, res, v);
+        }
+    }
+    br(endFrame);
+    close();
+    if (res != kNoReg) {
+        emit(Op::NullOf, res);
+    }
+    close();
+    return res;
+}
+
+Reg Lowerer::lowerCallCore(CallExpr* e) {
+    TypeId rt = T(e->safeCall ? e->innerType : e->type);
     Reg dst = rt == kVoid || rt == kNever ? kNoReg : newReg(rt);
     std::vector<Reg> args;
     switch (e->callKind) {
@@ -216,6 +255,9 @@ Reg Lowerer::lowerCall(CallExpr* e) {
         if (e->traitCall) {
             // Static dispatch: the receiver's concrete type picks the impl.
             TypeId recvType = T(e->receiver->type);
+            if (e->safeCall) {
+                recvType = types_->info(recvType).elem;
+            }
             const TypeInfo& recvInfo = types_->info(recvType);
             std::string method = fn->name.substr(fn->name.rfind('.') + 1);
             auto it = prog_.methodTable.find({recvInfo.genericBase != 0 ? recvInfo.genericBase : recvType, method});

@@ -3,6 +3,7 @@
 #include "ir/Lower.hpp"
 
 #include <map>
+#include <unordered_map>
 #include <tuple>
 
 namespace quartz::ir {
@@ -43,6 +44,8 @@ public:
     Reg lowerInner(Expr* e);
     Reg lowerBinary(BinaryExpr* e);
     Reg lowerCall(CallExpr* e);
+    Reg lowerCallCore(CallExpr* e);
+    std::unordered_map<const Expr*, Reg> preLowered_;
     Reg lowerMember(MemberExpr* e);
     Reg lowerInterp(InterpExpr* e);
     Reg toStr(Reg r, TypeId t);

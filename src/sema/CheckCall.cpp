@@ -157,7 +157,11 @@ TypeId Checker::finishCall(CallExpr* call, FnInfo* fn, Expr* receiver) {
     if (fn->generic()) {
         ir::TypeSubst bindings;
         if (receiver != nullptr && fn->hasSelf) {
-            unify(fn->owner, receiver->type, bindings);
+            TypeId rt = receiver->type;
+            if (call->safeCall && types_->kind(rt) == ir::TypeKind::Nullable) {
+                rt = types_->info(rt).elem;
+            }
+            unify(fn->owner, rt, bindings);
         }
         std::span<TypeExpr*> explicitArgs;
         if (call->callee->kind == ExprKind::Ident) {
@@ -358,8 +362,24 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
             }
         }
     }
-    TypeId recv = checkValue(callee->object, ir::kError);
+    TypeId recv = call->safeCall && !callee->safe ? types_->info(callee->object->type).elem
+                                                   : checkValue(callee->object, ir::kError);
     callee->type = ir::kError;
+    if (callee->safe && recv != ir::kError) {
+        if (types_->kind(recv) != ir::TypeKind::Nullable) {
+            diags_.error(callee->span, std::format("'?.' needs a nullable value, found '{}'", typeName(recv)));
+            return ir::kError;
+        }
+        call->safeCall = true;
+        callee->safe = false;
+        TypeId inner = checkMethodCall(call, callee, expected);
+        callee->safe = true;
+        call->innerType = inner;
+        if (inner == ir::kVoid || inner == ir::kError || types_->kind(inner) == ir::TypeKind::Nullable) {
+            return inner;
+        }
+        return types_->nullable(inner);
+    }
     if (recv == ir::kError) {
         for (Arg& a : call->args) {
             check(a.value, ir::kError);
@@ -378,10 +398,6 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
             }
             return finishCall(call, git->second, callee->object);
         }
-    }
-    if (callee->safe) {
-        diags_.error(callee->span, "'?.' method calls are not supported yet; use 'if let'");
-        return ir::kError;
     }
     auto it = methods_.find({recv, callee->name.id});
     if (it != methods_.end()) {

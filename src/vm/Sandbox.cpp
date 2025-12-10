@@ -1,5 +1,7 @@
 #include "vm/Sandbox.hpp"
 
+#include "std/Std.hpp"
+
 #include <format>
 
 namespace quartz::vm {
@@ -13,6 +15,27 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
     bindings_.resize(program_->module->imports.size());
     calls_.reserve(limits_.maxDepth + 1);
     resetRegions(&arena_);
+    bindNatives();
+}
+
+void Sandbox::bindNatives() {
+    const ir::Module& m = *program_->module;
+    dataTypes_ = std::make_unique<stdlib::DataTypes>();
+    for (const ir::HostImport& imp : m.imports) {
+        if (imp.name == "std.data.parseJson" && m.types.isResult(imp.result)) {
+            ir::TypeId value = m.types.info(imp.result).variants[0].payload[0];
+            const ir::TypeInfo& vi = m.types.info(value);
+            if (vi.variants.size() == 7) {
+                dataTypes_->value = value;
+                dataTypes_->list = vi.variants[5].payload[0];
+                dataTypes_->table = vi.variants[6].payload[0];
+                dataTypes_->valueSlots = program_->layouts->slots(value);
+            }
+        }
+    }
+    for (const stdlib::Native& n : stdlib::natives()) {
+        bind(n.name, n.fn, dataTypes_.get());
+    }
 }
 
 Sandbox::~Sandbox() {

@@ -184,6 +184,8 @@ struct CallExpr : Expr {
     sema::FnInfo* fn = nullptr;
     std::span<std::uint32_t> typeArgs; // generic calls: the callee's type arguments (may contain parameters)
     bool traitCall = false;            // resolved per instantiation from the receiver's concrete type
+    bool safeCall = false;             // `a?.m()`: the receiver is nullable and `type` is the nullable result
+    std::uint32_t innerType = 0;       // safe calls: the method's own result type
     std::uint16_t builtin = 0;  // ir::Intrinsic for CallKind::Builtin
     std::uint32_t variant = 0;  // CallKind::Variant
     Expr* receiver = nullptr; // for methods: the object

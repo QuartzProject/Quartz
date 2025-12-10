@@ -1,0 +1,31 @@
+// expect: name Steve level 7 ratio 0.5
+// expect: tags 3 first pvp
+// expect: {"a": [1, 2.5, "x\n", true, null], "b": {"c": -3}}
+// expect: error json 1:9: expected ',' or '}'
+// expect: unicode é 😀
+
+import std.data.*
+
+fn main() -> i64 {
+    let text = """\{"name": "Steve", "level": 7, "ratio": 0.5, "tags": ["pvp", "build", "chat"]}"""
+    match parseJson(text) {
+        Ok(v) => {
+            let name = v.get("name")?.asStr() ?? "?"
+            let level = v.get("level")?.asInt() ?? 0
+            let ratio = v.get("ratio")?.asFloat() ?? 0.0
+            print("name {name} level {level} ratio {ratio}")
+            let tags = v.get("tags")
+            print("tags {tags?.len() ?? 0} first {tags?.item(0)?.asStr() ?? "?"}")
+        }
+        Err(e) => print("error {e}")
+    }
+    let round = parseJson("""\{"b": \{"c": -3}, "a": [1, 2.5, "x\\n", true, null]}""")
+    print(toJson(round.unwrap()))
+    match parseJson("""\{"a": 1 "b": 2}""") {
+        Ok(v) => print("bad")
+        Err(e) => print("error {e}")
+    }
+    let u = parseJson("\"\\u00e9 \\ud83d\\ude00\"").unwrap()
+    print("unicode {u.asStr() ?? "?"}")
+    return 0
+}

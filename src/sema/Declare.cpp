@@ -343,7 +343,8 @@ FnInfo* Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface, const Imp
             info->defaults.push_back(nullptr);
         }
     } else {
-        info->name = std::string(str(fn->name));
+        const std::string& pkg = files_[fn->span.file].package;
+        info->name = info->isHost && !pkg.empty() ? pkg + "." + std::string(str(fn->name)) : std::string(str(fn->name));
         if (fn->hasSelf) {
             diags_.error(fn->span, "'self' is only allowed in impl blocks");
         }

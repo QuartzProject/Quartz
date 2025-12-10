@@ -3,6 +3,10 @@
 #include "vm/Bytecode.hpp"
 #include "vm/Heap.hpp"
 
+namespace quartz::stdlib {
+struct DataTypes;
+}
+
 #include <expected>
 #include <memory>
 #include <span>
@@ -42,10 +46,13 @@ struct TaskOutcome {
 struct HostCall {
     Sandbox& sandbox;
     const Slot* args;
-    Slot result{};
-    std::string error; // set it and return false to trap with HostError
+    Slot result{};      // one-slot results
+    std::string error;  // set it and return false to trap with HostError
+    Slot* out = nullptr; // results wider than one slot (structs, Result) are written here directly
 
     Str* string(std::string_view text);
+    /// Charges fuel for work done natively (spec 9.2); false when the budget is gone.
+    bool charge(std::int64_t units);
 };
 
 using HostFn = bool (*)(HostCall& call, void* user);
@@ -186,6 +193,9 @@ private:
     std::vector<Slot*> states_;
     bool started_ = false;
     std::int64_t fuel_ = 0;
+    friend struct HostCall;
+    void bindNatives();
+    std::unique_ptr<stdlib::DataTypes> dataTypes_;
 
     friend struct HostCall;
     friend class Interpreter;

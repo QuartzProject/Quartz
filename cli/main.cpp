@@ -68,6 +68,9 @@ int main(int argc, char** argv) {
     opts.printIr = cmd == "ir";
     quartz::CompileOutput out = quartz::compile(inputs, opts);
     std::fputs(out.diagnostics.c_str(), stderr);
+    if (cmd == "ir") {
+        std::fputs(out.irText.c_str(), stdout);
+    }
     if (!out.program) {
         return 1;
     }
@@ -75,7 +78,6 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (cmd == "ir") {
-        std::fputs(out.irText.c_str(), stdout);
         return 0;
     }
     if (cmd == "dis") {

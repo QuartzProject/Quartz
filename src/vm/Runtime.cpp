@@ -154,6 +154,14 @@ Str* Sandbox::newStr(std::string_view text) {
 
 Str* HostCall::string(std::string_view text) { return sandbox.newStr(text); }
 
+bool HostCall::charge(std::int64_t units) {
+    sandbox.fuel_ -= units;
+    if (sandbox.fuel_ < -sandbox.limits_.fuelPerCall || (!sandbox.taskMode_ && sandbox.fuel_ < 0)) {
+        return sandbox.fail(ir::TrapCode::OutOfFuel);
+    }
+    return true;
+}
+
 Str* Sandbox::concat(const Slot* parts, std::uint32_t count) {
     std::size_t total = 0;
     for (std::uint32_t i = 0; i < count; ++i) {

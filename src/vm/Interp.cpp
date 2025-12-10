@@ -86,14 +86,14 @@ bool strEqNullable(const Str* a, const Str* b) {
 
 bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
     const Binding& bnd = bindings_[import];
-    HostCall hc{*this, args, {}, {}};
+    HostCall hc{*this, args, {}, {}, result};
     if (!bnd.fn(hc, bnd.user)) {
         return fail(ir::TrapCode::HostError, std::move(hc.error));
     }
     if (trapped_) {
         return false;
     }
-    if (result != nullptr) {
+    if (result != nullptr && program_->importResultSlots[import] == 1) {
         *result = hc.result;
     }
     return true;
@@ -467,6 +467,7 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             CASE(CallHost) {
                 fuel_ = fuel;
                 CHECK(callHost(ins.b, R + ins.c, P.importResultSlots[ins.b] != 0 ? &RA : nullptr));
+                fuel = fuel_;
                 NEXT();
             }
             CASE(Ret) {

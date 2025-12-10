@@ -3,6 +3,7 @@
 #include "ir/Lower.hpp"
 #include "ir/Optimize.hpp"
 #include "ir/Validator.hpp"
+#include "std/Std.hpp"
 #include "sema/Sema.hpp"
 #include "syntax/Parser.hpp"
 
@@ -17,6 +18,10 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     std::vector<syntax::Module*> modules;
     for (const SourceInput& in : inputs) {
         const SourceFile& file = sources.add(in.name, in.text);
+        modules.push_back(syntax::parseModule(file, arena, names, diags));
+    }
+    for (const auto& [name, text] : stdlib::sources()) {
+        const SourceFile& file = sources.add(std::string(name), std::string(text));
         modules.push_back(syntax::parseModule(file, arena, names, diags));
     }
     if (diags.hasErrors()) {
