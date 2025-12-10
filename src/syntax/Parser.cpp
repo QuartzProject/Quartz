@@ -284,6 +284,7 @@ Decl* Parser::parseStruct(std::span<Attribute> attrs, Visibility vis, DeclKind k
     if (accept(Tok::LBrace)) {
         NewlineGuard g(*this, false);
         while (!at(Tok::RBrace) && !at(Tok::Eof)) {
+            std::size_t before = pos_;
             FieldDecl f{};
             f.attrs = parseAttributes();
             f.span = cur().span;
@@ -297,6 +298,9 @@ Decl* Parser::parseStruct(std::span<Attribute> attrs, Visibility vis, DeclKind k
             if (!accept(Tok::Comma) && !accept(Tok::Semi) && !at(Tok::RBrace) && !cur().newlineBefore) {
                 error(cur().span, "expected a newline or ',' between fields");
                 syncTo({Tok::RBrace});
+            }
+            if (pos_ == before) {
+                advance();
             }
         }
         expect(Tok::RBrace, "to close the field list");
@@ -319,6 +323,7 @@ Decl* Parser::parseEnum(std::span<Attribute> attrs, Visibility vis) {
     std::vector<Variant> variants;
     expect(Tok::LBrace, "to start the variant list");
     while (!at(Tok::RBrace) && !at(Tok::Eof)) {
+        std::size_t before = pos_;
         Variant v{};
         v.span = cur().span;
         v.name = expectIdent("variant name");
@@ -338,6 +343,9 @@ Decl* Parser::parseEnum(std::span<Attribute> attrs, Visibility vis) {
         if (!accept(Tok::Comma) && !at(Tok::RBrace) && !cur().newlineBefore) {
             error(cur().span, "expected a newline or ',' between variants");
             syncTo({Tok::RBrace});
+        }
+        if (pos_ == before) {
+            advance();
         }
     }
     expect(Tok::RBrace, "to close the variant list");
