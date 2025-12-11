@@ -44,8 +44,10 @@ fn init(d: Data) {
         d.last.push(-100)
         d.count.push(0)
     }
-    d.banned = ["spam", "scam", "hack", "cheat", "exploit", "dupe", "griefer", "noob", "ez", "trash",
-        "stupid", "idiot", "fake", "fraud", "bot", "ddos", "leak", "bully", "toxic", "abuse"]
+    d.banned = [
+        "spam", "scam", "hack", "cheat", "exploit", "dupe", "griefer", "noob", "ez", "trash",
+        "stupid", "idiot", "fake", "fraud", "bot", "ddos", "leak", "bully", "toxic", "abuse",
+    ]
     for i in 1..=N {
         d.xs.push(((i * 37) % 100) as f64)
         d.vs.push((((i * 13) % 7 - 3) as f64) * 0.5 + 0.25)

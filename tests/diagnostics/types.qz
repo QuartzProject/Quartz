@@ -7,8 +7,14 @@
 // error: unknown name 'unknown'
 // error: function 'g' may end without returning a 'str'
 
-enum Color { Red, Green, Blue(i64) }
-struct P { x: i64 }
+enum Color {
+    Red
+    Green
+    Blue(i64)
+}
+struct P {
+    x: i64
+}
 fn f(a: i64) -> i64 {
     let c = Color.Red
     match c {
@@ -20,7 +26,7 @@ fn f(a: i64) -> i64 {
     a = 3
     var p = P(x = 1)
     p.y = 2
-    if a { }
+    if a {}
     return unknown
 }
-fn g() -> str { }
+fn g() -> str {}

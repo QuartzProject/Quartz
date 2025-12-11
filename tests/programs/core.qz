@@ -8,8 +8,15 @@
 // expect: null ok
 // expect: fib 6765
 
-struct P { x: i64, y: i64 }
-enum Shape { Circle(f64), Rect(f64, f64), Empty }
+struct P {
+    x: i64
+    y: i64
+}
+enum Shape {
+    Circle(f64)
+    Rect(f64, f64)
+    Empty
+}
 fn area(s: Shape) -> f64 {
     return match s {
         Circle(r) => r * r * 3.0
@@ -18,12 +25,16 @@ fn area(s: Shape) -> f64 {
     }
 }
 fn fib(n: i64) -> i64 {
-    if n < 2 { return n }
+    if n < 2 {
+        return n
+    }
     return fib(n - 1) + fib(n - 2)
 }
 fn main() -> i64 {
     var total = 0
-    for i in 0..10 { total += i }
+    for i in 0..10 {
+        total += i
+    }
     print("total {total}")
     let p = P(3, 4)
     var q = p
@@ -32,7 +43,9 @@ fn main() -> i64 {
     let xs = [1, 2, 3]
     xs.push(4)
     var s = 0
-    for v in xs { s += v }
+    for v in xs {
+        s += v
+    }
     print("sum {s} len {xs.len()}")
     let m: Map<str, i64> = Map()
     m["a"] = 1
@@ -45,7 +58,11 @@ fn main() -> i64 {
     let n: i32 = 2147483647
     print("wrap {n + 1} {-7 / 2} {-7 % 2} {(300.7) as u8} {(-1) as u64}")
     let opt: i64? = null
-    if let v = opt { print("bad") } else { print("null ok") }
+    if let v = opt {
+        print("bad")
+    } else {
+        print("null ok")
+    }
     print("fib {fib(20)}")
     return 0
 }
