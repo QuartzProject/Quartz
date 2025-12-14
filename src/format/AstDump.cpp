@@ -311,6 +311,17 @@ public:
         close();
     }
 
+    void typeParams(std::span<const TypeParam> ps) {
+        for (const TypeParam& t : ps) {
+            tag("tp");
+            sym(t.name);
+            for (Symbol b : t.bounds) {
+                sym(b);
+            }
+            close();
+        }
+    }
+
     void decl(const Decl* d) {
         tag(std::format("d{} v{}", static_cast<int>(d->kind), static_cast<int>(d->visibility)));
         sym(d->name);
@@ -319,9 +330,7 @@ public:
         case DeclKind::Fn: {
             const auto* f = static_cast<const FnDecl*>(d);
             out += std::format(" {}{}", f->isSuspend ? 's' : '-', f->hasSelf ? 'h' : '-');
-            for (const TypeParam& t : f->typeParams) {
-                sym(t.name);
-            }
+            typeParams(f->typeParams);
             params(f->params);
             type(f->result);
             expr(f->body);
@@ -330,9 +339,7 @@ public:
         case DeclKind::Struct:
         case DeclKind::State: {
             const auto* s = static_cast<const StructDecl*>(d);
-            for (const TypeParam& t : s->typeParams) {
-                sym(t.name);
-            }
+            typeParams(s->typeParams);
             for (const FieldDecl& f : s->fields) {
                 tag("field");
                 sym(f.name);
@@ -344,6 +351,7 @@ public:
             break;
         }
         case DeclKind::Enum:
+            typeParams(static_cast<const EnumDecl*>(d)->typeParams);
             for (const Variant& v : static_cast<const EnumDecl*>(d)->variants) {
                 tag("variant");
                 sym(v.name);
@@ -355,6 +363,7 @@ public:
             break;
         case DeclKind::Impl: {
             const auto* i = static_cast<const ImplDecl*>(d);
+            typeParams(i->typeParams);
             type(i->target);
             type(i->trait);
             for (const FnDecl* f : i->methods) {

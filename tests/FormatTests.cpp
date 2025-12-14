@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 namespace {
 
@@ -18,6 +19,20 @@ std::string readFile(const fs::path& p) {
     return ss.str();
 }
 
+// `// file: name` lines split one test into several source files (see ProgramTests.cpp).
+std::vector<std::string> segments(const std::string& text) {
+    std::vector<std::string> out(1);
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.starts_with("// file: ") && !out.back().empty()) {
+            out.emplace_back();
+        }
+        out.back() += line + "\n";
+    }
+    return out;
+}
+
 } // namespace
 
 TEST_CASE("formatting every source in the repository is idempotent and keeps the tree") {
@@ -28,15 +43,16 @@ TEST_CASE("formatting every source in the repository is idempotent and keeps the
                 continue;
             }
             CAPTURE(p.string());
-            std::string text = readFile(p);
-            if (!quartz::format::dumpSource(p.string(), text)) {
-                continue;
+            for (const std::string& text : segments(readFile(p))) {
+                if (!quartz::format::dumpSource(p.string(), text)) {
+                    continue;
+                }
+                auto once = quartz::format::formatSource(p.string(), text);
+                REQUIRE_MESSAGE(once.has_value(), once.error());
+                auto twice = quartz::format::formatSource(p.string(), *once);
+                REQUIRE_MESSAGE(twice.has_value(), twice.error());
+                CHECK(*twice == *once);
             }
-            auto once = quartz::format::formatSource(p.string(), text);
-            REQUIRE_MESSAGE(once.has_value(), once.error());
-            auto twice = quartz::format::formatSource(p.string(), *once);
-            REQUIRE_MESSAGE(twice.has_value(), twice.error());
-            CHECK(*twice == *once);
         }
     }
 }

@@ -179,6 +179,7 @@ void Printer::decl(const Decl& d, bool inTrait) {
     case DeclKind::Impl: {
         const auto& impl = static_cast<const ImplDecl&>(d);
         text("impl");
+        typeParams(impl.typeParams);
         space();
         if (impl.trait != nullptr) {
             type(impl.trait);
@@ -258,8 +259,13 @@ void Printer::typeParams(std::span<const TypeParam> params) {
         }
         flush(params[i].span.begin);
         text(name(params[i].name));
+        for (std::size_t b = 0; b < params[i].bounds.size(); ++b) {
+            text(b == 0 ? ":" : " +");
+            space();
+            text(name(params[i].bounds[b]));
+        }
     }
-    std::size_t close = nextToken(params.back().span.end, Tok::Gt);
+    std::size_t close = nextToken(params.back().span.begin, Tok::Gt);
     if (close < toks_.size()) {
         flush(toks_[close].span.begin);
     }
@@ -369,6 +375,7 @@ void Printer::enumDecl(const EnumDecl& e) {
     space();
     flushAfterToken(e.span.begin);
     text(name(e.name));
+    typeParams(e.typeParams);
     space();
     text("{");
     std::uint32_t closeAt = e.span.end - 1;
