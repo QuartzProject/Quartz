@@ -3,7 +3,10 @@
 // expect: 7 0 true false
 // expect: 5 9
 
-enum ParseError { Empty, BadDigit(str) }
+enum ParseError {
+    Empty
+    BadDigit(str)
+}
 
 fn describe(e: ParseError) -> str {
     return match e {
