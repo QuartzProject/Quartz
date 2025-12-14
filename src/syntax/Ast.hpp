@@ -282,6 +282,7 @@ struct Pattern {
     std::span<struct Pattern*> sub; // variant payload patterns
     Expr* literal;                  // literal or range lo
     Expr* rangeHi;
+    bool inclusive = false; // `a..=b`; `a..b` excludes b, as in `for`
     sema::Local* local = nullptr;
     std::uint32_t variantIndex = 0;
 };

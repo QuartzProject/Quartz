@@ -394,7 +394,7 @@ Pattern* Parser::parsePattern() {
     p->kind = PatternKind::Literal;
     p->literal = parseUnary();
     if (at(Tok::DotDot) || at(Tok::DotDotEq)) {
-        advance();
+        p->inclusive = advance().kind == Tok::DotDotEq;
         p->kind = PatternKind::Range;
         p->rangeHi = parseUnary();
     }

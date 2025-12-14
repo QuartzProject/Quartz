@@ -573,7 +573,7 @@ Reg Lowerer::patternTest(Pattern* p, Reg subject, TypeId subjectType) {
         Reg a = newReg(kBool);
         emit(Op::Ge, a, subject, lo);
         Reg b = newReg(kBool);
-        emit(Op::Le, b, subject, hi);
+        emit(p->inclusive ? Op::Le : Op::Lt, b, subject, hi);
         Reg c = newReg(kBool);
         emit(Op::BitAnd, c, a, b);
         return c;

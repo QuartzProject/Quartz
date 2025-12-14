@@ -6,6 +6,7 @@
 // expect: hello world true hello 1.5 0.6666666666666666
 // expect: wrap -2147483648 -3 -1 255 18446744073709551615
 // expect: null ok
+// expect: low mid mid high
 // expect: fib 6765
 
 struct P {
@@ -24,6 +25,14 @@ fn area(s: Shape) -> f64 {
         Empty => 0.0
     }
 }
+fn band(n: i64) -> str {
+    return match n {
+        1..5 => "low"
+        5..=9 => "mid"
+        _ => "high"
+    }
+}
+
 fn fib(n: i64) -> i64 {
     if n < 2 {
         return n
@@ -63,6 +72,7 @@ fn main() -> i64 {
     } else {
         print("null ok")
     }
+    print("{band(4)} {band(5)} {band(9)} {band(10)}")
     print("fib {fib(20)}")
     return 0
 }
