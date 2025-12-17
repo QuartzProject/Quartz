@@ -64,6 +64,7 @@ inline constexpr TypeId kFirstUserType = 18;
 struct Field {
     std::string name;
     TypeId type = kError;
+    std::string renamedFrom; // `@renamed("old")`: the name in older versions of a state
 };
 
 struct VariantInfo {
@@ -81,6 +82,7 @@ struct TypeInfo {
     std::vector<Field> fields;   // Struct, State
     std::vector<VariantInfo> variants;
     bool complete = true;        // nominal types are declared first and completed later
+    std::uint32_t version = 0;   // `@version(n)` of a state
     std::vector<TypeId> typeParams; // generic bases: their parameters (Param types)
     TypeId genericBase = 0;         // instances: the generic base they come from (0 = none)
     std::vector<TypeId> typeArgs;   // instances: the arguments

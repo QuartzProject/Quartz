@@ -123,7 +123,7 @@ TypeId TypeTable::instantiate(TypeId base, const std::vector<TypeId>& args) {
     }
     std::vector<Field> fields;
     for (const Field& f : std::vector<Field>(types_[base].fields)) {
-        fields.push_back({f.name, subst(f.type, map)});
+        fields.push_back({f.name, subst(f.type, map), f.renamedFrom});
     }
     std::vector<VariantInfo> variants;
     for (const VariantInfo& v : std::vector<VariantInfo>(types_[base].variants)) {
@@ -151,7 +151,7 @@ void TypeTable::refreshInstances() {
         }
         std::vector<Field> fields;
         for (const Field& f : std::vector<Field>(types_[base].fields)) {
-            fields.push_back({f.name, subst(f.type, map)});
+            fields.push_back({f.name, subst(f.type, map), f.renamedFrom});
         }
         std::vector<VariantInfo> variants;
         for (const VariantInfo& v : std::vector<VariantInfo>(types_[base].variants)) {

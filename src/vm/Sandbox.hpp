@@ -78,6 +78,14 @@ public:
     [[nodiscard]] std::size_t liveTasks() const;
 
     [[nodiscard]] const Program& program() const { return *program_; }
+
+    /// Every state as JSON, with field names and versions: what `@persist` stores and what a reload carries over.
+    std::expected<std::string, Trap> exportState();
+    /// Loads states written by `exportState` of this or an older version of the program (spec 6.1 migration).
+    std::expected<void, Trap> importState(std::string_view json);
+    /// Builds a sandbox for `next` with the same host bindings and limits and this sandbox's state migrated
+    /// into it. On failure this sandbox is untouched and keeps running (D23).
+    std::expected<std::unique_ptr<Sandbox>, Trap> reload(std::shared_ptr<const Program> next);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
     /// Outside a call: a string for the next call's arguments, valid until the call after it starts.
     Str* newStr(std::string_view text);
@@ -195,6 +203,9 @@ private:
     std::int64_t fuel_ = 0;
     friend struct HostCall;
     void bindNatives();
+    struct ImportCtx;
+    bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
+    void exportValue(std::string& out, ir::TypeId type, const Slot* v);
     std::unique_ptr<stdlib::DataTypes> dataTypes_;
 
     friend struct HostCall;

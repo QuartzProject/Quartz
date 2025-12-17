@@ -421,6 +421,16 @@ bool toJson(vm::HostCall& call, void*) {
 
 } // namespace
 
+bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text, vm::Slot* out, std::string& error) {
+    Builder b(sb, types);
+    JsonParser p(b, text);
+    if (!p.parse(out)) {
+        error = p.error;
+        return false;
+    }
+    return true;
+}
+
 bool parseToml(vm::HostCall& call, void* user);
 bool parseYaml(vm::HostCall& call, void* user);
 

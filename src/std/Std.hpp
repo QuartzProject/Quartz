@@ -16,6 +16,9 @@ struct Native {
     vm::HostFn fn;
 };
 
+/// Parses JSON into a `std.data.Value` in the running sandbox's arena; false with `error` set on bad input.
+bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text, vm::Slot* out, std::string& error);
+
 /// Native implementations of the `std.*` interface functions.
 const std::vector<Native>& natives();
 

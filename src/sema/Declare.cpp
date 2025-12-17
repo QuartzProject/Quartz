@@ -118,7 +118,22 @@ void Checker::completeTypes() {
                 }
             }
             TypeId ft = resolveType(f.type);
-            fields.push_back({std::string(str(f.name)), ft});
+            std::string renamed;
+            for (const Attribute& a : f.attrs) {
+                if (str(a.name) != "renamed") {
+                    diags_.warning(a.span, std::format("unknown field attribute '@{}'", str(a.name)));
+                    continue;
+                }
+                if (a.args.size() != 1 || a.args[0].value->kind != ExprKind::StringLit) {
+                    diags_.error(a.span, "@renamed takes the old field name as a string");
+                    continue;
+                }
+                renamed = std::string(static_cast<StringLitExpr*>(a.args[0].value)->value);
+            }
+            if (!renamed.empty() && info.kind != ir::TypeKind::State) {
+                diags_.error(f.span, "@renamed only applies to state fields");
+            }
+            fields.push_back({std::string(str(f.name)), ft, renamed});
             if (isHandle) {
                 auto* getter = prog_->fnStorage.emplace_back(std::make_unique<FnInfo>()).get();
                 getter->name = std::format("{}.{}", str(name), str(f.name));
@@ -153,6 +168,19 @@ void Checker::completeTypes() {
                 diags_.error(a.span, "an awaitable can only produce a scalar, a str or a handle");
             }
             awaitable_[entry.type] = produced;
+        }
+        for (const Attribute& a : entry.decl->attrs) {
+            std::string_view an = str(a.name);
+            if (an == "version") {
+                if (info.kind != ir::TypeKind::State || a.args.size() != 1 || a.args[0].value->kind != ExprKind::IntLit) {
+                    diags_.error(a.span, "@version(n) goes on a state with an integer");
+                    continue;
+                }
+                types_->mutableInfo(entry.type).version =
+                    static_cast<std::uint32_t>(static_cast<IntLitExpr*>(a.args[0].value)->value);
+            } else if (an != "handle" && an != "awaitable" && an != "persist") {
+                diags_.warning(a.span, std::format("unknown attribute '@{}'", an));
+            }
         }
         ir::TypeInfo& done = types_->mutableInfo(entry.type);
         if (!isHandle) {
