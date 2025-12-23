@@ -335,6 +335,20 @@ TypeId Checker::checkBuiltinMethod(CallExpr* call, TypeId recvType, Symbol name,
 }
 
 TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expected) {
+    if (std::string pkg; packagePath(callee->object, pkg)) {
+        if (auto* fn = static_cast<FnInfo*>(findIn(pkg, callee->name, NameKind::Function))) {
+            return finishCall(call, fn, nullptr);
+        }
+        if (auto* te = static_cast<TypeEntry*>(findIn(pkg, callee->name, NameKind::Type));
+            te != nullptr && !types_->isGenericBase(te->type)) {
+            return checkConstruct(call, te->type);
+        }
+        diags_.error(callee->span, std::format("package '{}' has no public function or type '{}'", pkg, str(callee->name)));
+        for (Arg& a : call->args) {
+            check(a.value, ir::kError);
+        }
+        return ir::kError;
+    }
     // `Enum.Variant(payload)`
     if (callee->object->kind == ExprKind::Ident && !callee->safe) {
         auto* id = static_cast<IdentExpr*>(callee->object);
@@ -496,6 +510,11 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
 }
 
 TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
+    if (std::string pkg; !e->safe && packagePath(e->object, pkg)) {
+        diags_.error(e->span, std::format("use '{}.{}' through an import; qualified constants are not supported yet",
+                                          pkg, str(e->name)));
+        return ir::kError;
+    }
     if (e->object->kind == ExprKind::Ident && !e->safe) {
         auto* id = static_cast<IdentExpr*>(e->object);
         if (findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {

@@ -138,6 +138,41 @@ void* Checker::findName(Symbol name, NameKind kind, Span span) {
     return found != nullptr ? found->target : nullptr;
 }
 
+void* Checker::findIn(const std::string& package, Symbol name, NameKind kind) {
+    auto it = table_.find(name);
+    if (it == table_.end()) {
+        return nullptr;
+    }
+    for (const NameEntry& e : it->second) {
+        if (e.kind == kind && files_[e.file].package == package &&
+            (e.vis == Visibility::Pub || files_[currentFile_].package == package)) {
+            return e.target;
+        }
+    }
+    return nullptr;
+}
+
+// `a.b.c` used as an expression names a package when `a` is not a value in scope and the path is a known package.
+bool Checker::packagePath(const Expr* e, std::string& out) {
+    std::vector<Symbol> parts;
+    while (e->kind == ExprKind::Member && !static_cast<const MemberExpr*>(e)->safe) {
+        parts.push_back(static_cast<const MemberExpr*>(e)->name);
+        e = static_cast<const MemberExpr*>(e)->object;
+    }
+    if (e->kind != ExprKind::Ident) {
+        return false;
+    }
+    Symbol root = static_cast<const IdentExpr*>(e)->name;
+    if (findLocal(root) != nullptr || findGlobal(root) != nullptr || findType(root) != nullptr) {
+        return false;
+    }
+    out = std::string(str(root));
+    for (auto it = parts.rbegin(); it != parts.rend(); ++it) {
+        out += "." + std::string(str(*it));
+    }
+    return packages_.contains(out);
+}
+
 bool Checker::imported(const NameEntry& e, Symbol alias, std::uint32_t file) const {
     auto it = files_[file].symbolImports.find(alias);
     return it != files_[file].symbolImports.end() && e.vis == Visibility::Pub &&

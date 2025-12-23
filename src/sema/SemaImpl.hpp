@@ -143,6 +143,8 @@ public:
     bool visibleFrom(const NameEntry& e, Symbol name, std::uint32_t file) const;
     bool imported(const NameEntry& e, Symbol alias, std::uint32_t file) const;
     void* findName(Symbol name, NameKind kind, Span span = {});
+    void* findIn(const std::string& package, Symbol name, NameKind kind);
+    bool packagePath(const Expr* e, std::string& out);
     TypeEntry* findType(Symbol n) { return static_cast<TypeEntry*>(findName(n, NameKind::Type)); }
     FnInfo* findFunction(Symbol n) { return static_cast<FnInfo*>(findName(n, NameKind::Function)); }
     GlobalInfo* findGlobal(Symbol n) { return static_cast<GlobalInfo*>(findName(n, NameKind::Global)); }
