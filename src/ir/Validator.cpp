@@ -305,7 +305,7 @@ private:
     }
 
     std::expected<void, ValidationError> step(const Inst& in) {
-        if (in.argCount > 0 && (in.argBegin > fn_.args.size() || in.argCount > fn_.args.size() - in.argBegin)) {
+        if (in.argBegin > fn_.args.size() || in.argCount > fn_.args.size() - in.argBegin) {
             return fail("argument list out of range");
         }
         for (Reg r : args(in)) {
@@ -757,11 +757,27 @@ std::expected<void, ValidationError> validate(const Module& m) {
     if (auto r = validateTypes(m.types); !r) {
         return r;
     }
+    if (auto r = validateTypeGraph(m.types); !r) {
+        return r;
+    }
+    auto valueType = [&](TypeId t) { return t < m.types.size() && t != kError && t != kNull && t != kNever; };
     for (const HostImport& imp : m.imports) {
+        bool ok = valueType(imp.result);
         for (TypeId p : imp.params) {
-            if (p >= m.types.size()) {
-                return std::unexpected(ValidationError{~0U, ~0U, "import with invalid type"});
-            }
+            ok = ok && valueType(p) && p != kVoid;
+        }
+        if (!ok) {
+            return std::unexpected(ValidationError{~0U, ~0U, "import with invalid type"});
+        }
+    }
+    for (std::uint32_t f = 0; f < m.functions.size(); ++f) {
+        if (m.functions[f].paramCount > m.functions[f].regs.size()) {
+            return std::unexpected(ValidationError{f, ~0U, "more parameters than registers"});
+        }
+    }
+    for (const Annotation& a : m.annotations) {
+        if (a.function >= m.functions.size() || (a.filter != ~0U && a.filter >= m.functions.size())) {
+            return std::unexpected(ValidationError{~0U, ~0U, "annotation on an unknown function"});
         }
     }
     if (m.states.size() != m.stateInit.size()) {
