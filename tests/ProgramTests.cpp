@@ -85,39 +85,96 @@ std::vector<fs::path> files(const char* dir) {
     return out;
 }
 
+void checkRun(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& text) {
+    std::string printed;
+    quartz::vm::Sandbox sb(program);
+    sb.bind("print", capturePrint, &printed);
+    sb.bind("i64.ticks", hostTicks);
+    REQUIRE(sb.start().has_value());
+    auto t = sb.spawn(program->findFunction("main"), {});
+    while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
+        t = sb.resume(t->task);
+    }
+    auto r = t ? std::expected<quartz::vm::Slot, quartz::vm::Trap>(t->value)
+               : std::expected<quartz::vm::Slot, quartz::vm::Trap>(std::unexpected(t.error()));
+    std::vector<std::string> traps = directives(text, "trap");
+    if (!traps.empty()) {
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().describe().find(traps[0]) != std::string::npos);
+    } else {
+        REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    }
+    std::string expected;
+    for (const std::string& line : directives(text, "expect")) {
+        expected += line + "\n";
+    }
+    CHECK(printed == expected);
+}
+
+quartz::CompileOutput compileProgram(const fs::path& path, const std::string& text) {
+    std::vector<quartz::SourceInput> inputs = withInterface(path, text);
+    inputs.push_back({"<std>.qzi", std::string(kStd)});
+    return quartz::compile(inputs, {.emitBinary = true});
+}
+
 } // namespace
 
 TEST_CASE("programs print what their expect lines say") {
     for (const fs::path& path : files("tests/programs")) {
         CAPTURE(path.string());
         std::string text = readFile(path);
-        std::vector<quartz::SourceInput> inputs = withInterface(path, text);
-        inputs.push_back({"<std>.qzi", std::string(kStd)});
-        quartz::CompileOutput out = quartz::compile(inputs);
+        quartz::CompileOutput out = compileProgram(path, text);
         REQUIRE_MESSAGE(out.program, out.diagnostics);
-        std::string printed;
-        quartz::vm::Sandbox sb(out.program);
-        sb.bind("print", capturePrint, &printed);
-        sb.bind("i64.ticks", hostTicks);
-        REQUIRE(sb.start().has_value());
-        auto t = sb.spawn(out.program->findFunction("main"), {});
-        while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
-            t = sb.resume(t->task);
+        checkRun(out.program, text);
+    }
+}
+
+TEST_CASE("binary modules decode to the same bytes and run the same") {
+    for (const fs::path& path : files("tests/programs")) {
+        CAPTURE(path.string());
+        std::string text = readFile(path);
+        quartz::CompileOutput out = compileProgram(path, text);
+        REQUIRE_MESSAGE(out.program, out.diagnostics);
+        auto mod = quartz::ir::deserialize(out.binary);
+        REQUIRE_MESSAGE(mod.has_value(), (mod ? "" : mod.error()));
+        CHECK(quartz::ir::serialize(**mod) == out.binary);
+        CHECK(quartz::ir::serialize(*out.program->module) == out.binary);
+        auto loaded = quartz::load(out.binary);
+        REQUIRE_MESSAGE(loaded.has_value(), (loaded ? "" : loaded.error()));
+        checkRun(*loaded, text);
+    }
+}
+
+TEST_CASE("truncated, corrupt or untrusted binary modules are rejected without crashing") {
+    std::string text = readFile("tests/programs/core.qz");
+    quartz::CompileOutput out = compileProgram("tests/programs/core.qz", text);
+    REQUIRE(out.program);
+    quartz::ir::SecretSeed seed{};
+    seed.fill(7);
+    quartz::ir::PublicKey key = quartz::ir::publicKey(seed);
+    std::vector<std::uint8_t> file = out.binary;
+    REQUIRE(quartz::ir::sign(file, seed).has_value());
+    quartz::ir::ReadOptions strict;
+    strict.trustedKeys = std::span(&key, 1);
+    strict.requireSignature = true;
+    REQUIRE(quartz::load(file, strict).has_value());
+    CHECK_FALSE(quartz::load(out.binary, strict).has_value());
+
+    for (std::size_t n = 0; n < file.size(); ++n) {
+        CHECK_FALSE(quartz::load(std::span(file).first(n)).has_value());
+    }
+    for (std::size_t i = 0; i < file.size(); ++i) {
+        std::vector<std::uint8_t> bad = file;
+        bad[i] ^= 0x20;
+        CHECK_FALSE(quartz::load(bad, strict).has_value());
+    }
+    std::vector<std::uint8_t> payload = quartz::ir::encodePayload(*out.program->module);
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        for (int flip : {0x01, 0x80, 0xFF}) {
+            std::vector<std::uint8_t> bad = payload;
+            bad[i] = static_cast<std::uint8_t>(bad[i] ^ flip);
+            (void)quartz::load(quartz::ir::seal(bad));
         }
-        auto r = t ? std::expected<quartz::vm::Slot, quartz::vm::Trap>(t->value)
-                   : std::expected<quartz::vm::Slot, quartz::vm::Trap>(std::unexpected(t.error()));
-        std::vector<std::string> traps = directives(text, "trap");
-        if (!traps.empty()) {
-            REQUIRE_FALSE(r.has_value());
-            CHECK(r.error().describe().find(traps[0]) != std::string::npos);
-        } else {
-            REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
-        }
-        std::string expected;
-        for (const std::string& line : directives(text, "expect")) {
-            expected += line + "\n";
-        }
-        CHECK(printed == expected);
     }
 }
 

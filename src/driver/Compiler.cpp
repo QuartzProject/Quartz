@@ -48,8 +48,23 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
         out.diagnostics += v.error().describe(*mod) + "\n";
         return out;
     }
+    if (options.emitBinary) {
+        out.binary = ir::serialize(*mod, {.lines = options.binaryLines});
+    }
     out.program = vm::compile(std::move(mod));
     return out;
+}
+
+std::expected<std::shared_ptr<const vm::Program>, std::string> load(std::span<const std::uint8_t> bytes,
+                                                                    const ir::ReadOptions& options) {
+    auto mod = ir::deserialize(bytes, options);
+    if (!mod) {
+        return std::unexpected(mod.error());
+    }
+    if (auto v = ir::validate(**mod); !v) {
+        return std::unexpected(v.error().describe(**mod));
+    }
+    return std::shared_ptr<const vm::Program>(vm::compile(std::move(*mod)));
 }
 
 } // namespace quartz
