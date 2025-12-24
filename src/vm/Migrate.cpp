@@ -261,6 +261,17 @@ void Sandbox::exportValue(std::string& out, TypeId type, const Slot* v) {
     case TypeKind::F64: writeDouble(out, v->f); return;
     case TypeKind::F32: writeDouble(out, static_cast<double>(v->f32)); return;
     case TypeKind::Str: writeString(out, static_cast<const Str*>(v->p)->view()); return;
+    case TypeKind::Bytes: {
+        static constexpr char kDigits[] = "0123456789abcdef";
+        std::string_view b = static_cast<const Str*>(v->p)->view();
+        out += '"';
+        for (char c : b) {
+            out += kDigits[static_cast<unsigned char>(c) >> 4];
+            out += kDigits[static_cast<unsigned char>(c) & 15];
+        }
+        out += '"';
+        return;
+    }
     case TypeKind::List: {
         const auto* l = static_cast<const List*>(v->p);
         out += '[';
@@ -449,6 +460,21 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
         }
         out->p = newStr(node.text);
         return out->p != nullptr;
+    case TypeKind::Bytes: {
+        if (node.kind != JNode::Kind::Str || node.text.size() % 2 != 0) {
+            return bad("expected hex bytes");
+        }
+        std::string raw;
+        for (std::size_t i = 0; i < node.text.size(); i += 2) {
+            unsigned v = 0;
+            if (std::from_chars(node.text.data() + i, node.text.data() + i + 2, v, 16).ptr != node.text.data() + i + 2) {
+                return bad("expected hex bytes");
+            }
+            raw += static_cast<char>(v);
+        }
+        out->p = newStr(raw);
+        return out->p != nullptr;
+    }
     case TypeKind::List: {
         if (node.kind != JNode::Kind::Arr) {
             return bad("expected a list");

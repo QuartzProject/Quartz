@@ -510,7 +510,7 @@ private:
 } // namespace
 
 bool parseYaml(vm::HostCall& call, void* user) {
-    Builder b(call.sandbox, *static_cast<const DataTypes*>(user));
+    Builder b(call.sandbox, *static_cast<const NativeCtx*>(user)->data);
     std::string_view text = static_cast<const vm::Str*>(call.args[0].p)->view();
     if (!call.charge(static_cast<std::int64_t>(text.size() / 4 + 1))) {
         return false;

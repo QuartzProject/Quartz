@@ -1,0 +1,34 @@
+// expect: 5 104 ell héllo
+// expect: roundtrip true true true
+// expect: zip 2 a.txt 3 b.bin 2000
+// expect: crc 1095738169
+// expect: be 258 le 513
+
+import std.bytes.*
+import std.compress.*
+import std.zip.*
+
+fn main() -> i64 {
+    let b = "héllo".toBytes()
+    print("{b.len() - 1} {b.get(0)} {"hello".toBytes().slice(1, 4).toStr() ?? "?"} {b.toStr() ?? "?"}")
+    var parts: [str] = []
+    for i in 0..400 {
+        parts.push("line {i % 17} of the quartz test ")
+    }
+    let text = parts.join("\n").toBytes()
+    let raw = inflate(deflate(text, 9)).unwrap()
+    let z = zlibDecompress(zlibCompress(text)).unwrap()
+    let g = gunzip(gzip(text, 1)).unwrap()
+    print("roundtrip {raw.hex() == text.hex()} {z.len() == text.len()} {g.toStr() == text.toStr()}")
+    var big: [i64] = []
+    for i in 0..2000 {
+        big.push(i % 251)
+    }
+    let archive = writeZip([ZipEntry("a.txt", "abc".toBytes()), ZipEntry("b.bin", bytesOf(big))])
+    let entries = readZip(archive).unwrap()
+    print("zip {entries.len()} {entries[0].name} {entries[0].data.len()} {entries[1].name} {entries[1].data.len()}")
+    print("crc {crc32("The quick brown fox jumps over the lazy dog".toBytes())}")
+    let two = bytesOf([1, 2])
+    print("be {readUInt(two, 0, 2, true)} le {readUInt(two, 0, 2)}")
+    return 0
+}

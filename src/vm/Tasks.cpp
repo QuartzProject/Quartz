@@ -12,7 +12,8 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
     const Layouts& lay = *program_->layouts;
     const ir::TypeInfo& info = types.info(type);
     switch (info.kind) {
-    case TypeKind::Str: {
+    case TypeKind::Str:
+    case TypeKind::Bytes: {
         const auto* s = static_cast<const Str*>(src->p);
         if (s == nullptr || s->owner == Owner::Static || (mode == Copy::StateOnly && s->owner != Owner::State) ||
             (mode == Copy::NewerThan && (s->owner != Owner::Arena || s->level <= level))) {
@@ -55,7 +56,9 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
             return false;
         }
         if (!l->elemHasRefs) {
-            std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
+            if (l->len > 0) {
+                std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
+            }
             out->len = l->len;
             dst->p = out;
             return true;

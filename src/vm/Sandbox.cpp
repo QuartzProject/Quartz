@@ -33,8 +33,14 @@ void Sandbox::bindNatives() {
             }
         }
     }
-    for (const stdlib::Native& n : stdlib::natives()) {
-        bind(n.name, n.fn, dataTypes_.get());
+    for (const ir::HostImport& imp : m.imports) {
+        for (const stdlib::Native& n : stdlib::natives()) {
+            if (n.name == imp.name) {
+                auto ctx = std::make_unique<stdlib::NativeCtx>(stdlib::NativeCtx{&imp, dataTypes_.get()});
+                bind(n.name, n.fn, ctx.get());
+                nativeCtx_.push_back(std::move(ctx));
+            }
+        }
     }
 }
 

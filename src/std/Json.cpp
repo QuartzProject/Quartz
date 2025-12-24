@@ -395,7 +395,7 @@ void writeJson(std::string& out, const vm::Slot* v, std::int64_t indent, int dep
 }
 
 bool parseJson(vm::HostCall& call, void* user) {
-    Builder b(call.sandbox, *static_cast<const DataTypes*>(user));
+    Builder b(call.sandbox, *static_cast<const NativeCtx*>(user)->data);
     std::string_view text = static_cast<const vm::Str*>(call.args[0].p)->view();
     if (!call.charge(static_cast<std::int64_t>(text.size() / 4 + 1))) {
         return false;
@@ -434,13 +434,19 @@ bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text,
 bool parseToml(vm::HostCall& call, void* user);
 bool parseYaml(vm::HostCall& call, void* user);
 
+void addBinaryNatives(std::vector<Native>& out);
+
 const std::vector<Native>& natives() {
-    static const std::vector<Native> kNatives = {
-        {"std.data.parseJson", parseJson},
-        {"std.data.toJson", toJson},
-        {"std.data.parseToml", parseToml},
-        {"std.data.parseYaml", parseYaml},
-    };
+    static const std::vector<Native> kNatives = [] {
+        std::vector<Native> v = {
+            {"std.data.parseJson", parseJson},
+            {"std.data.toJson", toJson},
+            {"std.data.parseToml", parseToml},
+            {"std.data.parseYaml", parseYaml},
+        };
+        addBinaryNatives(v);
+        return v;
+    }();
     return kNatives;
 }
 

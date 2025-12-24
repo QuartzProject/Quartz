@@ -5,6 +5,7 @@
 
 namespace quartz::stdlib {
 struct DataTypes;
+struct NativeCtx;
 }
 
 #include <expected>
@@ -207,6 +208,7 @@ private:
     bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
     void exportValue(std::string& out, ir::TypeId type, const Slot* v);
     std::unique_ptr<stdlib::DataTypes> dataTypes_;
+    std::vector<std::unique_ptr<stdlib::NativeCtx>> nativeCtx_;
 
     friend struct HostCall;
     friend class Interpreter;

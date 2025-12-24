@@ -86,12 +86,61 @@ fn parseToml(text: str) -> Result<Value, str>
 fn parseYaml(text: str) -> Result<Value, str>
 )";
 
+constexpr std::string_view kBytesQzi = R"(package std.bytes
+
+impl Bytes {
+    fn len(self) -> i64
+    fn get(self, index: i64) -> i64
+    fn slice(self, begin: i64, end: i64) -> Bytes
+    fn toStr(self) -> str?
+    fn toList(self) -> [i64]
+    fn hex(self) -> str
+}
+
+impl str {
+    fn toBytes(self) -> Bytes
+}
+
+fn bytesOf(values: [i64]) -> Bytes
+fn concatBytes(parts: [Bytes]) -> Bytes
+fn readUInt(data: Bytes, offset: i64, size: i64, bigEndian: bool = false) -> i64
+fn crc32(data: Bytes) -> i64
+)";
+
+constexpr std::string_view kCompressQzi = R"(package std.compress
+
+fn deflate(data: Bytes, level: i64 = 6) -> Bytes
+fn inflate(data: Bytes) -> Result<Bytes, str>
+fn zlibCompress(data: Bytes, level: i64 = 6) -> Bytes
+fn zlibDecompress(data: Bytes) -> Result<Bytes, str>
+fn gzip(data: Bytes, level: i64 = 6) -> Bytes
+fn gunzip(data: Bytes) -> Result<Bytes, str>
+)";
+
+constexpr std::string_view kZipQz = R"(package std.zip
+
+pub struct ZipEntry {
+    name: str
+    data: Bytes
+}
+)";
+
+constexpr std::string_view kZipQzi = R"(package std.zip
+
+fn readZip(data: Bytes) -> Result<[ZipEntry], str>
+fn writeZip(entries: [ZipEntry], level: i64 = 6) -> Bytes
+)";
+
 } // namespace
 
 const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
     static const std::vector<std::pair<std::string_view, std::string_view>> kSources = {
         {"<std>/data.qz", kDataQz},
         {"<std>/data.qzi", kDataQzi},
+        {"<std>/bytes.qzi", kBytesQzi},
+        {"<std>/compress.qzi", kCompressQzi},
+        {"<std>/zip.qz", kZipQz},
+        {"<std>/zip.qzi", kZipQzi},
     };
     return kSources;
 }

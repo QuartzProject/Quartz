@@ -141,12 +141,14 @@ Str* Sandbox::newStr(std::string_view text) {
         h->hash = 0;
         h->owner = Owner::Arena;
         h->level = 0;
-        std::memcpy(h->data, text.data(), text.size());
+        if (!text.empty()) {
+            std::memcpy(h->data, text.data(), text.size());
+        }
         h->data[text.size()] = '\0';
         return h;
     }
     Str* s = allocStr(text.size());
-    if (s != nullptr) {
+    if (s != nullptr && !text.empty()) {
         std::memcpy(s->data, text.data(), text.size());
     }
     return s;
@@ -588,7 +590,8 @@ bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {
     const Layouts& lay = *program_->layouts;
     const ir::TypeInfo& info = types.info(type);
     switch (info.kind) {
-    case TypeKind::Str: {
+    case TypeKind::Str:
+    case TypeKind::Bytes: {
         const auto* s = static_cast<const Str*>(src->p);
         if (s->owner == Owner::Static) {
             dst->p = src->p; // lives as long as the program, which the sandbox keeps alive
@@ -621,7 +624,9 @@ bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {
             return false;
         }
         if (!l->elemHasRefs) {
-            std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
+            if (l->len > 0) {
+                std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
+            }
             out->len = l->len;
             return true;
         }
@@ -716,7 +721,8 @@ void Sandbox::releaseState(TypeId type, Slot* slots) {
     const Layouts& lay = *program_->layouts;
     const ir::TypeInfo& info = types.info(type);
     switch (info.kind) {
-    case TypeKind::Str: {
+    case TypeKind::Str:
+    case TypeKind::Bytes: {
         auto* s = static_cast<Str*>(slots->p);
         if (s != nullptr && s->owner == Owner::State) {
             heap_.release(s);

@@ -16,6 +16,12 @@ struct Native {
     vm::HostFn fn;
 };
 
+/// What a native receives as its user pointer: its own import (for result types) and the data types.
+struct NativeCtx {
+    const ir::HostImport* import = nullptr;
+    const DataTypes* data = nullptr;
+};
+
 /// Parses JSON into a `std.data.Value` in the running sandbox's arena; false with `error` set on bad input.
 bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text, vm::Slot* out, std::string& error);
 
