@@ -10,6 +10,10 @@ include(QuartzOptions)
 add_library(quartz_doctest INTERFACE)
 target_include_directories(quartz_doctest SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/third_party)
 
+add_library(quartz_monocypher STATIC third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
+target_include_directories(quartz_monocypher SYSTEM PUBLIC ${PROJECT_SOURCE_DIR}/third_party)
+target_compile_options(quartz_monocypher PRIVATE -ffp-contract=off)
+
 add_subdirectory(src)
 add_subdirectory(cli)
 add_subdirectory(bench)
