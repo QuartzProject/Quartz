@@ -43,6 +43,56 @@ struct Frame {
     bool sawElse = false;
 };
 
+constexpr std::uint8_t kDst = 1;
+constexpr std::uint8_t kA = 2;
+constexpr std::uint8_t kB = 4;
+
+/// Operand fields an opcode reads or writes as registers; every other field must be kNoReg.
+std::uint8_t registerOperands(Op op) {
+    switch (op) {
+    case Op::Block:
+    case Op::Loop:
+    case Op::Else:
+    case Op::End:
+    case Op::Br:
+    case Op::Trap: return 0;
+    case Op::If:
+    case Op::BrIf:
+    case Op::Return: return kA;
+    case Op::Const:
+    case Op::NullOf:
+    case Op::Make:
+    case Op::EnumMake:
+    case Op::Call:
+    case Op::CallHost:
+    case Op::Intrinsic: return kDst;
+    case Op::FieldSet: return kA | kB;
+    case Op::Add:
+    case Op::Sub:
+    case Op::Mul:
+    case Op::Div:
+    case Op::Rem:
+    case Op::BitAnd:
+    case Op::BitOr:
+    case Op::BitXor:
+    case Op::Shl:
+    case Op::Shr:
+    case Op::Eq:
+    case Op::Ne:
+    case Op::Lt:
+    case Op::Le:
+    case Op::Gt:
+    case Op::Ge: return kDst | kA | kB;
+    default: return kDst | kA;
+    }
+}
+
+bool operandsAllowed(const Inst& in) {
+    std::uint8_t used = registerOperands(in.op);
+    return ((used & kDst) || in.dst == kNoReg) && ((used & kA) || in.a == kNoReg) &&
+           ((used & kB) || in.b == kNoReg || in.op == Op::EnumField);
+}
+
 class FunctionValidator {
 public:
     FunctionValidator(const Module& m, std::uint32_t index) : m_(m), t_(m.types), fn_(m.functions[index]), index_(index) {}
@@ -257,7 +307,7 @@ private:
                 return fail(std::format("argument {} has the wrong type", i));
             }
         }
-        if ((result == kVoid) != (in.dst == kNoReg) || (in.dst != kNoReg && ty(in.dst) != result)) {
+        if ((result == kVoid) != (in.dst == kNoReg) || (in.dst != kNoReg && (!reg(in.dst) || ty(in.dst) != result))) {
             return fail("call result type mismatch");
         }
         return {};
@@ -307,6 +357,9 @@ private:
     std::expected<void, ValidationError> step(const Inst& in) {
         if (in.argBegin > fn_.args.size() || in.argCount > fn_.args.size() - in.argBegin) {
             return fail("argument list out of range");
+        }
+        if (!operandsAllowed(in)) {
+            return fail("operand the instruction does not use");
         }
         for (Reg r : args(in)) {
             if (auto u = use(r); !u) {
@@ -789,6 +842,15 @@ std::expected<void, ValidationError> validate(const Module& m) {
         if (s >= m.types.size() || m.types.kind(s) != TypeKind::State || init >= m.functions.size() ||
             m.functions[init].paramCount != 1 || m.functions[init].regs[0] != s) {
             return std::unexpected(ValidationError{~0U, ~0U, "bad state initializer"});
+        }
+    }
+    std::vector<std::uint32_t> instances(m.types.size(), 0);
+    for (TypeId s : m.states) {
+        ++instances[s];
+    }
+    for (TypeId t = kFirstUserType; t < m.types.size(); ++t) {
+        if ((m.types.kind(t) == TypeKind::State) != (instances[t] == 1)) {
+            return std::unexpected(ValidationError{~0U, ~0U, "every state type needs exactly one instance"});
         }
     }
     for (std::uint32_t f = 0; f < m.functions.size(); ++f) {
