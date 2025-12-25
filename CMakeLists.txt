@@ -18,5 +18,9 @@ add_subdirectory(src)
 add_subdirectory(cli)
 add_subdirectory(bench)
 
+if(QUARTZ_FUZZ)
+    add_subdirectory(fuzz)
+endif()
+
 enable_testing()
 add_subdirectory(tests)
