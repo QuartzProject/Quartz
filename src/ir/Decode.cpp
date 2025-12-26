@@ -15,14 +15,14 @@ using bin::TypeTag;
 namespace {
 
 // The encoding stores these enums by value: a change to any of them needs a new kFormatVersion.
-static_assert(static_cast<int>(Op::EnumField) == 43);
+static_assert(static_cast<int>(Op::Persist) == 47);
 static_assert(static_cast<int>(Intrinsic::Count) == 43);
 static_assert(static_cast<int>(TrapCode::HostError) == 9);
 static_assert(static_cast<int>(ConstKind::Str) == 2);
 static_assert(static_cast<int>(AnnotationArg::Kind::Name) == 4);
 static_assert(kFirstUserType == 18);
 
-constexpr std::uint32_t kOpCount = static_cast<std::uint32_t>(Op::EnumField) + 1;
+constexpr std::uint32_t kOpCount = static_cast<std::uint32_t>(Op::Persist) + 1;
 constexpr std::uint32_t kMaxElements = 1u << 24;
 
 class Decoder {
