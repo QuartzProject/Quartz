@@ -5,7 +5,7 @@ quartz_module(quartz_format SOURCES format/Format.cpp format/AstDump.cpp format/
 quartz_module(quartz_sema SOURCES ir/Types.cpp sema/Declare.cpp sema/CheckExpr.cpp sema/CheckCall.cpp
     sema/CheckStmt.cpp sema/Generics.cpp sema/Names.cpp DEPS quartz_syntax)
 quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/Optimize.cpp ir/Validator.cpp
-    ir/TypeGraph.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp DEPS quartz_sema quartz_monocypher)
+    ir/TypeGraph.cpp ir/ValidateModule.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp DEPS quartz_sema quartz_monocypher)
 quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/Migrate.cpp vm/Interp.cpp
     std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Binary.cpp
     DEPS quartz_ir)

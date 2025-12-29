@@ -21,4 +21,9 @@ std::expected<void, ValidationError> validate(const Module& m);
 /// Rejects types that contain themselves by value, nest too deeply or are too large for a frame.
 std::expected<void, ValidationError> validateTypeGraph(const TypeTable& types);
 
+/// False when a dst, a or b field the opcode does not use is set; later passes count every set field.
+bool operandsAllowed(const Inst& in);
+/// Imports, annotations, states and parameter counts: everything the function validator indexes without checking.
+std::expected<void, ValidationError> validateTables(const Module& m);
+
 } // namespace quartz::ir
