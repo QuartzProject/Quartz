@@ -1,6 +1,7 @@
 #include "ir/Serialize.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <format>
 #include <monocypher/monocypher-ed25519.h>
@@ -11,7 +12,7 @@ namespace quartz::ir {
 
 namespace {
 
-constexpr std::uint8_t kMagic[4] = {'Q', 'Z', 'I', 'R'};
+constexpr std::array<std::uint8_t, 4> kMagic = {'Q', 'Z', 'I', 'R'};
 constexpr std::string_view kSignatureDomain = "quartz-ir-signature-v1";
 constexpr std::size_t kHashOffset = 12;
 
@@ -79,11 +80,11 @@ ContentHash contentHash(std::span<const std::uint8_t> payload) {
 }
 
 bool isBinaryModule(std::span<const std::uint8_t> bytes) {
-    return bytes.size() >= sizeof(kMagic) && std::memcmp(bytes.data(), kMagic, sizeof(kMagic)) == 0;
+    return bytes.size() >= kMagic.size() && std::equal(kMagic.begin(), kMagic.end(), bytes.begin());
 }
 
 std::vector<std::uint8_t> seal(std::span<const std::uint8_t> payload) {
-    std::vector<std::uint8_t> out(kMagic, kMagic + sizeof(kMagic));
+    std::vector<std::uint8_t> out(kMagic.begin(), kMagic.end());
     auto le = [&](std::uint32_t v, int bytes) {
         for (int i = 0; i < bytes; ++i) {
             out.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
@@ -102,11 +103,11 @@ std::vector<std::uint8_t> seal(std::span<const std::uint8_t> payload) {
 std::vector<std::uint8_t> serialize(const Module& m, WriteOptions options) { return seal(encodePayload(m, options)); }
 
 PublicKey publicKey(const SecretSeed& seed) {
-    std::uint8_t secret[64];
+    std::array<std::uint8_t, 64> secret{};
     PublicKey key{};
     SecretSeed scratch = seed;
-    crypto_ed25519_key_pair(secret, key.data(), scratch.data());
-    crypto_wipe(secret, sizeof(secret));
+    crypto_ed25519_key_pair(secret.data(), key.data(), scratch.data());
+    crypto_wipe(secret.data(), secret.size());
     return key;
 }
 
@@ -119,14 +120,14 @@ std::expected<void, std::string> sign(std::vector<std::uint8_t>& file, const Sec
         return std::unexpected("too many signatures");
     }
     std::size_t countAt = kHeaderSize + parsed->payload.size();
-    std::uint8_t secret[64];
+    std::array<std::uint8_t, 64> secret{};
     PublicKey key{};
     SecretSeed scratch = seed;
-    crypto_ed25519_key_pair(secret, key.data(), scratch.data());
+    crypto_ed25519_key_pair(secret.data(), key.data(), scratch.data());
     std::vector<std::uint8_t> msg = signedMessage(file);
     Signature sig{};
-    crypto_ed25519_sign(sig.data(), secret, msg.data(), msg.size());
-    crypto_wipe(secret, sizeof(secret));
+    crypto_ed25519_sign(sig.data(), secret.data(), msg.data(), msg.size());
+    crypto_wipe(secret.data(), secret.size());
     ++file[countAt];
     file.insert(file.end(), key.begin(), key.end());
     file.insert(file.end(), sig.begin(), sig.end());

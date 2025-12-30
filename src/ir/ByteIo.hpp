@@ -61,7 +61,7 @@ public:
     void i64(std::int64_t v) { u64(zigzag(v)); }
 
     /// Indices where ~0 means none: written as index + 1 so none is a single zero byte.
-    void opt(std::uint32_t v) { u64(static_cast<std::uint32_t>(v + 1)); }
+    void opt(std::uint32_t v) { u64(v + 1); }
 
     void fixed64(std::uint64_t v) {
         for (int i = 0; i < 8; ++i) {
