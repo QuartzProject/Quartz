@@ -798,6 +798,12 @@ private:
             for (std::uint32_t i = 0; i < in.b; ++i) {
                 off += lay_.slots(v.payload[i]);
             }
+            // The validator cannot prove the tag, and another variant's slots would be read as this payload's type.
+            std::size_t load = put(Opc::LoadI, regSlots_);
+            code_[load].setBc(static_cast<std::int32_t>(in.imm));
+            put(Opc::JEqI, s(in.a), regSlots_, 1);
+            put(Opc::Trap, static_cast<std::uint32_t>(ir::TrapCode::Unreachable));
+            maxOutgoing_ = std::max<std::uint32_t>(maxOutgoing_, 1);
             move(s(in.dst), off, n(in.dst));
             return;
         }
