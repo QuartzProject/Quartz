@@ -1,5 +1,6 @@
 #include "ir/Validator.hpp"
 
+#include <algorithm>
 #include <format>
 #include <span>
 
@@ -59,7 +60,12 @@ public:
                 return fail(std::format("register of invalid type {}", r));
             }
         }
-        state_.init.assign(fn_.regs.size(), false);
+        for (std::uint32_t init : m_.stateInit) {
+            if (init == index_ && fn_.paramCount == 1 && t_.kind(fn_.regs[0]) == TypeKind::State) {
+                stateFields_ = static_cast<std::uint32_t>(t_.info(fn_.regs[0]).fields.size());
+            }
+        }
+        state_.init.assign(fn_.regs.size() + stateFields_, false);
         for (std::uint32_t p = 0; p < fn_.paramCount; ++p) {
             state_.init[p] = true;
         }
@@ -316,6 +322,9 @@ private:
                 return u;
             }
         }
+        if (stateFields_ > 0 && !state_.unreachable && !stateWritten() && usesState(in)) {
+            return fail("state initializer uses its state before writing every field");
+        }
         auto needA = [&]() { return use(in.a); };
         auto needB = [&]() { return use(in.b); };
         switch (in.op) {
@@ -382,6 +391,9 @@ private:
         case Op::Return:
             if (!state_.unreachable && state_.scopes != 0) {
                 return fail("return with a scope open");
+            }
+            if (stateFields_ > 0 && !state_.unreachable && !stateWritten()) {
+                return fail("state initializer returns before writing every field");
             }
             if (fn_.result == kVoid) {
                 if (in.a != kNoReg) {
@@ -540,6 +552,9 @@ private:
             if (!reg(in.dst) || ty(in.dst) != *ft) {
                 return fail("field type mismatch");
             }
+            if (stateFields_ > 0 && in.a == 0 && !state_.unreachable && !state_.init[fn_.regs.size() + in.imm]) {
+                return fail("state field read before its initializer writes it");
+            }
             return def(in.dst);
         }
         case Op::FieldSet: {
@@ -555,6 +570,9 @@ private:
             }
             if (ty(in.b) != *ft) {
                 return fail("field type mismatch");
+            }
+            if (stateFields_ > 0 && in.a == 0 && !state_.unreachable) {
+                state_.init[fn_.regs.size() + in.imm] = true;
             }
             return {};
         }
@@ -703,63 +721,32 @@ private:
         return fail("unknown opcode");
     }
 
+    // Fields of a state start zeroed, and a zero str, list or map is a null pointer.
+    [[nodiscard]] bool stateWritten() const {
+        return std::all_of(state_.init.end() - stateFields_, state_.init.end(), [](bool b) { return b; });
+    }
+
+    [[nodiscard]] bool usesState(const Inst& in) const {
+        bool fieldAccess = in.op == Op::FieldGet || in.op == Op::FieldSet;
+        std::span<const Reg> a = args(in);
+        return (in.a == 0 && !fieldAccess && in.op != Op::ScopeExit) ||
+               (in.b == 0 && in.op != Op::EnumField && in.op != Op::ScopeExit) || in.dst == 0 ||
+               std::ranges::find(a, Reg{0}) != a.end();
+    }
+
     const Module& m_;
     const TypeTable& t_;
     const Function& fn_;
     std::uint32_t index_;
+    std::uint32_t stateFields_ = 0;
     std::size_t pc_ = 0;
     InitState state_;
     std::vector<Frame> frames_;
 };
 
-std::expected<void, ValidationError> validateTypes(const TypeTable& t) {
-    for (TypeId id = kFirstUserType; id < t.size(); ++id) {
-        const TypeInfo& info = t.info(id);
-        auto ok = [&](TypeId x) { return x < t.size() && x != kVoid && x != kError && x != kNull && x != kNever; };
-        bool good = true;
-        switch (info.kind) {
-        case TypeKind::List:
-        case TypeKind::Nullable: good = ok(info.elem); break;
-        case TypeKind::Map: good = ok(info.key) && ok(info.elem); break;
-        case TypeKind::Tuple:
-            for (TypeId e : info.elems) {
-                good = good && ok(e);
-            }
-            break;
-        case TypeKind::Struct:
-        case TypeKind::State:
-            for (const Field& f : info.fields) {
-                good = good && ok(f.type) && !(info.kind == TypeKind::Struct && f.type == id);
-            }
-            break;
-        case TypeKind::Enum:
-            for (const VariantInfo& v : info.variants) {
-                for (TypeId p : v.payload) {
-                    good = good && ok(p) && p != id;
-                }
-            }
-            break;
-        case TypeKind::Fn:
-        case TypeKind::Handle:
-        case TypeKind::Param: break;
-        default: good = false; break;
-        }
-        if (info.kind == TypeKind::Nullable && t.kind(info.elem) == TypeKind::Nullable) {
-            good = false;
-        }
-        if (!good) {
-            return std::unexpected(ValidationError{~0U, ~0U, std::format("malformed type {}", id)});
-        }
-    }
-    return {};
-}
-
 } // namespace
 
 std::expected<void, ValidationError> validate(const Module& m) {
-    if (auto r = validateTypes(m.types); !r) {
-        return r;
-    }
     if (auto r = validateTypeGraph(m.types); !r) {
         return r;
     }

@@ -153,8 +153,61 @@ private:
     std::string why_;
 };
 
+std::expected<void, ValidationError> validateTypes(const TypeTable& t) {
+    for (TypeId id = kFirstUserType; id < t.size(); ++id) {
+        const TypeInfo& info = t.info(id);
+        auto ok = [&](TypeId x) { return x < t.size() && x != kVoid && x != kError && x != kNull && x != kNever; };
+        bool good = true;
+        switch (info.kind) {
+        case TypeKind::List:
+        case TypeKind::Nullable:
+            good = ok(info.elem);
+            break;
+        case TypeKind::Map:
+            good = ok(info.key) && ok(info.elem);
+            break;
+        case TypeKind::Tuple:
+            for (TypeId e : info.elems) {
+                good = good && ok(e);
+            }
+            break;
+        case TypeKind::Struct:
+        case TypeKind::State:
+            for (const Field& f : info.fields) {
+                good = good && ok(f.type) && !(info.kind == TypeKind::Struct && f.type == id);
+            }
+            break;
+        case TypeKind::Enum:
+            for (const VariantInfo& v : info.variants) {
+                for (TypeId p : v.payload) {
+                    good = good && ok(p) && p != id;
+                }
+            }
+            break;
+        case TypeKind::Fn:
+        case TypeKind::Handle:
+            break;
+        default:
+            good = false;
+            break;
+        }
+        if (info.kind == TypeKind::Nullable && t.kind(info.elem) == TypeKind::Nullable) {
+            good = false;
+        }
+        if (!good) {
+            return std::unexpected(ValidationError{~0U, ~0U, std::format("malformed type {}", id)});
+        }
+    }
+    return {};
+}
+
 } // namespace
 
-std::expected<void, ValidationError> validateTypeGraph(const TypeTable& types) { return TypeGraph(types).run(); }
+std::expected<void, ValidationError> validateTypeGraph(const TypeTable& types) {
+    if (auto r = validateTypes(types); !r) {
+        return r;
+    }
+    return TypeGraph(types).run();
+}
 
 } // namespace quartz::ir
