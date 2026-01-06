@@ -12,7 +12,7 @@ namespace quartz::ir::bin {
 /// Section ids of the payload, in the order they must appear.
 enum class Section : std::uint8_t { Types = 1, Constants, Imports, States, Functions, Annotations, Lines };
 
-enum class TypeTag : std::uint8_t { List = 1, Map, Nullable, Tuple, Fn, Result, Struct, State, Enum, Handle };
+enum class TypeTag : std::uint8_t { List = 1, Map, Nullable, Tuple, Fn, Result, Struct, State, Enum, Handle, Param };
 
 inline constexpr std::uint8_t kHasDst = 1;
 inline constexpr std::uint8_t kHasA = 2;

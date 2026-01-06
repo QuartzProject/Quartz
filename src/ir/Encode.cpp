@@ -20,6 +20,11 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
             w.u32(e);
         }
     };
+    auto generics = [&]() {
+        list(t.typeParams);
+        w.u32(t.genericBase);
+        list(t.typeArgs);
+    };
     switch (t.kind) {
     case TypeKind::List:
         tag(TypeTag::List);
@@ -52,6 +57,7 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
             w.str(f.name);
             w.u32(f.type);
         }
+        generics();
         return;
     case TypeKind::Enum:
         if (types.isResult(id)) {
@@ -67,9 +73,15 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
             w.str(v.name);
             list(v.payload);
         }
+        generics();
         return;
     case TypeKind::Handle:
         tag(TypeTag::Handle);
+        w.str(t.name);
+        generics();
+        return;
+    case TypeKind::Param:
+        tag(TypeTag::Param);
         w.str(t.name);
         return;
     default:

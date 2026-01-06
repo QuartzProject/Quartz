@@ -186,6 +186,7 @@ std::expected<void, ValidationError> validateTypes(const TypeTable& t) {
             break;
         case TypeKind::Fn:
         case TypeKind::Handle:
+        case TypeKind::Param:
             break;
         default:
             good = false;

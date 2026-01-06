@@ -152,6 +152,20 @@ private:
         return c;
     }
 
+    // Instances only refer to earlier types, so hasParams and subst always terminate.
+    void readGenerics(Reader& r, TypeId self, TypeInfo& info, std::uint32_t& depth) {
+        depth = 0;
+        info.typeParams = ids(r);
+        info.genericBase = r.u32();
+        if (info.genericBase >= self) {
+            r.fail("generic instance of a later type");
+        }
+        std::uint32_t n = r.count(kMaxElements);
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i) {
+            info.typeArgs.push_back(component(r, self, depth));
+        }
+    }
+
     void readType(Reader& r, TypeId self) {
         TypeTable& t = m_.types;
         std::uint8_t tag = r.u8();
@@ -209,7 +223,7 @@ private:
                 f.type = r.u32();
                 info.fields.push_back(std::move(f));
             }
-            depth = 0;
+            readGenerics(r, self, info, depth);
             got = r.failed() ? kError : t.addRaw(std::move(info));
             break;
         }
@@ -224,7 +238,7 @@ private:
                 v.payload = ids(r);
                 info.variants.push_back(std::move(v));
             }
-            depth = 0;
+            readGenerics(r, self, info, depth);
             got = r.failed() ? kError : t.addRaw(std::move(info));
             if (!r.failed() && t.isResult(got)) {
                 r.fail("result type encoded as a plain enum");
@@ -233,6 +247,12 @@ private:
         }
         case TypeTag::Handle:
             info.kind = TypeKind::Handle;
+            info.name = r.str();
+            readGenerics(r, self, info, depth);
+            got = r.failed() ? kError : t.addRaw(std::move(info));
+            break;
+        case TypeTag::Param:
+            info.kind = TypeKind::Param;
             info.name = r.str();
             depth = 0;
             got = r.failed() ? kError : t.addRaw(std::move(info));
