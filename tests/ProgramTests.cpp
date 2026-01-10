@@ -143,6 +143,16 @@ TEST_CASE("binary modules decode to the same bytes and run the same") {
         REQUIRE_MESSAGE(loaded.has_value(), (loaded ? "" : loaded.error()));
         checkRun(*loaded, text);
     }
+    quartz::SourceInput versioned[] = {
+        {"v.qz", "@version(3)\nstate Hub {\n    @renamed(\"count\")\n    total: i64\n}\n"}};
+    quartz::CompileOutput out = quartz::compile(versioned, {.emitBinary = true});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto mod = quartz::ir::deserialize(out.binary);
+    REQUIRE(mod.has_value());
+    const quartz::ir::TypeInfo& hub = (*mod)->types.info((*mod)->states.at(0));
+    CHECK(hub.version == 3);
+    CHECK(hub.fields.at(0).renamedFrom == "count");
+    CHECK(quartz::ir::serialize(**mod) == out.binary);
 }
 
 TEST_CASE("truncated, corrupt or untrusted binary modules are rejected without crashing") {

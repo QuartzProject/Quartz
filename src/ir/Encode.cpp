@@ -21,6 +21,7 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
         }
     };
     auto generics = [&]() {
+        w.u32(t.version);
         list(t.typeParams);
         w.u32(t.genericBase);
         list(t.typeArgs);
@@ -56,6 +57,7 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
         for (const Field& f : t.fields) {
             w.str(f.name);
             w.u32(f.type);
+            w.str(f.renamedFrom);
         }
         generics();
         return;

@@ -152,9 +152,10 @@ private:
         return c;
     }
 
-    // Instances only refer to earlier types, so hasParams and subst always terminate.
+    // Version and generic data of a nominal type; instances only refer to earlier types, so hasParams terminates.
     void readGenerics(Reader& r, TypeId self, TypeInfo& info, std::uint32_t& depth) {
         depth = 0;
+        info.version = r.u32();
         info.typeParams = ids(r);
         info.genericBase = r.u32();
         if (info.genericBase >= self) {
@@ -215,12 +216,13 @@ private:
         case TypeTag::State: {
             info.kind = static_cast<TypeTag>(tag) == TypeTag::Struct ? TypeKind::Struct : TypeKind::State;
             info.name = r.str();
-            std::uint32_t n = r.count(kMaxElements, 2);
+            std::uint32_t n = r.count(kMaxElements, 3);
             info.fields.reserve(n);
             for (std::uint32_t i = 0; i < n && !r.failed(); ++i) {
                 Field f;
                 f.name = r.str();
                 f.type = r.u32();
+                f.renamedFrom = r.str();
                 info.fields.push_back(std::move(f));
             }
             readGenerics(r, self, info, depth);
