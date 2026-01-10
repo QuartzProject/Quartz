@@ -1,0 +1,123 @@
+// expect: 4 n1,n2,n3,n4 2 1.0 true 40 B x3 8
+// expect: -128 255 32767 0 0 -9223372036854775808
+// expect: 125 1 1 -128 0 -32768
+// expect: -9223372036854775808 0 -3 1 -1
+// expect: -2147483648 0 2147483647
+// expect: 2 -2147483648 -4 2 1073741820 1
+// expect: 48 255 240
+// expect: 255 0 2147483647 -9223372036854775808 18446744073709551615 0
+// expect: 2 -2 255 4294967295
+// expect: 255 44 4464 4294967295 -1294967296
+// expect: 0.30000000000000004 0.020000000000000004 0.5 -0.1 1.5 -1.5
+// expect: -0.0 0.0 1.0 2.0 -4 3
+// expect: 1.4142135623730951 -2.0 -1.0 2.5 7 1.4142135623730951 0.8414709848078965 0.5403023058681398
+// expect: 0.30000001192092896 0.020000001415610313 16777216.0 0.10000000149011612
+// expect: inf -inf inf 0.0
+// expect: -3 -6 2.5 true
+// expect: A -1 0.25 B hi C
+// expect: 28 alpha-beta-gamma true true true HELLO
+// expect: 13 195 h 7 -1 true false
+// expect: 19 361 324
+// expect: 0 -5
+// expect: 50 v7 none true true false 49
+// expect: 4 é true false 233 A
+// expect: true 1.5
+// expect: false 2.5
+
+struct V { a: i32, b: f64, c: bool }
+enum E { A(i64, f64), B(str), C }
+state S { n: i64, names: [str], m: Map<str, V>, opt: i64?, e: [E] }
+
+fn show(e: E) -> str {
+    return match e {
+        A(x, y) => "A {x} {y}"
+        B(s) => "B {s}"
+        C => "C"
+    }
+}
+
+fn fill(s: S) {
+    s.n = s.n + 1
+    s.names.push("n{s.n}")
+    s.m["k{s.n}"] = V(s.n as i32, s.n as f64 * 0.5, s.n % 2 == 0)
+    s.opt = s.n * 10
+    s.e.push(E.A(s.n, 1.5))
+    s.e.push(E.B("x{s.n}"))
+}
+
+fn main(st: S) -> i64 {
+    for i in 0..4 {
+        fill(st)
+    }
+    let kv = st.m["k2"]
+    print("{st.n} {st.names.join(",")} {kv.a} {kv.b} {kv.c} {st.opt ?? -1} {show(st.e[5])} {st.e.len()}")
+    let a: i8 = 127
+    let b: i8 = a + 1
+    let c: u8 = 0
+    let d: u8 = c - 1
+    let e: i16 = -32768
+    let f: u16 = 65535
+    let g: u32 = 4294967295
+    let h: i64 = 9223372036854775807
+    print("{b} {d} {e - 1} {f + 1} {g + 1} {h + 1}")
+    print("{a * 3} {d * d} {g * g} {~a} {~d} {-e}")
+    let m: i64 = -9223372036854775807 - 1
+    print("{m / -1} {m % -1} {-7 / 2} {7 % -3} {-7 % 3}")
+    let mi: i32 = -2147483647 - 1
+    print("{mi / -1} {mi % -1} {mi - 1}")
+    let s: i32 = 1
+    let k: i64 = 65
+    print("{s << 33} {s << 31} {-16 >> 2} {(1 as i64) << k} {(-16 as u32) >> 2} {(-1 as u64) >> 63}")
+    print("{0xF0 & 0x3C} {0xF0 | 0x0F} {0xFF ^ 0x0F}")
+    print("{(300.7) as u8} {(-5.5) as u8} {(1e20) as i32} {(-1e20) as i64} {(1e30) as u64} {(0.0 / 0.0) as i32}")
+    print("{(2.9) as i8} {(-2.9) as i16} {(255.9) as u8} {(4294967295.5) as u32}")
+    print("{(-1) as u8} {(300) as i8} {(70000) as u16} {(-1) as u32} {(3000000000) as i32}")
+    let x = 0.1
+    let y = 0.2
+    print("{x + y} {x * y} {x / y} {x - y} {7.5 % 2.0} {-7.5 % 2.0}")
+    print("{min(0.0, -0.0)} {max(-0.0, 0.0)} {min(1.0, 2.0)} {max(1.0, 2.0)} {min(3, -4)} {max(3, -4)}")
+    print("{sqrt(2.0)} {floor(-1.5)} {ceil(-1.5)} {abs(-2.5)} {abs(-7)} {pow(2.0, 0.5)} {sin(1.0)} {cos(1.0)}")
+    let fa: f32 = 0.1
+    let fb: f32 = 0.2
+    print("{(fa + fb) as f64} {(fa * fb) as f64} {(16777217 as f32) as f64} {(fa as f64)}")
+    print("{1.0 / 0.0} {-1.0 / 0.0} {1e300 * 1e300} {5e-324 / 2.0}")
+    let v = V(-3, 2.5, true)
+    var w = v
+    w.a = w.a * 2
+    print("{v.a} {w.a} {w.b} {w.c}")
+    print("{show(E.A(-1, 0.25))} {show(E.B("hi"))} {show(E.C)}")
+    let words = ["alpha", "beta", "gamma"]
+    var total = 0
+    for i, wd in words {
+        total += wd.len() * (i + 1)
+    }
+    print("{total} {words.join("-")} {"abc" < "abd"} {"b" > "abc"} {"x" == "x"} {"Hello".upper()}")
+    let t = "héllo wörld"
+    print("{t.len()} {t.byteAt(1)} {t.slice(0, 1)} {t.find("wö") ?? -1} {t.find("zz") ?? -1} {t.startsWith("hé")} {t.endsWith("x")}")
+    let xs: [i64] = []
+    for i in 0..20 {
+        xs.push(i * i)
+    }
+    let p = xs.pop()
+    print("{xs.len()} {p ?? -1} {xs[19 - 1]}")
+    xs.clear()
+    print("{xs.len()} {xs.pop() ?? -5}")
+    let mp: Map<i64, str> = Map()
+    for i in 0..50 {
+        mp[i * 7] = "v{i}"
+    }
+    print("{mp.len()} {mp[49]} {mp.get(50) ?? "none"} {mp.has(343)} {mp.remove(343)} {mp.has(343)} {mp.len()}")
+    let flags = [true; 5]
+    flags[2] = false
+    var on = 0
+    for fl in flags {
+        if fl { on += 1 }
+    }
+    let ch: char = 'é'
+    print("{on} {ch} {true} {false} {(ch as i64)} {(65 as u8) as char}")
+    var opt: f64? = null
+    print("{opt == null} {opt ?? 1.5}")
+    opt = 2.5
+    print("{opt == null} {opt ?? 1.5}")
+    return 0
+}
