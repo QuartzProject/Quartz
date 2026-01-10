@@ -14,6 +14,7 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
     stack_ = std::span<Slot>(stackMem_.get(), limits_.stackSlots);
     bindings_.resize(program_->module->imports.size());
     calls_.reserve(limits_.maxDepth + 1);
+    tierMode_ = resolveTierMode(limits_.tier);
     resetRegions(&arena_);
     bindNatives();
 }
@@ -42,6 +43,38 @@ void Sandbox::bindNatives() {
             }
         }
     }
+}
+
+bool Sandbox::enter(std::uint32_t function, Slot* base) {
+    if (tierMode_ != TierMode::Interpreter) {
+        TierState& tier = *program_->tier;
+        NativeEntry e = tier.entry(function);
+        if (e == nullptr && tierMode_ == TierMode::Native) {
+            e = tier.compile(*program_, function);
+        }
+        if (e != nullptr) {
+            return runNative(e, function, base);
+        }
+    }
+    return run(function, base);
+}
+
+bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
+    const Slot* stackEnd = stack_.data() + stack_.size();
+    if (base + program_->functions[function].frameSlots > stackEnd) {
+        return fail(ir::TrapCode::StackOverflow);
+    }
+    auto sp = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
+    NativeCtx ctx{this, fuel_, stackEnd, sp > limits_.nativeStackBytes ? sp - limits_.nativeStackBytes : 0,
+                  limits_.maxDepth, kNoTrapFunction, 0, 0};
+    std::int32_t status = entry(base, &ctx);
+    fuel_ = ctx.fuel;
+    if (status != 0) {
+        trap_.function = ctx.trapFunction < program_->functions.size() ? program_->functions[ctx.trapFunction].name : "";
+        trap_.line = ctx.trapLine;
+        return false;
+    }
+    return true;
 }
 
 Sandbox::~Sandbox() {
@@ -96,7 +129,7 @@ std::expected<void, Trap> Sandbox::start() {
         fuel_ = limits_.fuelPerCall;
         stack_[0] = arg;
         inCall_ = true;
-        bool ok = run(m.stateInit[i], stack_.data());
+        bool ok = enter(m.stateInit[i], stack_.data());
         inCall_ = false;
         heap_.flush();
         if (!ok) {
@@ -144,8 +177,11 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     trapped_ = false;
     fuel_ = limits_.fuelPerCall;
     inCall_ = true;
-    bool ok = run(function, stack_.data());
+    bool ok = enter(function, stack_.data());
     inCall_ = false;
+    if (tierMode_ == TierMode::Auto) {
+        program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_));
+    }
     heap_.flush();
     if (!ok) {
         return std::unexpected(trap_);

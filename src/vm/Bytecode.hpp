@@ -10,6 +10,8 @@
 
 namespace quartz::vm {
 
+class TierState;
+
 // a, b, c are frame slot indices unless noted; jump offsets are relative to the next instruction.
 #define QUARTZ_OPCODES(X)                                                                                              \
     X(Nop)                                                                                                             \
@@ -113,6 +115,7 @@ struct CompiledFunction {
     std::uint32_t paramSlots = 0;
     std::uint32_t frameSlots = 0; // registers plus the outgoing argument area
     std::uint32_t resultSlots = 0;
+    std::uint32_t argBase = 0; // callee frames start here (the outgoing argument area)
     std::vector<std::uint32_t> lines; // source line per instruction
     std::vector<ir::TypeId> params;
     ir::TypeId result = ir::kVoid;
@@ -130,6 +133,7 @@ struct Program {
     std::vector<std::unique_ptr<std::byte[]>> staticStrings;
     std::uint32_t maxFrameSlots = 0;
     std::vector<std::uint32_t> importResultSlots;
+    std::shared_ptr<TierState> tier; // native code and hotness counters
 
     [[nodiscard]] std::uint32_t findFunction(std::string_view name) const;
 };

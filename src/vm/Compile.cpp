@@ -1,5 +1,7 @@
 #include "vm/Bytecode.hpp"
 
+#include "vm/Tier.hpp"
+
 #include <algorithm>
 #include <bit>
 #include <cstring>
@@ -82,6 +84,7 @@ public:
             lower(in);
         }
         out.frameSlots = regSlots_ + maxOutgoing_;
+        out.argBase = regSlots_;
         if (out.frameSlots > 0xFFFF) {
             out.frameSlots = 0xFFFF; // the compiler rejects such functions below
             tooBig_ = true;
@@ -883,6 +886,7 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
         prog->functions.push_back(std::move(cf));
         prog->maxFrameSlots = std::max(prog->maxFrameSlots, prog->functions.back().frameSlots);
     }
+    prog->tier = makeTierState(prog->functions.size());
     return prog;
 }
 

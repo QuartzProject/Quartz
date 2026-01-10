@@ -1,0 +1,4 @@
+{
+    global: qc_abi; qc_create; qc_compile; qc_destroy;
+    local: *;
+};

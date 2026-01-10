@@ -2,6 +2,7 @@
 
 #include "vm/Bytecode.hpp"
 #include "vm/Heap.hpp"
+#include "vm/Tier.hpp"
 
 namespace quartz::stdlib {
 struct DataTypes;
@@ -31,6 +32,8 @@ struct Limits {
     std::int64_t fuelPerCall = 100'000'000;
     std::uint32_t stackSlots = 1u << 16;
     std::uint32_t maxDepth = 4096;
+    TierMode tier = TierMode::Default;
+    std::size_t nativeStackBytes = 1u << 20; // native stack that recursive compiled code may use
 };
 
 class Sandbox;
@@ -88,6 +91,7 @@ public:
     /// into it. On failure this sandbox is untouched and keeps running (D23).
     std::expected<std::unique_ptr<Sandbox>, Trap> reload(std::shared_ptr<const Program> next);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
+    [[nodiscard]] TierMode tierMode() const { return tierMode_; }
     /// Outside a call: a string for the next call's arguments, valid until the call after it starts.
     Str* newStr(std::string_view text);
 
@@ -154,6 +158,8 @@ private:
     void resetRegions(InvocationArena* base);
     std::vector<std::unique_ptr<InvocationArena>> takeScopes();
     InvocationArena* regionFor(Owner owner, std::uint32_t level);
+    bool enter(std::uint32_t function, Slot* base);
+    bool runNative(NativeEntry entry, std::uint32_t function, Slot* base);
     bool copyIntoState(ir::TypeId type, const Slot* src, Slot* dst);
     bool growList(List* l, std::uint32_t need);
     bool growMap(Map* m);
@@ -209,6 +215,7 @@ private:
     void exportValue(std::string& out, ir::TypeId type, const Slot* v);
     std::unique_ptr<stdlib::DataTypes> dataTypes_;
     std::vector<std::unique_ptr<stdlib::NativeCtx>> nativeCtx_;
+    TierMode tierMode_ = TierMode::Interpreter;
 
     friend struct HostCall;
     friend class Interpreter;
