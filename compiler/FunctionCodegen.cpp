@@ -200,6 +200,7 @@ void FunctionCodegen::ret(const ir::Inst& in) {
             r = B_.CreateInsertValue(r, v[i], static_cast<unsigned>(i + 1));
         }
     }
+    spillFuel();
     B_.CreateRet(r);
 }
 
@@ -477,8 +478,10 @@ void FunctionCodegen::call(const ir::Inst& in) {
         Values v = read(fn_.args[in.argBegin + i]);
         args.insert(args.end(), v.begin(), v.end());
     }
+    spillFuel();
     llvm::CallInst* r = B_.CreateCall(U.function(callee), args);
     r->setCallingConv(llvm::CallingConv::Fast);
+    reloadFuel();
     failIf(B_.CreateExtractValue(r, 0));
     if (in.dst != ir::kNoReg) {
         Values out;

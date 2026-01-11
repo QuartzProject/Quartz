@@ -8,6 +8,8 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
 #include <llvm/Passes/PassBuilder.h>
+#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
 #include <mutex>
@@ -58,6 +60,14 @@ QC_API NativeJit* qc_create(const quartz::vm::NativeSymbol* runtime, std::uint32
     std::call_once(once, [] {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
+        // Developer knob for measuring LLVM options; the library has its own private copy of LLVM.
+        if (const char* args = std::getenv("QUARTZ_LLVM_ARGS"); args != nullptr && *args != '\0') {
+            llvm::SmallVector<const char*, 8> argv{"quartz"};
+            llvm::BumpPtrAllocator alloc;
+            llvm::StringSaver saver(alloc);
+            llvm::cl::TokenizeGNUCommandLine(args, saver, argv);
+            llvm::cl::ParseCommandLineOptions(static_cast<int>(argv.size()), argv.data());
+        }
     });
     auto jtmb = llvm::orc::JITTargetMachineBuilder::detectHost();
     if (!jtmb) {

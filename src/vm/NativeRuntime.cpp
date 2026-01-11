@@ -1,9 +1,15 @@
 #include "vm/Sandbox.hpp"
 #include "vm/Tier.hpp"
 
+#include <bit>
 #include <cmath>
+#include <cstring>
 #include <format>
 #include <iterator>
+
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 
 namespace quartz::vm {
 
@@ -69,14 +75,77 @@ std::int32_t qzStrCmp(const Str* a, const Str* b) {
     return a->len < b->len ? -1 : a->len > b->len ? 1 : 0;
 }
 
-std::uint32_t qzStrContains(const Str* a, const Str* b) {
-    return a->view().find(b->view()) != std::string_view::npos ? 1 : 0;
+#if defined(__SSE2__)
+// Candidates in [skip, 16) of the block at `base` whose first and last bytes match; -1 when none matches fully.
+[[gnu::always_inline]] inline std::int64_t scanBlock(const char* base, const char* n, std::size_t nn, __m128i first,
+                                                     __m128i last, std::uint32_t keep) {
+    __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(base));
+    __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(base + nn - 1));
+    auto mask =
+        static_cast<std::uint32_t>(_mm_movemask_epi8(_mm_and_si128(_mm_cmpeq_epi8(a, first), _mm_cmpeq_epi8(b, last))));
+    mask &= keep;
+    while (mask != 0) {
+        auto bit = static_cast<std::size_t>(std::countr_zero(mask));
+        if (std::memcmp(base + bit + 1, n + 1, nn - 2) == 0) {
+            return static_cast<std::int64_t>(bit);
+        }
+        mask &= mask - 1;
+    }
+    return -1;
 }
 
-std::int64_t qzStrFind(const Str* a, const Str* b) {
-    std::size_t at = a->view().find(b->view());
+// First and last needle byte compared 16 positions at a time; same answer as std::string_view::find.
+std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t nn) {
+    if (nn == 0) {
+        return 0;
+    }
+    if (nn > hn) {
+        return -1;
+    }
+    if (nn == 1) {
+        const void* at = std::memchr(h, n[0], hn);
+        return at == nullptr ? -1 : static_cast<const char*>(at) - h;
+    }
+    const __m128i first = _mm_set1_epi8(n[0]);
+    const __m128i last = _mm_set1_epi8(n[nn - 1]);
+    std::size_t candidates = hn - nn + 1;
+    if (candidates < 16) {
+        // Too short for one block: pad a copy so no load leaves the string.
+        constexpr std::size_t kPad = 64;
+        if (nn > kPad - 16) {
+            std::size_t at = std::string_view(h, hn).find(std::string_view(n, nn));
+            return at == std::string_view::npos ? -1 : static_cast<std::int64_t>(at);
+        }
+        char padded[kPad] = {};
+        std::memcpy(padded, h, hn);
+        return scanBlock(padded, n, nn, first, last, (1u << candidates) - 1);
+    }
+    std::size_t i = 0;
+    for (; i + 16 <= candidates; i += 16) {
+        if (std::int64_t r = scanBlock(h + i, n, nn, first, last, 0xFFFFu); r >= 0) {
+            return static_cast<std::int64_t>(i) + r;
+        }
+    }
+    if (i == candidates) {
+        return -1;
+    }
+    // The last block overlaps the previous one; positions already checked are masked out.
+    std::size_t start = candidates - 16;
+    std::int64_t r = scanBlock(h + start, n, nn, first, last, 0xFFFFu << (i - start));
+    return r < 0 ? -1 : static_cast<std::int64_t>(start) + r;
+}
+#else
+std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t nn) {
+    std::size_t at = std::string_view(h, hn).find(std::string_view(n, nn));
     return at == std::string_view::npos ? -1 : static_cast<std::int64_t>(at);
 }
+#endif
+
+std::uint32_t qzStrContains(const Str* a, const Str* b) {
+    return findBytes(a->data, a->len, b->data, b->len) >= 0 ? 1 : 0;
+}
+
+std::int64_t qzStrFind(const Str* a, const Str* b) { return findBytes(a->data, a->len, b->data, b->len); }
 
 std::uint32_t qzStrStarts(const Str* a, const Str* b) { return a->view().starts_with(b->view()) ? 1 : 0; }
 

@@ -159,10 +159,17 @@ void FunctionCodegen::failIf(llvm::Value* failed) {
 }
 
 void FunctionCodegen::chargeFuel() {
-    llvm::Value* at = gep(ctx_, offsetof(vm::NativeCtx, fuel));
-    llvm::Value* fuel = B_.CreateSub(tag(B_.CreateLoad(U.i64, at), U.tbaaFuel), constI64(1));
-    tag(B_.CreateStore(fuel, at), U.tbaaFuel);
+    llvm::Value* fuel = B_.CreateSub(B_.CreateLoad(U.i64, fuel_), constI64(1));
+    B_.CreateStore(fuel, fuel_);
     trapIf(B_.CreateICmpSLT(fuel, constI64(0)), ir::TrapCode::OutOfFuel);
+}
+
+void FunctionCodegen::spillFuel() {
+    tag(B_.CreateStore(B_.CreateLoad(U.i64, fuel_), gep(ctx_, offsetof(vm::NativeCtx, fuel))), U.tbaaFuel);
+}
+
+void FunctionCodegen::reloadFuel() {
+    B_.CreateStore(tag(B_.CreateLoad(U.i64, gep(ctx_, offsetof(vm::NativeCtx, fuel))), U.tbaaFuel), fuel_);
 }
 
 llvm::Value* FunctionCodegen::boundsFail(llvm::Value* index, llvm::Value* len) { return B_.CreateICmpUGE(index, len); }
@@ -175,6 +182,12 @@ std::string FunctionCodegen::run() {
     ctx_ = F_->getArg(1);
     depth_ = F_->getArg(2);
     scratch_ = entryB_.CreateAlloca(U.i64, constI32(1), "scratch");
+    // The fuel counter lives in a local so loops keep it in a register; ctx->fuel is synced around calls.
+    fuel_ = entryB_.CreateAlloca(U.i64, nullptr, "fuel");
+    entryB_.CreateStore(
+        tag(entryB_.CreateLoad(U.i64, entryB_.CreateConstInBoundsGEP1_64(U.i8, ctx_, offsetof(vm::NativeCtx, fuel))),
+            U.tbaaFuel),
+        fuel_);
     regs_.resize(fn_.regs.size());
     for (std::size_t r = 0; r < fn_.regs.size(); ++r) {
         for (SlotKind k : U.kinds(fn_.regs[r])) {
@@ -195,6 +208,7 @@ std::string FunctionCodegen::run() {
     llvm::StructType* rt = U.resultType(index_);
     llvm::Value* failed = llvm::UndefValue::get(rt);
     failed = B_.CreateInsertValue(failed, llvm::ConstantInt::getTrue(U.C), 0);
+    spillFuel();
     B_.CreateRet(failed);
 
     B_.SetInsertPoint(body);

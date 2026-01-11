@@ -190,6 +190,8 @@ private:
     void failIf(llvm::Value* failed);
     void emitTrap(ir::TrapCode code);
     void chargeFuel();
+    void spillFuel();
+    void reloadFuel();
     void deadBlock();
 
     llvm::Value* constI64(std::int64_t v) { return llvm::ConstantInt::get(U.i64, static_cast<std::uint64_t>(v)); }
@@ -212,6 +214,7 @@ private:
     llvm::Value* depth_ = nullptr;
     llvm::BasicBlock* failBlock_ = nullptr;
     llvm::AllocaInst* scratch_ = nullptr;
+    llvm::AllocaInst* fuel_ = nullptr;
     std::uint32_t scratchSlots_ = 0;
     std::vector<std::vector<llvm::AllocaInst*>> regs_;
     std::vector<Frame> frames_;
