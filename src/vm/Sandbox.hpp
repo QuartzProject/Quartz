@@ -92,6 +92,8 @@ public:
     std::expected<std::unique_ptr<Sandbox>, Trap> reload(std::shared_ptr<const Program> next);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
     [[nodiscard]] TierMode tierMode() const { return tierMode_; }
+    /// Fuel left after the last call.
+    [[nodiscard]] std::int64_t fuelLeft() const { return fuel_; }
     /// Outside a call: a string for the next call's arguments, valid until the call after it starts.
     Str* newStr(std::string_view text);
 

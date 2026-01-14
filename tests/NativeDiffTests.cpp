@@ -85,7 +85,7 @@ TEST_CASE("native code prints and returns what the interpreter does") {
     }
 }
 
-TEST_CASE("native traps carry the interpreter's code, message, function and line") {
+TEST_CASE("native traps and fuel match the interpreter's code, message, function and line") {
     const char* bodies[] = {
         "let z = [0][0]\n    return 10 / z",
         "let xs = [1, 2, 3]\n    return xs[xs.len()]",
@@ -97,6 +97,10 @@ TEST_CASE("native traps carry the interpreter's code, message, function and line
         "return \"abc\".byteAt(3)",
         "let ps = [(1, 2.0)]\n    ps[3] = (4, 5.0)\n    return 0",
         "let n = 9223372036854775807\n    var s = 0\n    for i in 0..n { s += i }\n    return s",
+        "var j = 9223372036854775800\n    while j <= 9223372036854775806 { j += 3 }\n    return j",
+        "var s = 0\n    for i in 0..100001 { s += i }\n    return s",
+        "var s = 0\n    for i in 0..=100000 { s += i }\n    return s",
+        "var s = 0\n    for i in 0..100000 { s += i }\n    return s",
     };
     for (const char* body : bodies) {
         CAPTURE(body);
@@ -105,7 +109,6 @@ TEST_CASE("native traps carry the interpreter's code, message, function and line
         auto p = withStd("trap.qz", text);
         Outcome native = runMain(p, TierMode::Native, 100'000);
         Outcome interp = runMain(p, TierMode::Interpreter, 100'000);
-        CHECK_FALSE(interp.trap.empty());
         CHECK(native == interp);
     }
 }

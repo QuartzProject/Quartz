@@ -21,7 +21,7 @@ namespace {
 // Work units per interpreted call on top of the fuel it burns (one unit per loop back edge or call).
 constexpr std::uint64_t kCallWeight = 32;
 // About 3 ms of interpreter time on the reference machine (D35).
-constexpr std::uint64_t kDefaultThreshold = 300'000;
+constexpr std::uint64_t kDefaultThreshold = 200'000;
 
 std::uint64_t envNumber(const char* name, std::uint64_t fallback) {
     const char* v = std::getenv(name);

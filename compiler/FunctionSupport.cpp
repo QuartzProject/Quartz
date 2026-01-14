@@ -161,6 +161,9 @@ void FunctionCodegen::failIf(llvm::Value* failed) {
 void FunctionCodegen::chargeFuel() {
     llvm::Value* fuel = B_.CreateSub(B_.CreateLoad(U.i64, fuel_), constI64(1));
     B_.CreateStore(fuel, fuel_);
+    if (!checkFuel_) {
+        return;
+    }
     trapIf(B_.CreateICmpSLT(fuel, constI64(0)), ir::TrapCode::OutOfFuel);
 }
 
@@ -212,9 +215,16 @@ std::string FunctionCodegen::run() {
     B_.CreateRet(failed);
 
     B_.SetInsertPoint(body);
-    for (const ir::Inst& in : fn_.code) {
+    for (std::size_t pc = 0; pc < fn_.code.size(); ++pc) {
+        const ir::Inst& in = fn_.code[pc];
         line_ = in.line;
-        lower(in);
+        CountedLoop counted;
+        if (in.op == ir::Op::Loop && countedLoop(pc, counted)) {
+            versionLoop(pc, counted);
+            pc = counted.end;
+        } else {
+            lower(in);
+        }
         if (!error_.empty()) {
             return error_;
         }

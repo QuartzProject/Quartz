@@ -129,6 +129,14 @@ public:
 private:
     using Values = std::vector<llvm::Value*>;
 
+    struct CountedLoop {
+        ir::Reg i = ir::kNoReg;
+        ir::Reg step = ir::kNoReg;
+        ir::Reg hi = ir::kNoReg; // the bound, or the list whose length is the bound
+        bool listBound = false;
+        std::size_t end = 0;
+    };
+
     struct Frame {
         ir::Op op;
         llvm::BasicBlock* target; // loop header, or the block after a Block/If
@@ -150,6 +158,14 @@ private:
     void enumOp(const ir::Inst& in);
     llvm::Value* normalize(ir::TypeId t, llvm::Value* v);
     llvm::Value* divRem(const ir::Inst& in, llvm::Value* a, llvm::Value* b);
+
+    // Loops.cpp
+    std::size_t matchingEnd(std::size_t loop) const;
+    bool countedLoop(std::size_t loop, CountedLoop& out) const;
+    /// True when the Block closed at `end` is never the target of a branch.
+    bool fallsThroughOnly(std::size_t end) const;
+    /// Emits the loop twice: without fuel checks when the remaining fuel covers every back edge, and with them.
+    void versionLoop(std::size_t loop, const CountedLoop& c);
 
     // Intrinsics.cpp
     void intrinsic(const ir::Inst& in);
@@ -215,6 +231,7 @@ private:
     llvm::BasicBlock* failBlock_ = nullptr;
     llvm::AllocaInst* scratch_ = nullptr;
     llvm::AllocaInst* fuel_ = nullptr;
+    bool checkFuel_ = true;
     std::uint32_t scratchSlots_ = 0;
     std::vector<std::vector<llvm::AllocaInst*>> regs_;
     std::vector<Frame> frames_;
