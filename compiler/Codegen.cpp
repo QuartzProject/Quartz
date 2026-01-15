@@ -30,6 +30,7 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_list_set", false, false},  {"qz_list_pop", false, false},    {"qz_list_clear", false, false},
     {"qz_join", false, false},      {"qz_map_new", false, false},     {"qz_map_find", false, false},
     {"qz_map_set", false, false},   {"qz_map_remove", false, false},  {"qz_state_store", false, false},
+    {"qz_scope_in", false, false},  {"qz_scope_out", false, false},   {"qz_persist", false, false},
     {"qz_pow", false, false},       {"qz_sin", false, false},         {"qz_cos", false, false},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
@@ -221,6 +222,15 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
     case Rt::MapRemove:
         ty = llvm::FunctionType::get(i32, {ptr, ptr, ptr}, false);
         break;
+    case Rt::ScopeIn:
+        ty = llvm::FunctionType::get(i32, {ptr}, false);
+        break;
+    case Rt::ScopeOut:
+        ty = llvm::FunctionType::get(v, {ptr}, false);
+        break;
+    case Rt::Persist:
+        ty = llvm::FunctionType::get(i32, {ptr, i32, ptr, i32}, false);
+        break;
     case Rt::StateStore:
         ty = llvm::FunctionType::get(i32, {ptr, i32, ptr, ptr}, false);
         break;
@@ -379,6 +389,9 @@ std::string UnitCodegen::build(std::uint32_t root, const std::string& entryName)
     collectReachable(root);
     computeCycles();
     for (std::uint32_t f : reachable_) {
+        if (IR.functions[f].isSuspend) {
+            return IR.functions[f].name + ": suspend functions run in the interpreter";
+        }
         if (L.slots(IR.functions[f].result) != kinds(IR.functions[f].result).size()) {
             return "layout mismatch in " + IR.functions[f].name;
         }

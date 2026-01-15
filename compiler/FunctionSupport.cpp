@@ -218,6 +218,7 @@ std::string FunctionCodegen::run() {
     for (std::size_t pc = 0; pc < fn_.code.size(); ++pc) {
         const ir::Inst& in = fn_.code[pc];
         line_ = in.line;
+        pc_ = pc;
         CountedLoop counted;
         if (in.op == ir::Op::Loop && countedLoop(pc, counted)) {
             versionLoop(pc, counted);

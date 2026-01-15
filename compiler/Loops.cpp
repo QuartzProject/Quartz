@@ -172,12 +172,16 @@ void FunctionCodegen::versionLoop(std::size_t loop, const CountedLoop& c) {
     llvm::BasicBlock* slow = llvm::BasicBlock::Create(U.C, "loop", F_);
     llvm::BasicBlock* after = llvm::BasicBlock::Create(U.C, "loop.end", F_);
     B_.CreateCondBr(ok, fast, slow);
-    for (llvm::BasicBlock* head : {fast, slow}) {
+    // The checked copy goes first so the unchecked one can jump into it after a host call charged fuel.
+    resume_.clear();
+    for (llvm::BasicBlock* head : {slow, fast}) {
         checkFuel_ = head == slow;
+        recordResume_ = head == slow;
         B_.SetInsertPoint(head);
         frames_.push_back({Op::Loop, head});
         for (std::size_t pc = loop + 1; pc < c.end && error_.empty(); ++pc) {
             line_ = fn_.code[pc].line;
+            pc_ = pc;
             lower(fn_.code[pc]);
         }
         frames_.pop_back();
@@ -186,6 +190,7 @@ void FunctionCodegen::versionLoop(std::size_t loop, const CountedLoop& c) {
         }
     }
     checkFuel_ = true;
+    recordResume_ = false;
     B_.SetInsertPoint(after);
 }
 

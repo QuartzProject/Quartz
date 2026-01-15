@@ -13,6 +13,15 @@
 
 namespace quartz::vm {
 
+/// What the compiled code's callbacks need from the sandbox beyond its public runtime.
+struct NativeRuntimeAccess {
+    static std::int64_t& fuel(Sandbox& s) { return s.fuel_; }
+
+    static bool persist(Sandbox& s, ir::TypeId type, Slot* value, std::uint32_t levels) {
+        return s.curLevel_ < levels || s.promoteInto(type, value, s.curLevel_ - levels);
+    }
+};
+
 namespace {
 
 Sandbox& sb(NativeCtx* c) { return *c->sandbox; }
@@ -40,7 +49,19 @@ void qzIndexTrap(NativeCtx* c, std::int64_t index, std::int64_t len, std::uint32
 }
 
 std::uint32_t qzCallHost(NativeCtx* c, std::uint32_t import, const Slot* args, Slot* result) {
-    return sb(c).callHost(import, args, result) ? 1 : 0;
+    std::int64_t& fuel = NativeRuntimeAccess::fuel(sb(c));
+    fuel = c->fuel;
+    bool ok = sb(c).callHost(import, args, result);
+    c->fuel = fuel;
+    return ok ? 1 : 0;
+}
+
+std::uint32_t qzScopeIn(NativeCtx* c) { return sb(c).scopeIn() ? 1 : 0; }
+
+void qzScopeOut(NativeCtx* c) { sb(c).scopeOut(); }
+
+std::uint32_t qzPersist(NativeCtx* c, std::uint32_t type, Slot* value, std::uint32_t levels) {
+    return NativeRuntimeAccess::persist(sb(c), type, value, levels) ? 1 : 0;
 }
 
 Str* qzConcat(NativeCtx* c, const Slot* parts, std::uint32_t n) { return sb(c).concat(parts, n); }
@@ -223,6 +244,9 @@ const NativeSymbol kSymbols[] = {
     {"qz_map_set", addr(qzMapSet)},
     {"qz_map_remove", addr(qzMapRemove)},
     {"qz_state_store", addr(qzStateStore)},
+    {"qz_scope_in", addr(qzScopeIn)},
+    {"qz_scope_out", addr(qzScopeOut)},
+    {"qz_persist", addr(qzPersist)},
     {"qz_pow", addr(qzPow)},
     {"qz_sin", addr(qzSin)},
     {"qz_cos", addr(qzCos)},

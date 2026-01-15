@@ -161,8 +161,37 @@ void FunctionCodegen::lower(const ir::Inst& in) {
     case Op::EnumField:
         enumOp(in);
         return;
+    case Op::ScopeEnter:
+    case Op::ScopeExit:
+    case Op::Persist:
+        scope(in);
+        return;
+    case Op::Wait:
+        error_ = "suspension points run in the interpreter";
+        return;
     }
     error_ = "unsupported instruction";
+}
+
+void FunctionCodegen::scope(const ir::Inst& in) {
+    switch (in.op) {
+    case Op::ScopeEnter:
+        trapIf(B_.CreateICmpEQ(B_.CreateCall(U.runtime(Rt::ScopeIn), {ctx_}), constI32(0)), kAlreadySet);
+        return;
+    case Op::ScopeExit:
+        B_.CreateCall(U.runtime(Rt::ScopeOut), {ctx_});
+        return;
+    default: {
+        TypeId t = fn_.regs[in.a];
+        const std::vector<SlotKind>& k = kindsOf(in.a);
+        llvm::Value* s = scratch(static_cast<std::uint32_t>(k.size()));
+        storeSlots(s, 0, read(in.a), k, U.tbaaSlot);
+        llvm::Value* ok = B_.CreateCall(U.runtime(Rt::Persist), {ctx_, constI32(t), s, constI32(in.imm)});
+        trapIf(B_.CreateICmpEQ(ok, constI32(0)), kAlreadySet);
+        write(in.a, loadSlots(s, 0, k, U.tbaaSlot));
+        return;
+    }
+    }
 }
 
 void FunctionCodegen::branch(std::uint32_t depth, llvm::Value* cond) {
@@ -498,11 +527,7 @@ void FunctionCodegen::callHost(const ir::Inst& in) {
         total += static_cast<std::uint32_t>(kindsOf(fn_.args[in.argBegin + i]).size());
     }
     std::uint32_t resultSlots = U.P.importResultSlots[in.imm];
-    if (resultSlots > 1) {
-        error_ = "host import with a multi-slot result";
-        return;
-    }
-    llvm::Value* s = scratch(total + 1);
+    llvm::Value* s = scratch(total + std::max<std::uint32_t>(resultSlots, 1));
     std::uint64_t at = 0;
     for (std::uint32_t i = 0; i < in.argCount; ++i) {
         ir::Reg r = fn_.args[in.argBegin + i];
@@ -511,10 +536,31 @@ void FunctionCodegen::callHost(const ir::Inst& in) {
     }
     llvm::Value* result =
         resultSlots != 0 ? gep(s, static_cast<std::uint64_t>(total) * 8) : llvm::ConstantPointerNull::get(U.ptr);
+    // Host functions may charge fuel (HostCall::charge).
+    llvm::Value* before = B_.CreateLoad(U.i64, fuel_);
+    spillFuel();
     llvm::Value* ok = B_.CreateCall(U.runtime(Rt::CallHost), {ctx_, constI32(in.imm), s, result});
+    reloadFuel();
     trapIf(B_.CreateICmpEQ(ok, constI32(0)), kAlreadySet);
     if (in.dst != ir::kNoReg && resultSlots != 0) {
         write(in.dst, loadSlots(result, 0, kindsOf(in.dst), U.tbaaSlot));
+    }
+    if (recordResume_) {
+        llvm::BasicBlock* resume = llvm::BasicBlock::Create(U.C, "host.resume", F_);
+        B_.CreateBr(resume);
+        B_.SetInsertPoint(resume);
+        resume_[pc_] = resume;
+    } else if (!checkFuel_) {
+        // A charge voids the fuel bound of the unchecked loop copy: continue in the checked one.
+        auto it = resume_.find(pc_);
+        if (it != resume_.end()) {
+            llvm::BasicBlock* cont = llvm::BasicBlock::Create(U.C, "cont", F_);
+            llvm::Value* charged = B_.CreateICmpNE(B_.CreateLoad(U.i64, fuel_), before);
+            B_.CreateCondBr(charged, it->second, cont, U.cold);
+            B_.SetInsertPoint(cont);
+        } else {
+            error_ = "host call without a resume point";
+        }
     }
 }
 

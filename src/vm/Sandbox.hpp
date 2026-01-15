@@ -221,6 +221,7 @@ private:
 
     friend struct HostCall;
     friend class Interpreter;
+    friend struct NativeRuntimeAccess;
 };
 
 } // namespace quartz::vm

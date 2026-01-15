@@ -16,16 +16,38 @@ constexpr auto kAlreadySet = static_cast<ir::TrapCode>(vm::kTrapAlreadySet);
 
 } // namespace
 
+llvm::Value* FunctionCodegen::elementAt(llvm::Value* list, llvm::Value* index, std::size_t slots, bool packed) {
+    llvm::Value* data = loadField(U.ptr, list, offsetof(vm::List, data), U.tbaaList);
+    if (packed) {
+        return B_.CreateInBoundsGEP(U.i8, data, index);
+    }
+    return B_.CreateInBoundsGEP(U.i64, data, B_.CreateMul(index, constI64(static_cast<std::int64_t>(slots))));
+}
+
+FunctionCodegen::Values FunctionCodegen::loadElement(llvm::Value* at, const std::vector<SlotKind>& k, bool packed) {
+    if (packed) {
+        return {B_.CreateICmpNE(tag(B_.CreateLoad(U.i8, at), U.tbaaBytes), llvm::ConstantInt::get(U.i8, 0))};
+    }
+    return loadSlots(at, 0, k, U.tbaaSlot);
+}
+
+void FunctionCodegen::storeElement(llvm::Value* at, const Values& v, const std::vector<SlotKind>& k, bool packed) {
+    if (packed) {
+        tag(B_.CreateStore(B_.CreateZExt(v[0], U.i8), at), U.tbaaBytes);
+        return;
+    }
+    storeSlots(at, 0, v, k, U.tbaaSlot);
+}
+
 void FunctionCodegen::listGet(const ir::Inst& in) {
     ir::Reg listReg = fn_.args[in.argBegin];
     llvm::Value* list = read1(listReg);
     llvm::Value* index = read1(fn_.args[in.argBegin + 1]);
     trapIf(boundsFail(index, listLen(list)), ir::TrapCode::IndexOutOfBounds);
     const std::vector<SlotKind>& k = kindsOf(in.dst);
-    llvm::Value* data = loadField(U.ptr, list, offsetof(vm::List, data), U.tbaaList);
-    llvm::Value* at =
-        B_.CreateInBoundsGEP(U.i64, data, B_.CreateMul(index, constI64(static_cast<std::int64_t>(k.size()))));
-    write(in.dst, loadSlots(at, 0, k, U.tbaaSlot));
+    // parity: `[bool]` is packed one byte per element (D38)
+    bool packed = fn_.regs[in.dst] == ir::kBool;
+    write(in.dst, loadElement(elementAt(list, index, k.size(), packed), k, packed));
 }
 
 void FunctionCodegen::listSet(const ir::Inst& in) {
@@ -67,10 +89,8 @@ void FunctionCodegen::listSet(const ir::Inst& in) {
         B_.CreateBr(failBlock_);
         B_.SetInsertPoint(ok);
     }
-    llvm::Value* data = loadField(U.ptr, list, offsetof(vm::List, data), U.tbaaList);
-    llvm::Value* at =
-        B_.CreateInBoundsGEP(U.i64, data, B_.CreateMul(index, constI64(static_cast<std::int64_t>(k.size()))));
-    storeSlots(at, 0, v, k, U.tbaaSlot);
+    bool packed = elem == ir::kBool;
+    storeElement(elementAt(list, index, k.size(), packed), v, k, packed);
     B_.CreateBr(done);
     B_.SetInsertPoint(done);
 }
@@ -95,10 +115,8 @@ void FunctionCodegen::listPush(const ir::Inst& in) {
     llvm::BasicBlock* done = llvm::BasicBlock::Create(U.C, "push.end", F_);
     B_.CreateCondBr(fastOk, fast, slow);
     B_.SetInsertPoint(fast);
-    llvm::Value* data = loadField(U.ptr, list, offsetof(vm::List, data), U.tbaaList);
-    llvm::Value* at = B_.CreateInBoundsGEP(
-        U.i64, data, B_.CreateMul(B_.CreateZExt(len, U.i64), constI64(static_cast<std::int64_t>(k.size()))));
-    storeSlots(at, 0, v, k, U.tbaaSlot);
+    bool packed = elem == ir::kBool;
+    storeElement(elementAt(list, B_.CreateZExt(len, U.i64), k.size(), packed), v, k, packed);
     tag(B_.CreateStore(B_.CreateAdd(len, constI32(1)), gep(list, offsetof(vm::List, len))), U.tbaaList);
     B_.CreateBr(done);
     B_.SetInsertPoint(slow);

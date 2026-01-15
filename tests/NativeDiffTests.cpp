@@ -35,6 +35,42 @@ struct Outcome {
     bool operator==(const Outcome&) const = default;
 };
 
+// Same standard interface and file splitting as ProgramTests.cpp.
+constexpr std::string_view kStd = R"(fn print(text: str)
+@handle
+@awaitable
+struct Delay {}
+impl i64 {
+    @property
+    fn ticks(self) -> Delay
+}
+)";
+
+std::vector<quartz::SourceInput> programInputs(const fs::path& path) {
+    std::vector<quartz::SourceInput> inputs{{path.string(), ""}};
+    std::istringstream in(readFile(path));
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.starts_with("// file: ")) {
+            inputs.push_back({line.substr(9), ""});
+            continue;
+        }
+        inputs.back().text += line + "\n";
+    }
+    fs::path iface = path;
+    iface.replace_extension(".qzi");
+    if (fs::exists(iface)) {
+        inputs.push_back({iface.string(), readFile(iface)});
+    }
+    inputs.push_back({"<std>.qzi", std::string(kStd)});
+    return inputs;
+}
+
+bool hostTicks(quartz::vm::HostCall& call, void*) {
+    call.result.u = call.args[0].u;
+    return true;
+}
+
 bool logText(quartz::vm::HostCall& call, void* user) {
     auto* log = static_cast<std::string*>(user);
     *log += static_cast<const quartz::vm::Str*>(call.args[0].p)->view();
@@ -54,6 +90,7 @@ Outcome runMain(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
     limits.fuelPerCall = fuel;
     quartz::vm::Sandbox sb(p, limits);
     sb.bind("print", logText, &o.log);
+    sb.bind("i64.ticks", hostTicks);
     REQUIRE(sb.start().has_value());
     std::uint32_t f = p->findFunction("main");
     auto r = sb.call(f, {});
@@ -69,7 +106,7 @@ Outcome runMain(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
 }
 
 std::shared_ptr<const quartz::vm::Program> withStd(const std::string& name, const std::string& text) {
-    return build({{name, text}, {"<std>.qzi", "fn print(text: str)\n"}});
+    return build({{name, text}, {"<std>.qzi", std::string(kStd)}});
 }
 
 } // namespace
@@ -80,7 +117,10 @@ TEST_CASE("native code prints and returns what the interpreter does") {
             continue;
         }
         CAPTURE(e.path().string());
-        auto p = withStd(e.path().string(), readFile(e.path()));
+        auto p = build(programInputs(e.path()));
+        if (p->functions[p->findFunction("main")].isSuspend) {
+            continue; // tasks always run in the interpreter
+        }
         CHECK(runMain(p, TierMode::Native) == runMain(p, TierMode::Interpreter));
     }
 }
@@ -110,6 +150,25 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         Outcome native = runMain(p, TierMode::Native, 100'000);
         Outcome interp = runMain(p, TierMode::Interpreter, 100'000);
         CHECK(native == interp);
+    }
+}
+
+TEST_CASE("fuel charged by host functions inside a counted loop matches the interpreter") {
+    std::string text = "import std.data.*\n"
+                       "fn main() -> i64 {\n"
+                       "    var n = 0\n"
+                       "    for i in 0..300 {\n"
+                       "        match parseJson(\"[1, 2, 3, 4, 5, 6, 7, 8]\") {\n"
+                       "            Ok(v) => n += 1\n"
+                       "            Err(e) => n -= 1\n"
+                       "        }\n"
+                       "    }\n"
+                       "    return n\n"
+                       "}\n";
+    auto p = withStd("charge.qz", text);
+    for (std::int64_t fuel : {1'000, 2'399, 2'400, 2'401, 100'000}) {
+        CAPTURE(fuel);
+        CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
     }
 }
 

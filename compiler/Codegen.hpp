@@ -48,6 +48,9 @@ enum class Rt : std::uint8_t {
     MapSet,
     MapRemove,
     StateStore,
+    ScopeIn,
+    ScopeOut,
+    Persist,
     Pow,
     Sin,
     Cos,
@@ -156,6 +159,7 @@ private:
     void field(const ir::Inst& in);
     void nullable(const ir::Inst& in);
     void enumOp(const ir::Inst& in);
+    void scope(const ir::Inst& in);
     llvm::Value* normalize(ir::TypeId t, llvm::Value* v);
     llvm::Value* divRem(const ir::Inst& in, llvm::Value* a, llvm::Value* b);
 
@@ -169,6 +173,9 @@ private:
 
     // Intrinsics.cpp
     void intrinsic(const ir::Inst& in);
+    llvm::Value* elementAt(llvm::Value* list, llvm::Value* index, std::size_t slots, bool packed);
+    Values loadElement(llvm::Value* at, const std::vector<SlotKind>& k, bool packed);
+    void storeElement(llvm::Value* at, const Values& v, const std::vector<SlotKind>& k, bool packed);
     void listGet(const ir::Inst& in);
     void listSet(const ir::Inst& in);
     void listPush(const ir::Inst& in);
@@ -232,6 +239,9 @@ private:
     llvm::AllocaInst* scratch_ = nullptr;
     llvm::AllocaInst* fuel_ = nullptr;
     bool checkFuel_ = true;
+    bool recordResume_ = false;
+    std::size_t pc_ = 0;
+    std::unordered_map<std::size_t, llvm::BasicBlock*> resume_; // checked loop copy: block after each host call
     std::uint32_t scratchSlots_ = 0;
     std::vector<std::vector<llvm::AllocaInst*>> regs_;
     std::vector<Frame> frames_;
