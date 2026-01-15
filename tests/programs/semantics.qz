@@ -24,9 +24,23 @@
 // expect: true 1.5
 // expect: false 2.5
 
-struct V { a: i32, b: f64, c: bool }
-enum E { A(i64, f64), B(str), C }
-state S { n: i64, names: [str], m: Map<str, V>, opt: i64?, e: [E] }
+struct V {
+    a: i32
+    b: f64
+    c: bool
+}
+enum E {
+    A(i64, f64)
+    B(str)
+    C
+}
+state S {
+    n: i64
+    names: [str]
+    m: Map<str, V>
+    opt: i64?
+    e: [E]
+}
 
 fn show(e: E) -> str {
     return match e {
@@ -111,7 +125,9 @@ fn main(st: S) -> i64 {
     flags[2] = false
     var on = 0
     for fl in flags {
-        if fl { on += 1 }
+        if fl {
+            on += 1
+        }
     }
     let ch: char = 'é'
     print("{on} {ch} {true} {false} {(ch as i64)} {(65 as u8) as char}")
