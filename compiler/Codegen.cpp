@@ -392,6 +392,10 @@ std::string UnitCodegen::build(std::uint32_t root, const std::string& entryName)
         if (IR.functions[f].isSuspend) {
             return IR.functions[f].name + ": suspend functions run in the interpreter";
         }
+        const vm::CompiledFunction& cf = P.functions[f];
+        if (cf.code.size() == 1 && cf.code[0].op == vm::Opc::Trap && IR.functions[f].code.size() > 1) {
+            return IR.functions[f].name + ": too large for the interpreter, which traps on entry";
+        }
         if (L.slots(IR.functions[f].result) != kinds(IR.functions[f].result).size()) {
             return "layout mismatch in " + IR.functions[f].name;
         }
