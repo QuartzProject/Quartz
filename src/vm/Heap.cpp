@@ -21,10 +21,7 @@ bool InvocationArena::grow(std::size_t atLeast) {
     return true;
 }
 
-void InvocationArena::reset() {
-    if (chunks_.empty()) {
-        return;
-    }
+void InvocationArena::resetSlow() {
     for (std::size_t i = 1; i < chunks_.size(); ++i) {
         quota_.give(chunks_[i].size);
         std::free(chunks_[i].base); // NOLINT(cppcoreguidelines-no-malloc)
@@ -108,7 +105,7 @@ void StateHeap::release(void* p) {
     }
 }
 
-void StateHeap::flush() {
+void StateHeap::flushSlow() {
     for (void* p : deferred_) {
         auto* base = static_cast<std::byte*>(p) - kHeader;
         std::size_t cls = reinterpret_cast<std::size_t*>(base)[0];

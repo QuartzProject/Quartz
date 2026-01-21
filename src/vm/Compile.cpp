@@ -883,6 +883,15 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
             plain.fuse = false;
             cf = plain.run();
         }
+        for (TypeId p : cf.params) {
+            std::int32_t plan = prog->layouts->slots(p) == 1 ? CompiledFunction::kHostArg : CompiledFunction::kBadArg;
+            for (std::size_t s = 0; s < prog->module->states.size(); ++s) {
+                if (prog->module->states[s] == p) {
+                    plan = static_cast<std::int32_t>(s);
+                }
+            }
+            cf.entryPlan.push_back(plan);
+        }
         prog->functions.push_back(std::move(cf));
         prog->maxFrameSlots = std::max(prog->maxFrameSlots, prog->functions.back().frameSlots);
     }

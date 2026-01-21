@@ -46,11 +46,21 @@ public:
     }
 
     /// Keeps the first chunk for reuse; returns the rest to the system.
-    void reset();
+    void reset() {
+        if (chunks_.size() == 1 && chunks_[0].size == kChunk) {
+            cursor_ = chunks_[0].base;
+            end_ = cursor_ + kChunk;
+            return;
+        }
+        if (!chunks_.empty()) {
+            resetSlow();
+        }
+    }
 
 private:
     bool grow(std::size_t atLeast);
     void releaseAll();
+    void resetSlow();
 
     struct Chunk {
         std::byte* base;
@@ -76,7 +86,11 @@ public:
 
     void* allocate(std::size_t size);
     void release(void* p);
-    void flush();
+    void flush() {
+        if (!deferred_.empty()) {
+            flushSlow();
+        }
+    }
 
 private:
     static constexpr std::size_t kGranule = 16;
@@ -94,6 +108,7 @@ private:
     static constexpr std::size_t kSlab = 64 * 1024;
 
     void* allocateSmall(std::size_t cls);
+    void flushSlow();
 
     Quota& quota_;
     std::vector<void*> deferred_;

@@ -45,6 +45,11 @@ InvocationArena* Sandbox::regionFor(Owner owner, std::uint32_t level) {
 }
 
 void Sandbox::resetRegions(InvocationArena* base) {
+    if (scopeArenas_.empty() && regions_.size() == 1 && regions_[0] == base) {
+        cur_ = base;
+        curLevel_ = 0;
+        return;
+    }
     for (auto& a : scopeArenas_) {
         a->reset();
         spare_.push_back(std::move(a));

@@ -149,24 +149,18 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
         return std::unexpected(Trap{ir::TrapCode::HostError, "no such exported function", {}, 0});
     }
     const CompiledFunction& fn = program_->functions[function];
-    const ir::Module& m = *program_->module;
     resetRegions(&arena_);
     arena_.reset();
     hostArena_ ^= 1;
     hostArenas_[hostArena_ ^ 1].reset();
     std::size_t next = 0;
     std::uint32_t slot = 0;
-    for (ir::TypeId p : fn.params) {
-        if (m.types.kind(p) == ir::TypeKind::State) {
-            for (std::size_t s = 0; s < m.states.size(); ++s) {
-                if (m.states[s] == p) {
-                    stack_[slot].p = states_[s];
-                }
-            }
-            ++slot;
+    for (std::int32_t plan : fn.entryPlan) {
+        if (plan >= 0) {
+            stack_[slot++].p = states_[static_cast<std::size_t>(plan)];
             continue;
         }
-        if (program_->layouts->slots(p) != 1 || next >= args.size()) {
+        if (plan == CompiledFunction::kBadArg || next >= args.size()) {
             return std::unexpected(Trap{ir::TrapCode::HostError, "argument mismatch", fn.name, 0});
         }
         stack_[slot++] = args[next++];

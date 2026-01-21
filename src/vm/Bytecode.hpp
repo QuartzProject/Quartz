@@ -121,6 +121,9 @@ struct CompiledFunction {
     ir::TypeId result = ir::kVoid;
     bool exported = false;
     bool isSuspend = false;
+    std::vector<std::int32_t> entryPlan; // per parameter: state index, kHostArg for a one-slot argument, kBadArg otherwise
+    static constexpr std::int32_t kHostArg = -1;
+    static constexpr std::int32_t kBadArg = -2;
     std::vector<std::pair<std::uint32_t, ir::TypeId>> refSlots; // slots that may hold references, for task suspension
 };
 
