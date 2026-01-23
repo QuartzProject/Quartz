@@ -2,6 +2,7 @@
 
 #include "std/Std.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <format>
@@ -290,8 +291,8 @@ void Sandbox::exportValue(std::string& out, TypeId type, const Slot* v) {
     }
     case TypeKind::Map: {
         const auto* m = static_cast<const Map*>(v->p);
-        out += '{';
-        bool first = true;
+        // Sorted by key: the hash order depends on the per-process hash key (D56).
+        std::vector<std::pair<std::string, const Slot*>> entries;
         std::uint32_t es = 1u + m->valueSlots;
         for (std::uint32_t i = 0; i < m->cap; ++i) {
             if (m->hashes[i] < 2) {
@@ -303,11 +304,15 @@ void Sandbox::exportValue(std::string& out, TypeId type, const Slot* v) {
             if (key.empty() || key.front() != '"') {
                 key = "\"" + key + "\"";
             }
-            out += first ? "" : ",";
-            first = false;
-            out += key;
+            entries.emplace_back(std::move(key), e);
+        }
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        out += '{';
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            out += i > 0 ? "," : "";
+            out += entries[i].first;
             out += ':';
-            exportValue(out, m->valueType, e + 1);
+            exportValue(out, m->valueType, entries[i].second + 1);
         }
         out += '}';
         return;

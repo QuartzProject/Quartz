@@ -63,15 +63,16 @@ struct Map {
     std::uint16_t level;
 };
 
-inline std::uint32_t hashBytes(std::string_view s) {
-    std::uint64_t h = 0xcbf29ce484222325ULL;
-    for (char c : s) {
-        h ^= static_cast<unsigned char>(c);
-        h *= 0x100000001b3ULL;
-    }
-    auto r = static_cast<std::uint32_t>(h ^ (h >> 32));
-    return r == 0 ? 1 : r;
-}
+struct HashKey {
+    std::uint64_t k0;
+    std::uint64_t k1;
+};
+
+/// Secret per process (D56): map hashes cannot be predicted, so keys cannot be chosen to collide.
+const HashKey& hashKey();
+
+/// SipHash-1-3 of `s` under the process key, folded to 32 bits (never 0, which marks "not computed").
+std::uint32_t hashBytes(std::string_view s);
 
 inline std::uint32_t strHash(Str* s) {
     if (s->hash == 0) {

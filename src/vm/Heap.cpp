@@ -2,8 +2,74 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
+#include <random>
+#include <string_view>
 
 namespace quartz::vm {
+
+const HashKey& hashKey() {
+    static const HashKey kKey = [] {
+        std::random_device rd;
+        auto word = [&] { return (static_cast<std::uint64_t>(rd()) << 32) ^ rd(); };
+        return HashKey{word(), word()};
+    }();
+    return kKey;
+}
+
+namespace {
+
+inline std::uint64_t rotl(std::uint64_t x, int b) { return (x << b) | (x >> (64 - b)); }
+
+inline void sipRound(std::uint64_t& v0, std::uint64_t& v1, std::uint64_t& v2, std::uint64_t& v3) {
+    v0 += v1;
+    v1 = rotl(v1, 13);
+    v1 ^= v0;
+    v0 = rotl(v0, 32);
+    v2 += v3;
+    v3 = rotl(v3, 16);
+    v3 ^= v2;
+    v0 += v3;
+    v3 = rotl(v3, 21);
+    v3 ^= v0;
+    v2 += v1;
+    v1 = rotl(v1, 17);
+    v1 ^= v2;
+    v2 = rotl(v2, 32);
+}
+
+} // namespace
+
+std::uint32_t hashBytes(std::string_view s) {
+    const HashKey& k = hashKey();
+    std::uint64_t v0 = k.k0 ^ 0x736f6d6570736575ULL;
+    std::uint64_t v1 = k.k1 ^ 0x646f72616e646f6dULL;
+    std::uint64_t v2 = k.k0 ^ 0x6c7967656e657261ULL;
+    std::uint64_t v3 = k.k1 ^ 0x7465646279746573ULL;
+    std::size_t n = s.size();
+    std::size_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        std::uint64_t m = 0;
+        std::memcpy(&m, s.data() + i, 8);
+        v3 ^= m;
+        sipRound(v0, v1, v2, v3);
+        v0 ^= m;
+    }
+    std::uint64_t last = static_cast<std::uint64_t>(n) << 56;
+    for (std::size_t j = 0; i + j < n; ++j) {
+        last |= static_cast<std::uint64_t>(static_cast<unsigned char>(s[i + j])) << (8 * j);
+    }
+    v3 ^= last;
+    sipRound(v0, v1, v2, v3);
+    v0 ^= last;
+    v2 ^= 0xFF;
+    sipRound(v0, v1, v2, v3);
+    sipRound(v0, v1, v2, v3);
+    sipRound(v0, v1, v2, v3);
+    std::uint64_t h = v0 ^ v1 ^ v2 ^ v3;
+    auto r = static_cast<std::uint32_t>(h ^ (h >> 32));
+    return r == 0 ? 1 : r;
+}
 
 bool InvocationArena::grow(std::size_t atLeast) {
     std::size_t size = std::max(atLeast, kChunk);

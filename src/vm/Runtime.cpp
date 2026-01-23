@@ -449,7 +449,7 @@ Map* Sandbox::newMap(TypeId mapType) {
 namespace {
 
 std::uint64_t keyHash(const Map* m, const Slot* key) {
-    std::uint64_t h = m->strKeys ? strHash(static_cast<Str*>(key->p)) : mix64(key->u);
+    std::uint64_t h = m->strKeys ? strHash(static_cast<Str*>(key->p)) : mix64(key->u ^ hashKey().k0);
     return h | 2;
 }
 
