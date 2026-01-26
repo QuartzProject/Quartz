@@ -1,5 +1,7 @@
 #include "vm/Sandbox.hpp"
 
+#include "vm/Math.hpp"
+
 #include <cmath>
 #include <limits>
 #include <string_view>
@@ -720,11 +722,11 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             NEXT();
             CASE(MaxF) RA.f = javaMax(RB.f, RC.f);
             NEXT();
-            CASE(Pow) RA.f = std::pow(RB.f, RC.f);
+            CASE(Pow) RA.f = math::pow(RB.f, RC.f);
             NEXT();
-            CASE(Sin) RA.f = std::sin(RB.f);
+            CASE(Sin) RA.f = math::sin(RB.f);
             NEXT();
-            CASE(Cos) RA.f = std::cos(RB.f);
+            CASE(Cos) RA.f = math::cos(RB.f);
             NEXT();
             CASE(Panic) TRAP(ir::TrapCode::Panic, std::string(STR(RA)->view()));
             CASE(ScopeIn) CHECK(scopeIn());

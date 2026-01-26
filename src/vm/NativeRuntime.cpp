@@ -1,4 +1,5 @@
 #include "vm/Sandbox.hpp"
+#include "vm/Math.hpp"
 #include "vm/Tier.hpp"
 
 #include <bit>
@@ -202,11 +203,11 @@ std::uint32_t qzStateStore(NativeCtx* c, std::uint32_t type, const Slot* src, Sl
     return sb(c).storeState(type, src, dst) ? 1 : 0;
 }
 
-double qzPow(double a, double b) { return std::pow(a, b); }
+double qzPow(double a, double b) { return math::pow(a, b); }
 
-double qzSin(double a) { return std::sin(a); }
+double qzSin(double a) { return math::sin(a); }
 
-double qzCos(double a) { return std::cos(a); }
+double qzCos(double a) { return math::cos(a); }
 
 template <class F>
 void* addr(F* f) {
