@@ -1,5 +1,6 @@
 #include "syntax/Lexer.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 #include <string>
@@ -333,7 +334,9 @@ private:
         std::size_t begin = pos_;
         ++pos_;
         char e = peek();
-        ++pos_;
+        if (pos_ < src_.size()) {
+            ++pos_;
+        }
         switch (e) {
         case 'n': out += '\n'; return true;
         case 't': out += '\t'; return true;
@@ -414,7 +417,7 @@ private:
             auto lead = static_cast<unsigned char>(src_[pos_]);
             std::size_t len = lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
             text.append(src_.substr(pos_, len));
-            pos_ += len;
+            pos_ = std::min(pos_ + len, src_.size());
         }
         if (peek() != '\'') {
             error(static_cast<std::uint32_t>(begin), static_cast<std::uint32_t>(pos_), "unterminated char literal");
