@@ -6,6 +6,8 @@
 // error: expected 'bool', found 'i64'
 // error: unknown name 'unknown'
 // error: function 'g' may end without returning a 'str'
+// error: this default value depends on itself
+// error: 'self' is only allowed in impl blocks
 
 enum Color {
     Red
@@ -30,3 +32,11 @@ fn f(a: i64) -> i64 {
     return unknown
 }
 fn g() -> str {}
+
+struct Loop {
+    next: i64 = Loop().next
+}
+
+fn loose(self) -> i64 {
+    return 1
+}

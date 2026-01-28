@@ -375,6 +375,7 @@ FnInfo* Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface, const Imp
         info->name = info->isHost && !pkg.empty() ? pkg + "." + std::string(str(fn->name)) : std::string(str(fn->name));
         if (fn->hasSelf) {
             diags_.error(fn->span, "'self' is only allowed in impl blocks");
+            info->hasSelf = false;
         }
     }
     for (Param& p : fn->params) {

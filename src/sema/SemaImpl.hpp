@@ -164,6 +164,7 @@ public:
     FnInfo* currentFn_ = nullptr;
     TypeId selfType_ = ir::kError;
     int loopDepth_ = 0;
+    std::set<const Expr*> defaultsInProgress_;
 };
 
 } // namespace quartz::sema

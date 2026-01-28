@@ -135,11 +135,15 @@ bool Checker::bindArgs(CallExpr* call, const std::vector<TypeId>& params, const 
                 diags_.error(call->span, std::format("missing argument '{}'", pname));
                 ok = false;
             } else {
-                if (d->type == ir::kError) {
+                if (d->type == ir::kError && !defaultsInProgress_.insert(d).second) {
+                    diags_.error(d->span, "this default value depends on itself");
+                    ok = false;
+                } else if (d->type == ir::kError) {
                     auto saved = std::move(scopes_);
                     scopes_.clear();
                     expectAssignable(checkValue(d, params[i + skip]), params[i + skip], d->span);
                     scopes_ = std::move(saved);
+                    defaultsInProgress_.erase(d);
                 }
                 ordered[i] = d;
             }
