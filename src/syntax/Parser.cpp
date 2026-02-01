@@ -59,6 +59,15 @@ void Parser::syncTo(std::initializer_list<Tok> stops) {
     }
 }
 
+bool Parser::tooDeep() {
+    if (depth_ <= kMaxDepth) {
+        return false;
+    }
+    error(cur().span, "nesting is too deep");
+    pos_ = toks_.size() - 1;
+    return true;
+}
+
 std::span<Symbol> Parser::parsePath() {
     std::vector<Symbol> parts;
     parts.push_back(expectIdent("name"));

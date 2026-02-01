@@ -83,9 +83,14 @@ bool continuesAcrossNewline(BinaryOp op) {
 Expr* Parser::parseExpr() { return parseBinary(1); }
 
 Expr* Parser::parseBinary(int minPrec) {
+    DepthGuard guard(*this);
     Expr* lhs = parseUnary();
     int lastNonAssoc = -1;
     while (true) {
+        ++depth_;
+        if (tooDeep()) {
+            break;
+        }
         if ((at(Tok::DotDot) || at(Tok::DotDotEq)) && minPrec <= 5 &&
             !(cur().newlineBefore && newlineSensitive())) {
             bool inclusive = advance().kind == Tok::DotDotEq;
@@ -142,7 +147,13 @@ Expr* Parser::parseBinary(int minPrec) {
 }
 
 Expr* Parser::parseUnary() {
+    DepthGuard guard(*this);
     Span begin = cur().span;
+    if (tooDeep()) {
+        auto* e = node<NullLitExpr>(begin);
+        e->kind = ExprKind::NullLit;
+        return e;
+    }
     UnaryOp op{};
     switch (cur().kind) {
     case Tok::Minus: op = UnaryOp::Neg; break;
@@ -187,7 +198,12 @@ std::span<Arg> Parser::parseArgs() {
 }
 
 Expr* Parser::parsePostfix(Expr* e) {
+    DepthGuard guard(*this);
     while (true) {
+        ++depth_;
+        if (tooDeep()) {
+            return e;
+        }
         bool nl = cur().newlineBefore && newlineSensitive();
         if (at(Tok::Dot) || at(Tok::QuestionDot)) {
             bool safe = advance().kind == Tok::QuestionDot;
@@ -357,9 +373,14 @@ Expr* Parser::parseIf() {
 }
 
 Pattern* Parser::parsePattern() {
+    DepthGuard guard(*this);
     Span begin = cur().span;
     auto* p = arena_.make<Pattern>();
     p->span = begin;
+    if (tooDeep()) {
+        p->kind = PatternKind::Wildcard;
+        return p;
+    }
     if (at(Tok::Ident) && cur().text == "_") {
         advance();
         p->kind = PatternKind::Wildcard;
@@ -577,8 +598,14 @@ std::span<TypeExpr*> Parser::parseTypeArgs() {
 }
 
 TypeExpr* Parser::parseType() {
+    DepthGuard guard(*this);
     Span begin = cur().span;
     TypeExpr* result = nullptr;
+    if (tooDeep()) {
+        auto* n = node<NamedTypeExpr>(begin);
+        n->kind = TypeExprKind::Named;
+        return n;
+    }
     if (accept(Tok::LBracket)) {
         TypeExpr* elem = parseType();
         if (accept(Tok::Semi)) {

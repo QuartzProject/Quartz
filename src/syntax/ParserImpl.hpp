@@ -74,6 +74,7 @@ public:
     Symbol expectIdent(const char* what);
     void error(Span span, std::string message);
     void syncTo(std::initializer_list<Tok> stops);
+    bool tooDeep();
     [[nodiscard]] bool newlineSensitive() const { return nlDepth_ == 0; }
     [[nodiscard]] Span prevSpan() const { return toks_[pos_ > 0 ? pos_ - 1 : 0].span; }
 
@@ -99,6 +100,21 @@ public:
     bool noBraceExpr_ = false;
     bool inArm_ = false;
     std::uint32_t lastErrorAt_ = ~0U;
+    int depth_ = 0; // tree depth being built; bounded so later recursive passes cannot overflow the stack
+    static constexpr int kMaxDepth = 1000;
+};
+
+/// Restores the nesting depth on scope exit; nested parse calls and chain links add to it.
+class DepthGuard {
+public:
+    explicit DepthGuard(Parser& p) : p_(p), saved_(p.depth_) { ++p.depth_; }
+    DepthGuard(const DepthGuard&) = delete;
+    DepthGuard& operator=(const DepthGuard&) = delete;
+    ~DepthGuard() { p_.depth_ = saved_; }
+
+private:
+    Parser& p_;
+    int saved_;
 };
 
 /// Saves and restores newline sensitivity: `()` and `[]` ignore newlines, `{}` restores them.
