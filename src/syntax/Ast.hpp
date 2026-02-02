@@ -22,6 +22,7 @@ enum class TypeExprKind : std::uint8_t { Named, List, Array, Tuple, Nullable, Fn
 struct TypeExpr {
     TypeExprKind kind;
     Span span;
+    std::uint32_t type = 0; // ir::TypeId filled by sema
 };
 
 struct NamedTypeExpr : TypeExpr {
@@ -396,6 +397,7 @@ struct Decl {
     DeclKind kind;
     Span span;
     Symbol name;
+    Span nameSpan;
     Visibility visibility;
     std::span<Attribute> attrs;
 };

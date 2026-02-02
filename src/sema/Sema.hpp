@@ -86,6 +86,7 @@ struct Program {
     std::vector<FnInfo*> imports;   // host functions and handle getters, in import order
     std::vector<TypeId> states;
     std::unordered_map<TypeId, syntax::StructDecl*> structDecls;
+    std::unordered_map<TypeId, syntax::EnumDecl*> enumDecls;
     std::vector<std::unique_ptr<FnInfo>> fnStorage;
     std::vector<std::unique_ptr<Local>> localStorage;
     std::vector<std::unique_ptr<GlobalInfo>> globalStorage;

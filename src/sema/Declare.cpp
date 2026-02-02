@@ -49,6 +49,7 @@ void Checker::declareTypes() {
             std::span<TypeParam> tps;
             if (d->kind == DeclKind::Enum) {
                 entry.enumDecl = static_cast<EnumDecl*>(d);
+                prog_->enumDecls[entry.type] = entry.enumDecl;
                 tps = entry.enumDecl->typeParams;
             } else {
                 entry.decl = static_cast<StructDecl*>(d);
@@ -251,6 +252,12 @@ TypeId Checker::resolveType(TypeExpr* t) {
     if (t == nullptr) {
         return ir::kError;
     }
+    TypeId r = resolveTypeExpr(t);
+    t->type = r;
+    return r;
+}
+
+TypeId Checker::resolveTypeExpr(TypeExpr* t) {
     switch (t->kind) {
     case TypeExprKind::Named: {
         auto* n = static_cast<NamedTypeExpr*>(t);

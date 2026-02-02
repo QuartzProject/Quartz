@@ -241,6 +241,7 @@ FnDecl* Parser::parseFn(std::span<Attribute> attrs, Visibility vis, bool isSuspe
     fn->attrs = attrs;
     fn->visibility = vis;
     fn->isSuspend = isSuspend;
+    fn->nameSpan = cur().span;
     fn->name = expectIdent("function name");
     fn->typeParams = parseTypeParams();
     expect(Tok::LParen, "to start the parameter list");
@@ -287,6 +288,7 @@ Decl* Parser::parseStruct(std::span<Attribute> attrs, Visibility vis, DeclKind k
     s->kind = kind;
     s->attrs = attrs;
     s->visibility = vis;
+    s->nameSpan = cur().span;
     s->name = expectIdent(kind == DeclKind::State ? "state name" : "struct name");
     s->typeParams = parseTypeParams();
     std::vector<FieldDecl> fields;
@@ -327,6 +329,7 @@ Decl* Parser::parseEnum(std::span<Attribute> attrs, Visibility vis) {
     e->kind = DeclKind::Enum;
     e->attrs = attrs;
     e->visibility = vis;
+    e->nameSpan = cur().span;
     e->name = expectIdent("enum name");
     e->typeParams = parseTypeParams();
     std::vector<Variant> variants;
@@ -407,6 +410,7 @@ Decl* Parser::parseTrait(std::span<Attribute> attrs, Visibility vis) {
     t->kind = DeclKind::Trait;
     t->attrs = attrs;
     t->visibility = vis;
+    t->nameSpan = cur().span;
     t->name = expectIdent("trait name");
     std::vector<FnDecl*> methods;
     expect(Tok::LBrace, "to start the trait body");
@@ -432,6 +436,7 @@ Decl* Parser::parseConstDecl(std::span<Attribute> attrs, Visibility vis) {
     c->kind = DeclKind::Const;
     c->attrs = attrs;
     c->visibility = vis;
+    c->nameSpan = cur().span;
     c->name = expectIdent("constant name");
     if (accept(Tok::Colon)) {
         c->type = parseType();

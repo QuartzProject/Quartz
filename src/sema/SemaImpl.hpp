@@ -42,6 +42,7 @@ public:
     std::unordered_map<TypeId, std::vector<std::pair<Symbol, TypeId>>> baseParams_;
     syntax::StructDecl* structDeclOf(TypeId t);
     TypeId resolveType(TypeExpr* t);
+    TypeId resolveTypeExpr(TypeExpr* t);
     TypeId lookupTypeName(Symbol name, Span span, bool report);
     bool hasAttr(std::span<Attribute> attrs, std::string_view name) const;
 
