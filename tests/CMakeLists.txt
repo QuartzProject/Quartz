@@ -7,3 +7,8 @@ if(QUARTZ_COMPILER)
     target_compile_definitions(quartz_native_diff PRIVATE QUARTZ_COMPILER_PATH="$<TARGET_FILE:quartz_compiler>")
     add_dependencies(quartz_native_diff quartz_compiler)
 endif()
+quartz_test(quartz_lsp_tests SOURCES LspTests.cpp DEPS quartz_lsp)
+target_include_directories(quartz_lsp_tests PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(quartz_lsp_tests PRIVATE QUARTZ_LSP_PATH="$<TARGET_FILE:quartz-lsp>"
+    QUARTZ_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+add_dependencies(quartz_lsp_tests quartz-lsp)

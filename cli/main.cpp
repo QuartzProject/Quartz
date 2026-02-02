@@ -1,4 +1,5 @@
 #include "Fmt.hpp"
+#include "HostInterface.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <cstdio>
@@ -12,16 +13,6 @@
 #include <vector>
 
 namespace {
-
-constexpr std::string_view kStdInterface = R"(fn print(text: str)
-@handle
-@awaitable
-struct Delay {}
-impl i64 {
-    @property
-    fn ticks(self) -> Delay
-}
-)";
 
 bool hostTicks(quartz::vm::HostCall& call, void*) {
     call.result.u = call.args[0].u;
@@ -207,7 +198,7 @@ int build(Args& a) {
     if (a.output.empty() || a.inputs.empty() || !a.binaryPath.empty()) {
         return usage();
     }
-    a.inputs.push_back({"<std>.qzi", std::string(kStdInterface)});
+    a.inputs.push_back({std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
     quartz::CompileOptions opts;
     opts.emitBinary = true;
     opts.binaryLines = a.lines;
@@ -275,7 +266,8 @@ int main(int argc, char** argv) {
             irText = quartz::ir::print(*program->module);
         }
     } else {
-        args->inputs.push_back({"<std>.qzi", std::string(kStdInterface)});
+        args->inputs.push_back(
+            {std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
         quartz::CompileOptions opts;
         opts.printIr = cmd == "ir";
         quartz::CompileOutput out = quartz::compile(args->inputs, opts);

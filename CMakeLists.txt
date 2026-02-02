@@ -17,6 +17,7 @@ target_compile_options(quartz_monocypher PRIVATE -ffp-contract=off)
 
 add_subdirectory(src)
 add_subdirectory(cli)
+add_subdirectory(lsp)
 add_subdirectory(bench)
 if(QUARTZ_COMPILER)
     add_subdirectory(compiler)
