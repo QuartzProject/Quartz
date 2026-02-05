@@ -1,6 +1,9 @@
 #pragma once
 
+#include "ir/Serialize.hpp"
 #include "vm/Bytecode.hpp"
+
+#include <memory>
 
 #include <cstdint>
 #include <expected>
@@ -34,6 +37,21 @@ std::expected<bool, std::string> satisfies(const Version& v, std::string_view ra
 
 /// Load order for a set of packages: every dependency first; missing, mismatched or cyclic ones are errors.
 std::expected<std::vector<std::size_t>, std::string> loadOrder(const std::vector<Manifest>& packages);
+
+/// Which key must sign each package; packages not listed are refused unless `allowUnlisted`.
+struct TrustPolicy {
+    std::vector<std::pair<std::string, ir::PublicKey>> keys; // package name -> its publisher's key
+    bool allowUnlisted = false;
+};
+
+struct LoadedPackage {
+    Manifest manifest;
+    std::shared_ptr<const vm::Program> program;
+};
+
+/// Loads a `.qzb` package: reads its manifest, then requires a valid signature by the key the policy gives
+/// for that package name before anything is compiled or run.
+std::expected<LoadedPackage, std::string> loadPackage(std::span<const std::uint8_t> bytes, const TrustPolicy& policy);
 
 /// The `.qzi` other packages compile against: the exported functions of `program` under its package name.
 std::expected<std::string, std::string> interfaceOf(const vm::Program& program, const Manifest& manifest);

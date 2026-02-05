@@ -2,6 +2,7 @@
 #include "quartz/Quartz.hpp"
 
 #include <doctest/doctest.h>
+#include <array>
 #include <string>
 
 namespace {
@@ -176,4 +177,29 @@ fn buy(who: str) -> str {
     auto tooNew = quartz::loadOrder({*quartz::parseManifest("name = \"shop\"\nversion = \"0.1.0\"\n[dependencies]\neconomy = \"^2\"\n"),
                                      *manifest});
     CHECK_FALSE(tooNew.has_value());
+}
+
+TEST_CASE("a package loads only when signed by the key trusted for its name") {
+    quartz::SourceInput src[] = {{"eco.qz", "package economy\nfn one() -> i64 {\n    return 1\n}\n"}};
+    quartz::CompileOptions opts;
+    opts.emitBinary = true;
+    opts.manifest = "name = \"economy\"\nversion = \"1.0.0\"\n";
+    quartz::CompileOutput out = quartz::compile(src, opts);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    std::array<std::uint8_t, 32> publisher{};
+    std::array<std::uint8_t, 32> stranger{};
+    publisher.fill(7);
+    stranger.fill(9);
+    std::vector<std::uint8_t> signedBytes = out.binary;
+    REQUIRE(quartz::ir::sign(signedBytes, publisher).has_value());
+    quartz::TrustPolicy policy;
+    policy.keys.emplace_back("economy", quartz::ir::publicKey(publisher));
+    auto ok = quartz::loadPackage(signedBytes, policy);
+    REQUIRE_MESSAGE(ok.has_value(), (ok ? "" : ok.error()));
+    CHECK(ok->manifest.name == "economy");
+    CHECK_FALSE(quartz::loadPackage(out.binary, policy).has_value());
+    quartz::TrustPolicy wrong;
+    wrong.keys.emplace_back("economy", quartz::ir::publicKey(stranger));
+    CHECK_FALSE(quartz::loadPackage(signedBytes, wrong).has_value());
+    CHECK_FALSE(quartz::loadPackage(signedBytes, quartz::TrustPolicy{}).has_value());
 }

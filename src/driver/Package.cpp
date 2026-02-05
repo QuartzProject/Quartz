@@ -1,5 +1,7 @@
 #include "quartz/Package.hpp"
 
+#include "quartz/Quartz.hpp"
+
 #include <algorithm>
 #include <charconv>
 #include <format>
@@ -257,6 +259,37 @@ std::expected<std::vector<std::size_t>, std::string> loadOrder(const std::vector
         }
     }
     return order;
+}
+
+std::expected<LoadedPackage, std::string> loadPackage(std::span<const std::uint8_t> bytes, const TrustPolicy& policy) {
+    // The manifest is only read to learn which key to demand; nothing from it is trusted yet.
+    auto peek = ir::deserialize(bytes, ir::ReadOptions{});
+    if (!peek) {
+        return std::unexpected(peek.error());
+    }
+    auto manifest = parseManifest((*peek)->manifest);
+    if (!manifest) {
+        return std::unexpected("package without a valid package.toml: " + manifest.error());
+    }
+    const ir::PublicKey* key = nullptr;
+    for (const auto& [name, k] : policy.keys) {
+        if (name == manifest->name) {
+            key = &k;
+        }
+    }
+    if (key == nullptr && !policy.allowUnlisted) {
+        return std::unexpected(std::format("package {} has no trusted publisher key", manifest->name));
+    }
+    ir::ReadOptions ro;
+    if (key != nullptr) {
+        ro.trustedKeys = std::span<const ir::PublicKey>(key, 1);
+        ro.requireSignature = true;
+    }
+    auto program = load(bytes, ro);
+    if (!program) {
+        return std::unexpected(std::format("package {}: {}", manifest->name, program.error()));
+    }
+    return LoadedPackage{std::move(*manifest), std::move(*program)};
 }
 
 std::expected<std::string, std::string> interfaceOf(const vm::Program& program, const Manifest& manifest) {
