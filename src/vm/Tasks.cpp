@@ -277,14 +277,14 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     resetRegions(task.arena.get());
     trapped_ = false;
     bool ok = true;
-    for (ir::TypeId p : fn.params) {
+    std::vector<Slot*> resolved;
+    resetRegions(&arena_);
+    ok = resolveStates(fn, args, resolved);
+    resetRegions(task.arena.get());
+    for (std::size_t pi = 0; ok && pi < fn.params.size(); ++pi) {
+        ir::TypeId p = fn.params[pi];
         if (m.types.kind(p) == TypeKind::State) {
-            for (std::size_t s = 0; s < m.states.size(); ++s) {
-                if (m.states[s] == p) {
-                    stack_[slot].p = states_[s];
-                }
-            }
-            ++slot;
+            stack_[slot++].p = resolved[pi];
             continue;
         }
         if (program_->layouts->slots(p) != 1 || next >= args.size()) {

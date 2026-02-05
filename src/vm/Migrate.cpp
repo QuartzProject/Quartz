@@ -367,14 +367,44 @@ std::expected<std::string, Trap> Sandbox::exportState() {
     }
     const ir::Module& m = *program_->module;
     std::string out = "{\"states\":{";
+    bool firstMain = true;
     for (std::size_t i = 0; i < m.states.size(); ++i) {
         const ir::TypeInfo& info = m.types.info(m.states[i]);
-        out += i > 0 ? "," : "";
+        if (info.persistPer != 0) {
+            continue;
+        }
+        out += firstMain ? "" : ",";
+        firstMain = false;
         writeString(out, info.name);
         out += std::format(":{{\"version\":{},\"fields\":", info.version);
         Slot ref{};
         ref.p = states_[i];
         exportValue(out, m.states[i], &ref);
+        out += '}';
+    }
+    out += "},\"handles\":{";
+    bool firstState = true;
+    for (std::size_t i = 0; i < m.states.size(); ++i) {
+        const ir::TypeInfo& info = m.types.info(m.states[i]);
+        if (info.persistPer == 0) {
+            continue;
+        }
+        out += firstState ? "" : ",";
+        firstState = false;
+        writeString(out, info.name);
+        out += ":{";
+        std::vector<std::uint64_t> handles;
+        for (const auto& [h, st] : perHandle_[i]) {
+            handles.push_back(h);
+        }
+        std::sort(handles.begin(), handles.end());
+        for (std::size_t k = 0; k < handles.size(); ++k) {
+            out += std::format("{}\"{}\":{{\"version\":{},\"fields\":", k ? "," : "", handles[k], info.version);
+            Slot ref{};
+            ref.p = perHandle_[i][handles[k]];
+            exportValue(out, m.states[i], &ref);
+            out += '}';
+        }
         out += '}';
     }
     out += "}}";
@@ -592,6 +622,76 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
     }
 }
 
+std::expected<void, Trap> Sandbox::importOne(std::size_t i, const void* savedPtr, Slot* target) {
+    auto failWith = [](std::string msg) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, std::move(msg), {}, 0});
+    };
+    const auto* saved = static_cast<const JNode*>(savedPtr);
+    const ir::Module& m = *program_->module;
+    const ir::TypeInfo& info = m.types.info(m.states[i]);
+    const JNode* versionNode = saved->get("version");
+    const JNode* fields = saved->get("fields");
+    std::uint64_t oldVersion = 0;
+    if (versionNode != nullptr && versionNode->kind == JNode::Kind::Num) {
+        std::from_chars(versionNode->text.data(), versionNode->text.data() + versionNode->text.size(), oldVersion);
+    }
+    if (fields == nullptr || fields->kind != JNode::Kind::Obj) {
+        return failWith(std::format("state {} is malformed", info.name));
+    }
+    if (oldVersion > info.version) {
+        return failWith(std::format("state {} was saved by version {}, newer than {}", info.name, oldVersion,
+                                    info.version));
+    }
+    std::uint32_t migrate = program_->findFunction("migrate" + info.name);
+    for (std::uint32_t f = 0; f < info.fields.size(); ++f) {
+        const ir::Field& field = info.fields[f];
+        const JNode* value = fields->get(field.name);
+        if (value == nullptr && !field.renamedFrom.empty()) {
+            value = fields->get(field.renamedFrom);
+        }
+        if (value == nullptr) {
+            continue; // added field: keeps its default
+        }
+        std::vector<Slot> tmp(std::max<std::uint32_t>(program_->layouts->slots(field.type), 1));
+        ImportCtx fieldCtx;
+        bool ok = importValue(fieldCtx, value, field.type, tmp.data(), info.name + "." + field.name);
+        if (!ok && trapped_) {
+            return std::unexpected(trap_);
+        }
+        if (!ok) {
+            if (migrate == ~0U) {
+                return failWith(std::format("cannot migrate {}; bump @version and add migrate{}(old: Value, data: {})",
+                                            fieldCtx.error, info.name, info.name));
+            }
+            continue;
+        }
+        if (!storeState(field.type, tmp.data(), target + program_->layouts->fieldOffset(m.states[i], f))) {
+            return std::unexpected(trap_);
+        }
+    }
+    if (migrate == ~0U) {
+        return {};
+    }
+    // migrate<State>(old: Value, data: State) sees the saved fields as a std.data value.
+    std::string err;
+    Slot value[2];
+    if (dataTypes_->value == 0 || !stdlib::jsonToValue(*this, *dataTypes_, toText(*fields), value, err)) {
+        return failWith("cannot hand the old state to migrate" + info.name + ": " + err);
+    }
+    const CompiledFunction& fn = program_->functions[migrate];
+    if (fn.params.size() != 2 || fn.params[1] != m.states[i] || program_->layouts->slots(fn.params[0]) != 2) {
+        return failWith(std::format("migrate{} must take (old: Value, data: {})", info.name, info.name));
+    }
+    stack_[0] = value[0];
+    stack_[1] = value[1];
+    stack_[2].p = target;
+    fuel_ = limits_.fuelPerCall;
+    if (!run(migrate, stack_.data())) {
+        return std::unexpected(trap_);
+    }
+    return {};
+}
+
 std::expected<void, Trap> Sandbox::importState(std::string_view json) {
     auto failWith = [](std::string msg) {
         return std::unexpected(Trap{ir::TrapCode::HostError, std::move(msg), {}, 0});
@@ -608,92 +708,76 @@ std::expected<void, Trap> Sandbox::importState(std::string_view json) {
     arena_.reset();
     inCall_ = true;
     trapped_ = false;
-    for (std::size_t i = 0; i < m.states.size(); ++i) {
+    std::expected<void, Trap> result;
+    const JNode* handles = doc.get("handles");
+    for (std::size_t i = 0; i < m.states.size() && result; ++i) {
         const ir::TypeInfo& info = m.types.info(m.states[i]);
-        const JNode* saved = doc.get("states")->get(info.name);
-        if (saved == nullptr) {
-            continue; // a new state keeps its defaults
+        if (info.persistPer == 0) {
+            if (const JNode* saved = doc.get("states")->get(info.name)) {
+                result = importOne(i, saved, states_[i]);
+            }
+            continue;
         }
-        const JNode* versionNode = saved->get("version");
-        const JNode* fields = saved->get("fields");
-        std::uint64_t oldVersion = 0;
-        if (versionNode != nullptr && versionNode->kind == JNode::Kind::Num) {
-            std::from_chars(versionNode->text.data(), versionNode->text.data() + versionNode->text.size(), oldVersion);
-        }
-        if (fields == nullptr || fields->kind != JNode::Kind::Obj) {
-            inCall_ = false;
-            return failWith(std::format("state {} is malformed", info.name));
-        }
-        if (oldVersion > info.version) {
-            inCall_ = false;
-            return failWith(std::format("state {} was saved by version {}, newer than {}", info.name, oldVersion,
-                                        info.version));
-        }
-        std::uint32_t migrate = program_->findFunction("migrate" + info.name);
-        ImportCtx ctx;
-        ctx.lenient = migrate != ~0U;
-        for (std::uint32_t f = 0; f < info.fields.size(); ++f) {
-            const ir::Field& field = info.fields[f];
-            const JNode* value = fields->get(field.name);
-            if (value == nullptr && !field.renamedFrom.empty()) {
-                value = fields->get(field.renamedFrom);
+        const JNode* perState = handles != nullptr ? handles->get(info.name) : nullptr;
+        for (std::size_t k = 0; perState != nullptr && k < perState->keys.size() && result; ++k) {
+            std::uint64_t handle = 0;
+            const std::string& key = perState->keys[k];
+            if (std::from_chars(key.data(), key.data() + key.size(), handle).ptr != key.data() + key.size()) {
+                result = failWith("bad handle key in the state document");
+                break;
             }
-            if (value == nullptr) {
-                continue; // added field: keeps its default
-            }
-            std::vector<Slot> tmp(std::max<std::uint32_t>(program_->layouts->slots(field.type), 1));
-            ImportCtx fieldCtx;
-            bool ok = importValue(fieldCtx, value, field.type, tmp.data(), info.name + "." + field.name);
-            if (!ok && trapped_) {
-                inCall_ = false;
-                return std::unexpected(trap_);
-            }
-            if (!ok) {
-                if (!ctx.lenient) {
-                    inCall_ = false;
-                    return failWith(std::format("cannot migrate {}; bump @version and add migrate{}(old: Value, "
-                                                "data: {})",
-                                                fieldCtx.error, info.name, info.name));
-                }
-                continue;
-            }
-            if (!storeState(field.type, tmp.data(), states_[i] + program_->layouts->fieldOffset(m.states[i], f))) {
-                inCall_ = false;
-                return std::unexpected(trap_);
-            }
-        }
-        if (migrate != ~0U) {
-            // migrate<State>(old: Value, data: State) sees the saved fields as a std.data value.
-            std::string err;
-            Slot value[2];
-            if (dataTypes_->value == 0 || !stdlib::jsonToValue(*this, *dataTypes_, toText(*fields), value, err)) {
-                inCall_ = false;
-                return failWith("cannot hand the old state to migrate" + info.name + ": " + err);
-            }
-            inCall_ = false;
-            Slot args[2] = {value[0], value[1]};
-            heap_.flush();
-            const CompiledFunction& fn = program_->functions[migrate];
-            if (fn.params.size() != 2 || fn.params[1] != m.states[i] || program_->layouts->slots(fn.params[0]) != 2) {
-                return failWith(std::format("migrate{} must take (old: Value, data: {})", info.name, info.name));
-            }
-            stack_[0] = args[0];
-            stack_[1] = args[1];
-            stack_[2].p = states_[i];
-            fuel_ = limits_.fuelPerCall;
-            inCall_ = true;
-            bool ok = run(migrate, stack_.data());
-            inCall_ = false;
-            heap_.flush();
-            if (!ok) {
-                return std::unexpected(trap_);
-            }
-            inCall_ = true;
+            Slot* target = instanceFor(i, handle);
+            result = target != nullptr ? importOne(i, &perState->values[k], target) : std::unexpected(trap_);
         }
     }
     inCall_ = false;
     heap_.flush();
-    return {};
+    return result;
+}
+
+std::expected<std::string, Trap> Sandbox::exportHandle(std::uint64_t handle) {
+    const ir::Module& m = *program_->module;
+    std::string out = "{\"states\":{},\"handles\":{";
+    bool first = true;
+    for (std::size_t i = 0; i < m.states.size(); ++i) {
+        const ir::TypeInfo& info = m.types.info(m.states[i]);
+        auto it = perHandle_.size() > i ? perHandle_[i].find(handle) : perHandle_[0].end();
+        if (info.persistPer == 0 || it == perHandle_[i].end()) {
+            continue;
+        }
+        out += first ? "" : ",";
+        first = false;
+        writeString(out, info.name);
+        out += std::format(":{{\"{}\":{{\"version\":{},\"fields\":", handle, info.version);
+        Slot ref{};
+        ref.p = it->second;
+        exportValue(out, m.states[i], &ref);
+        out += "}}";
+    }
+    out += "}}";
+    return out;
+}
+
+std::expected<void, Trap> Sandbox::importHandle(std::uint64_t handle, std::string_view json) {
+    JNode doc;
+    if (!JReader(json).read(doc) || doc.get("handles") == nullptr) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, "handle state document is not valid", {}, 0});
+    }
+    // Saved under whatever handle value the player had then; restore it under the current one.
+    std::string rebuilt = "{\"states\":{},\"handles\":{";
+    const JNode* handles = doc.get("handles");
+    for (std::size_t i = 0; i < handles->keys.size(); ++i) {
+        const JNode& perState = handles->values[i];
+        if (perState.values.empty()) {
+            continue;
+        }
+        JNode key;
+        key.kind = JNode::Kind::Str;
+        key.text = handles->keys[i];
+        rebuilt += (i ? "," : "") + toText(key) + std::format(":{{\"{}\":", handle) + toText(perState.values[0]) + "}";
+    }
+    rebuilt += "}}";
+    return importState(rebuilt);
 }
 
 std::expected<std::unique_ptr<Sandbox>, Trap> Sandbox::reload(std::shared_ptr<const Program> next) {

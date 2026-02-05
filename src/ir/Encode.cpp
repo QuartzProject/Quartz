@@ -22,6 +22,8 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
     };
     auto generics = [&]() {
         w.u32(t.version);
+        w.u8(t.persisted ? 1 : 0);
+        w.u32(t.persistPer);
         list(t.typeParams);
         w.u32(t.genericBase);
         list(t.typeArgs);

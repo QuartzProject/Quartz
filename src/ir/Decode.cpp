@@ -156,6 +156,11 @@ private:
     void readGenerics(Reader& r, TypeId self, TypeInfo& info, std::uint32_t& depth) {
         depth = 0;
         info.version = r.u32();
+        info.persisted = r.u8() != 0;
+        info.persistPer = r.u32();
+        if (info.persistPer >= self) {
+            r.fail("per-handle state refers to a later type");
+        }
         info.typeParams = ids(r);
         info.genericBase = r.u32();
         if (info.genericBase >= self) {

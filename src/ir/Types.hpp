@@ -83,6 +83,8 @@ struct TypeInfo {
     std::vector<VariantInfo> variants;
     bool complete = true;        // nominal types are declared first and completed later
     std::uint32_t version = 0;   // `@version(n)` of a state
+    bool persisted = false;      // `@persist`: the host saves it (exportState)
+    TypeId persistPer = 0;       // `@persist(per = Handle)`: one instance per handle value
     std::vector<TypeId> typeParams; // generic bases: their parameters (Param types)
     TypeId genericBase = 0;         // instances: the generic base they come from (0 = none)
     std::vector<TypeId> typeArgs;   // instances: the arguments

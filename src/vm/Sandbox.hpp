@@ -14,6 +14,7 @@ struct NativeCtx;
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace quartz::vm {
@@ -90,6 +91,11 @@ public:
     /// Builds a sandbox for `next` with the same host bindings and limits and this sandbox's state migrated
     /// into it. On failure this sandbox is untouched and keeps running (D23).
     std::expected<std::unique_ptr<Sandbox>, Trap> reload(std::shared_ptr<const Program> next);
+    /// `@persist(per = Handle)` states of one handle as JSON (save on quit), and back (load on join).
+    std::expected<std::string, Trap> exportHandle(std::uint64_t handle);
+    std::expected<void, Trap> importHandle(std::uint64_t handle, std::string_view json);
+    /// Frees the per-handle states of a handle that left; the next call with it starts from the defaults.
+    void dropHandle(std::uint64_t handle);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
     [[nodiscard]] TierMode tierMode() const { return tierMode_; }
     /// Fuel left after the last call.
@@ -212,6 +218,11 @@ private:
     std::int64_t fuel_ = 0;
     friend struct HostCall;
     void bindNatives();
+    Slot* instanceFor(std::size_t state, std::uint64_t handle);
+    bool resolveStates(const CompiledFunction& fn, std::span<const Slot> args, std::vector<Slot*>& out);
+    std::expected<void, Trap> importOne(std::size_t state, const void* saved, Slot* target);
+    std::vector<std::unordered_map<std::uint64_t, Slot*>> perHandle_;
+    std::vector<Slot*> resolved_;
     struct ImportCtx;
     bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
     void exportValue(std::string& out, ir::TypeId type, const Slot* v);

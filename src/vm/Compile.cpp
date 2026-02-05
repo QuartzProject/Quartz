@@ -885,12 +885,26 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
         }
         for (TypeId p : cf.params) {
             std::int32_t plan = prog->layouts->slots(p) == 1 ? CompiledFunction::kHostArg : CompiledFunction::kBadArg;
+            std::int32_t handleArg = -1;
             for (std::size_t s = 0; s < prog->module->states.size(); ++s) {
                 if (prog->module->states[s] == p) {
                     plan = static_cast<std::int32_t>(s);
+                    TypeId per = prog->module->types.info(p).persistPer;
+                    std::int32_t hostIndex = 0;
+                    for (TypeId q : cf.params) {
+                        bool isState = prog->module->types.kind(q) == ir::TypeKind::State;
+                        if (per != 0 && q == per && handleArg < 0) {
+                            handleArg = hostIndex;
+                        }
+                        hostIndex += isState ? 0 : 1;
+                    }
+                    if (per != 0 && handleArg < 0) {
+                        plan = CompiledFunction::kBadArg; // the validator-free path: no handle to pick the instance
+                    }
                 }
             }
             cf.entryPlan.push_back(plan);
+            cf.entryHandle.push_back(handleArg);
         }
         prog->functions.push_back(std::move(cf));
         prog->maxFrameSlots = std::max(prog->maxFrameSlots, prog->functions.back().frameSlots);

@@ -179,7 +179,25 @@ void Checker::completeTypes() {
                 }
                 types_->mutableInfo(entry.type).version =
                     static_cast<std::uint32_t>(static_cast<IntLitExpr*>(a.args[0].value)->value);
-            } else if (an != "handle" && an != "awaitable" && an != "persist") {
+            } else if (an == "persist") {
+                if (info.kind != ir::TypeKind::State) {
+                    diags_.error(a.span, "@persist goes on a state");
+                    continue;
+                }
+                types_->mutableInfo(entry.type).persisted = true;
+                for (const AttrArg& arg : a.args) {
+                    if (!arg.name.valid() || str(arg.name) != "per" || arg.value->kind != ExprKind::Ident) {
+                        diags_.error(a.span, "@persist takes only 'per = HandleType'");
+                        continue;
+                    }
+                    TypeId per = lookupTypeName(static_cast<IdentExpr*>(arg.value)->name, arg.value->span, true);
+                    if (per != ir::kError && types_->kind(per) != ir::TypeKind::Handle) {
+                        diags_.error(arg.value->span, "'per' needs a host handle type");
+                        continue;
+                    }
+                    types_->mutableInfo(entry.type).persistPer = per;
+                }
+            } else if (an != "handle" && an != "awaitable") {
                 diags_.warning(a.span, std::format("unknown attribute '@{}'", an));
             }
         }

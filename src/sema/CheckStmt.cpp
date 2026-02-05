@@ -121,6 +121,13 @@ void Checker::checkFunction(FnInfo* fn) {
         std::vector<std::unordered_map<Symbol, TypeId>>& s;
         ~PopScope() { s.pop_back(); }
     } pop{typeScopes_};
+    for (TypeId p : fn->params) {
+        TypeId per = types_->kind(p) == ir::TypeKind::State ? types_->info(p).persistPer : ir::kError;
+        if (per != ir::kError && per != 0 && std::find(fn->params.begin(), fn->params.end(), per) == fn->params.end()) {
+            diags_.error(fn->decl->span, std::format("'{}' takes the per-{} state '{}', so it also needs a '{}' parameter",
+                                                     fn->name, typeName(per), typeName(p), typeName(per)));
+        }
+    }
     if (fn->generic() && !fn->decl->attrs.empty() && !fn->annotations.empty()) {
         diags_.error(fn->decl->span, "generic functions cannot be host handlers");
     }

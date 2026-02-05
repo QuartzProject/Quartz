@@ -79,16 +79,92 @@ bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
 
 Sandbox::~Sandbox() {
     const ir::Module& m = *program_->module;
-    for (std::size_t i = 0; i < states_.size(); ++i) {
-        Slot* st = states_[i];
-        if (st == nullptr) {
-            continue;
-        }
+    auto releaseInstance = [&](std::size_t i, Slot* st) {
         const ir::TypeInfo& info = m.types.info(m.states[i]);
         for (std::uint32_t f = 0; f < info.fields.size(); ++f) {
             releaseState(info.fields[f].type, st + program_->layouts->fieldOffset(m.states[i], f));
         }
         heap_.release(st);
+    };
+    for (std::size_t i = 0; i < states_.size(); ++i) {
+        if (states_[i] != nullptr) {
+            releaseInstance(i, states_[i]);
+        }
+    }
+    for (std::size_t i = 0; i < perHandle_.size(); ++i) {
+        for (auto& [handle, st] : perHandle_[i]) {
+            releaseInstance(i, st);
+        }
+    }
+    heap_.flush();
+}
+
+Slot* Sandbox::instanceFor(std::size_t state, std::uint64_t handle) {
+    auto& map = perHandle_[state];
+    if (auto it = map.find(handle); it != map.end()) {
+        return it->second;
+    }
+    const ir::Module& m = *program_->module;
+    std::uint32_t slots = std::max<std::uint32_t>(program_->layouts->stateSlots(m.states[state]), 1);
+    auto* st = static_cast<Slot*>(heap_.allocate(slots * sizeof(Slot)));
+    if (st == nullptr) {
+        fail(ir::TrapCode::OutOfMemory, "per-handle state does not fit in the memory limit");
+        return nullptr;
+    }
+    std::memset(st, 0, slots * sizeof(Slot));
+    std::int64_t savedFuel = fuel_;
+    bool savedInCall = inCall_;
+    fuel_ = limits_.fuelPerCall;
+    stack_[0].p = st;
+    inCall_ = true;
+    bool ok = run(m.stateInit[state], stack_.data());
+    inCall_ = savedInCall;
+    fuel_ = savedFuel;
+    if (!ok) {
+        heap_.release(st);
+        return nullptr;
+    }
+    map.emplace(handle, st);
+    return st;
+}
+
+bool Sandbox::resolveStates(const CompiledFunction& fn, std::span<const Slot> args, std::vector<Slot*>& out) {
+    out.assign(fn.entryPlan.size(), nullptr);
+    for (std::size_t i = 0; i < fn.entryPlan.size(); ++i) {
+        std::int32_t plan = fn.entryPlan[i];
+        if (plan < 0) {
+            continue;
+        }
+        auto s = static_cast<std::size_t>(plan);
+        if (fn.entryHandle[i] < 0) {
+            out[i] = states_[s];
+            continue;
+        }
+        auto h = static_cast<std::size_t>(fn.entryHandle[i]);
+        if (h >= args.size()) {
+            return fail(ir::TrapCode::HostError, "argument mismatch");
+        }
+        out[i] = instanceFor(s, args[h].u);
+        if (out[i] == nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void Sandbox::dropHandle(std::uint64_t handle) {
+    const ir::Module& m = *program_->module;
+    for (std::size_t i = 0; i < perHandle_.size(); ++i) {
+        auto it = perHandle_[i].find(handle);
+        if (it == perHandle_[i].end()) {
+            continue;
+        }
+        const ir::TypeInfo& info = m.types.info(m.states[i]);
+        for (std::uint32_t f = 0; f < info.fields.size(); ++f) {
+            releaseState(info.fields[f].type, it->second + program_->layouts->fieldOffset(m.states[i], f));
+        }
+        heap_.release(it->second);
+        perHandle_[i].erase(it);
     }
     heap_.flush();
 }
@@ -112,7 +188,12 @@ std::expected<void, Trap> Sandbox::start() {
             return std::unexpected(Trap{ir::TrapCode::HostError, std::format("host import '{}' is not bound", m.imports[i].name), {}, 0});
         }
     }
+    perHandle_.resize(m.states.size());
     for (std::size_t i = 0; i < m.states.size(); ++i) {
+        if (m.types.info(m.states[i]).persistPer != 0) {
+            states_.push_back(nullptr); // instances are made per handle on demand
+            continue;
+        }
         std::uint32_t slots = program_->layouts->stateSlots(m.states[i]);
         auto* st = static_cast<Slot*>(heap_.allocate(std::max<std::size_t>(slots, 1) * sizeof(Slot)));
         if (st == nullptr) {
@@ -123,6 +204,9 @@ std::expected<void, Trap> Sandbox::start() {
     }
     started_ = true;
     for (std::size_t i = 0; i < m.states.size(); ++i) {
+        if (states_[i] == nullptr) {
+            continue;
+        }
         Slot arg{};
         arg.p = states_[i];
         trapped_ = false;
@@ -153,11 +237,17 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     arena_.reset();
     hostArena_ ^= 1;
     hostArenas_[hostArena_ ^ 1].reset();
+    trapped_ = false;
+    std::vector<Slot*>& resolved = resolved_;
+    if (!resolveStates(fn, args, resolved)) {
+        return std::unexpected(trap_);
+    }
     std::size_t next = 0;
     std::uint32_t slot = 0;
-    for (std::int32_t plan : fn.entryPlan) {
+    for (std::size_t pi = 0; pi < fn.entryPlan.size(); ++pi) {
+        std::int32_t plan = fn.entryPlan[pi];
         if (plan >= 0) {
-            stack_[slot++].p = states_[static_cast<std::size_t>(plan)];
+            stack_[slot++].p = resolved[pi];
             continue;
         }
         if (plan == CompiledFunction::kBadArg || next >= args.size()) {

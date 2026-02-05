@@ -87,3 +87,41 @@ fn check(hub: Hub) -> i64 {
     REQUIRE_FALSE(older.has_value());
     CHECK(older.error().message.find("newer") != std::string::npos);
 }
+
+TEST_CASE("per-handle states are separate per handle and survive a save and load") {
+    quartz::SourceInput in[] = {{"host.qzi", "@handle\nstruct Player {\n    id: i64\n}\n"},
+                                {"plugin.qz", R"(
+@persist(per = Player)
+state Stats {
+    joins: i64
+    title: str = "new"
+}
+fn join(p: Player, s: Stats) -> i64 {
+    s.joins += 1
+    s.title = "veteran"
+    return s.joins
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    quartz::vm::Sandbox sb(out.program);
+    sb.bind("Player.id", [](quartz::vm::HostCall& c, void*) { c.result.u = c.args[0].u; return true; });
+    REQUIRE(sb.start().has_value());
+    auto join = [&](std::uint64_t handle) {
+        quartz::vm::Slot a{};
+        a.u = handle;
+        auto r = sb.call(out.program->findFunction("join"), std::span<const quartz::vm::Slot>(&a, 1));
+        REQUIRE(r.has_value());
+        return r->i;
+    };
+    CHECK(join(7) == 1);
+    CHECK(join(7) == 2);
+    CHECK(join(9) == 1);
+    auto saved = sb.exportHandle(7);
+    REQUIRE(saved.has_value());
+    sb.dropHandle(7);
+    CHECK(join(7) == 1);
+    sb.dropHandle(7);
+    REQUIRE(sb.importHandle(42, *saved).has_value());
+    CHECK(join(42) == 3);
+}
