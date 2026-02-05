@@ -1,5 +1,6 @@
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
+#include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <cstdio>
@@ -29,7 +30,8 @@ bool hostPrint(quartz::vm::HostCall& call, void*) {
 int usage() {
     std::fprintf(stderr, "usage: quartz check|ir|run|dis <file.qz|file.qzi>... | <file.qzb> [--entry name]\n"
                          "                [--trust <public key hex>]... [--require-signature]\n"
-                         "       quartz build <file.qz|file.qzi>... -o <out.qzb> [--sign <seed file>] [--strip-lines]\n"
+                         "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] [--strip-lines]\n"
+                         "       quartz interface <package.qzb>\n"
                          "       quartz keygen <seed file>\n"
                          "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
     return 2;
@@ -157,6 +159,7 @@ struct Args {
     std::vector<quartz::ir::PublicKey> trusted;
     bool requireSignature = false;
     bool lines = true;
+    std::string manifest;
 };
 
 std::optional<Args> parseArgs(int argc, char** argv) {
@@ -183,6 +186,30 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             a.lines = false;
         } else if (arg.ends_with(".qzb")) {
             a.binaryPath = argv[i];
+        } else if (std::filesystem::is_directory(argv[i])) {
+            // A package directory: its package.toml and every .qz and .qzi below it.
+            std::vector<std::filesystem::path> files;
+            for (const auto& e : std::filesystem::recursive_directory_iterator(argv[i])) {
+                auto ext = e.path().extension();
+                if (e.is_regular_file() && (ext == ".qz" || ext == ".qzi")) {
+                    files.push_back(e.path());
+                }
+                if (e.is_regular_file() && e.path().filename() == "package.toml") {
+                    auto text = readFile(e.path().c_str());
+                    if (!text) {
+                        return std::nullopt;
+                    }
+                    a.manifest = std::move(*text);
+                }
+            }
+            std::sort(files.begin(), files.end());
+            for (const auto& f : files) {
+                auto text = readFile(f.c_str());
+                if (!text) {
+                    return std::nullopt;
+                }
+                a.inputs.push_back({f.string(), std::move(*text)});
+            }
         } else {
             auto text = readFile(argv[i]);
             if (!text) {
@@ -202,6 +229,14 @@ int build(Args& a) {
     quartz::CompileOptions opts;
     opts.emitBinary = true;
     opts.binaryLines = a.lines;
+    if (!a.manifest.empty()) {
+        auto m = quartz::parseManifest(a.manifest);
+        if (!m) {
+            std::fprintf(stderr, "%s\n", m.error().c_str());
+            return 1;
+        }
+        opts.manifest = a.manifest;
+    }
     quartz::CompileOutput out = quartz::compile(a.inputs, opts);
     std::fputs(out.diagnostics.c_str(), stderr);
     if (!out.program) {
@@ -282,6 +317,20 @@ int main(int argc, char** argv) {
         irText = std::move(out.irText);
     }
     if (cmd == "check") {
+        return 0;
+    }
+    if (cmd == "interface") {
+        auto m = quartz::parseManifest(program->module->manifest);
+        if (!m) {
+            std::fprintf(stderr, "this module has no usable package.toml: %s\n", m.error().c_str());
+            return 1;
+        }
+        auto text = quartz::interfaceOf(*program, *m);
+        if (!text) {
+            std::fprintf(stderr, "%s\n", text.error().c_str());
+            return 1;
+        }
+        std::fputs(text->c_str(), stdout);
         return 0;
     }
     if (cmd == "ir") {

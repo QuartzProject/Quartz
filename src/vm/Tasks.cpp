@@ -252,6 +252,9 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     if (!started_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "sandbox not started", {}, 0});
     }
+    if (inCall_) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, "re-entrant call into a running sandbox", {}, 0});
+    }
     const CompiledFunction& fn = program_->functions[function];
     if (!fn.exported) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "no such exported function", {}, 0});

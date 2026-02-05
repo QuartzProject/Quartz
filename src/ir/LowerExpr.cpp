@@ -162,6 +162,9 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
 }
 
 Reg Lowerer::lowerMember(MemberExpr* e) {
+    if (e->global != nullptr) {
+        return lowerExpr(e->global->decl->value, e->global->type);
+    }
     if (e->isVariant) {
         Reg r = newReg(T(e->type));
         emitArgs(Op::EnumMake, r, e->fieldIndex, {});

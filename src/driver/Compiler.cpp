@@ -48,6 +48,7 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
         out.diagnostics += v.error().describe(*mod) + "\n";
         return out;
     }
+    mod->manifest = options.manifest;
     if (options.emitBinary) {
         out.binary = ir::serialize(*mod, {.lines = options.binaryLines});
     }

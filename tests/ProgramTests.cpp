@@ -114,7 +114,7 @@ void checkRun(const std::shared_ptr<const quartz::vm::Program>& program, const s
 quartz::CompileOutput compileProgram(const fs::path& path, const std::string& text) {
     std::vector<quartz::SourceInput> inputs = withInterface(path, text);
     inputs.push_back({"<std>.qzi", std::string(kStd)});
-    return quartz::compile(inputs, {.emitBinary = true});
+    return quartz::compile(inputs, {.emitBinary = true, .manifest = {}});
 }
 
 } // namespace
@@ -145,7 +145,7 @@ TEST_CASE("binary modules decode to the same bytes and run the same") {
     }
     quartz::SourceInput versioned[] = {
         {"v.qz", "@version(3)\nstate Hub {\n    @renamed(\"count\")\n    total: i64\n}\n"}};
-    quartz::CompileOutput out = quartz::compile(versioned, {.emitBinary = true});
+    quartz::CompileOutput out = quartz::compile(versioned, {.emitBinary = true, .manifest = {}});
     REQUIRE_MESSAGE(out.program, out.diagnostics);
     auto mod = quartz::ir::deserialize(out.binary);
     REQUIRE(mod.has_value());

@@ -11,7 +11,7 @@ fn main() -> i64 {
     let p = Point(3, 4)
     print("{distance(Zero, p)} {shout("alice")} {count()} {helper()}")
     let q = geo.Point(6, 1)
-    print("qualified {geo.distance(Zero, q)} {text.count() + 5}")
+    print("qualified {geo.distance(geo.Origin, q)} {text.count() + 5}")
     return 0
 }
 

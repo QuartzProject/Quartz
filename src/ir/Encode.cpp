@@ -249,6 +249,11 @@ std::vector<std::uint8_t> encodePayload(const Module& m, WriteOptions options) {
         }
         section(out, Section::Lines, w);
     }
+    if (!m.manifest.empty()) {
+        w.out.clear();
+        w.str(m.manifest);
+        section(out, Section::Manifest, w);
+    }
     return std::move(out.out);
 }
 

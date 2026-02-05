@@ -194,6 +194,7 @@ struct Module {
     std::vector<HostImport> imports;
     std::vector<TypeId> states;         // state types; one instance each per sandbox
     std::vector<std::uint32_t> stateInit; // per state: function index that fills its defaults, or ~0
+    std::string manifest;                 // `package.toml` text of the package it was built from, if any
 };
 
 std::string print(const Module& m);

@@ -1,3 +1,4 @@
+#include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <doctest/doctest.h>
@@ -124,4 +125,55 @@ fn join(p: Player, s: Stats) -> i64 {
     sb.dropHandle(7);
     REQUIRE(sb.importHandle(42, *saved).has_value());
     CHECK(join(42) == 3);
+}
+
+TEST_CASE("packages call each other through generated interfaces and load in dependency order") {
+    quartz::SourceInput eco[] = {{"eco.qz", R"(package economy
+state Bank {
+    money: Map<str, i64>
+}
+fn balance(bank: Bank, who: str) -> i64 {
+    return bank.money.get(who) ?? 100
+}
+fn pay(bank: Bank, who: str, amount: i64) -> str {
+    bank.money[who] = balance(bank, who) + amount
+    return "{who}={bank.money[who]}"
+}
+)"}};
+    auto manifest = quartz::parseManifest("name = \"economy\"\nversion = \"1.4.2\"\nexports = [\"balance\", \"pay\"]\n");
+    REQUIRE(manifest.has_value());
+    quartz::CompileOutput ecoOut = quartz::compile(eco);
+    REQUIRE_MESSAGE(ecoOut.program, ecoOut.diagnostics);
+    auto iface = quartz::interfaceOf(*ecoOut.program, *manifest);
+    REQUIRE_MESSAGE(iface.has_value(), (iface ? "" : iface.error()));
+    quartz::SourceInput shop[] = {{"economy.qzi", *iface}, {"shop.qz", R"(import economy.*
+fn buy(who: str) -> str {
+    let receipt = pay(who, 0 - 30)
+    return "{receipt} left {balance(who)}"
+}
+)"}};
+    quartz::CompileOutput shopOut = quartz::compile(shop);
+    REQUIRE_MESSAGE(shopOut.program, shopOut.diagnostics);
+    quartz::vm::Sandbox provider(ecoOut.program);
+    quartz::vm::Sandbox client(shopOut.program);
+    REQUIRE(client.link("economy", provider).has_value());
+    REQUIRE(provider.start().has_value());
+    REQUIRE(client.start().has_value());
+    quartz::vm::Slot who{};
+    who.p = client.newStr("ana");
+    auto r = client.call(shopOut.program->findFunction("buy"), std::span<const quartz::vm::Slot>(&who, 1));
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "ana=70 left 70");
+
+    auto cycle = quartz::loadOrder({*quartz::parseManifest("name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nb = \"^1\"\n"),
+                                    *quartz::parseManifest("name = \"b\"\nversion = \"1.2.0\"\n[dependencies]\na = \"*\"\n")});
+    REQUIRE_FALSE(cycle.has_value());
+    CHECK(cycle.error().find("cycle") != std::string::npos);
+    auto order = quartz::loadOrder({*quartz::parseManifest("name = \"shop\"\nversion = \"0.1.0\"\n[dependencies]\neconomy = \">=1.2, <2\"\n"),
+                                    *manifest});
+    REQUIRE(order.has_value());
+    CHECK(*order == std::vector<std::size_t>{1, 0});
+    auto tooNew = quartz::loadOrder({*quartz::parseManifest("name = \"shop\"\nversion = \"0.1.0\"\n[dependencies]\neconomy = \"^2\"\n"),
+                                     *manifest});
+    CHECK_FALSE(tooNew.has_value());
 }

@@ -200,6 +200,7 @@ struct MemberExpr : Expr {
     std::uint32_t fieldIndex = 0;
     bool isProperty = false; // host handle property, read through import `getter`
     bool isVariant = false;  // `Enum.Variant` without payload; fieldIndex holds the variant
+    sema::GlobalInfo* global = nullptr; // `package.CONST`
     std::uint32_t getter = 0;
 };
 

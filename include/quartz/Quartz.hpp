@@ -29,6 +29,7 @@ struct CompileOptions {
     bool optimize = true;
     bool emitBinary = false;
     bool binaryLines = true; // keep source lines for trap messages
+    std::string manifest;    // `package.toml` text carried in the module
 };
 
 /// Front end, lowering, validation and bytecode generation in one call.

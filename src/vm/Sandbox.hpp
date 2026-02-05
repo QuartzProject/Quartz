@@ -96,6 +96,9 @@ public:
     std::expected<void, Trap> importHandle(std::uint64_t handle, std::string_view json);
     /// Frees the per-handle states of a handle that left; the next call with it starts from the defaults.
     void dropHandle(std::uint64_t handle);
+    /// Binds this sandbox's imports `package.fn` (from `quartz interface`) to `provider`'s exported functions.
+    /// A call runs in the provider, on its budget; scalars and str are copied both ways (spec 8.3).
+    std::expected<void, std::string> link(std::string_view package, Sandbox& provider);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
     [[nodiscard]] TierMode tierMode() const { return tierMode_; }
     /// Fuel left after the last call.
@@ -223,6 +226,13 @@ private:
     std::expected<void, Trap> importOne(std::size_t state, const void* saved, Slot* target);
     std::vector<std::unordered_map<std::uint64_t, Slot*>> perHandle_;
     std::vector<Slot*> resolved_;
+    struct LinkTarget {
+        Sandbox* provider;
+        std::uint32_t function;
+        const ir::HostImport* import;
+    };
+    std::vector<std::unique_ptr<LinkTarget>> links_;
+    static bool linkedCall(HostCall& call, void* user);
     struct ImportCtx;
     bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
     void exportValue(std::string& out, ir::TypeId type, const Slot* v);

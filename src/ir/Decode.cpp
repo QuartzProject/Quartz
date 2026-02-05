@@ -113,6 +113,13 @@ public:
         }
     }
 
+    void manifest(Reader& r) {
+        m_.manifest = r.str();
+        if (m_.manifest.size() > 65536) {
+            r.fail("manifest too large");
+        }
+    }
+
     void lines(Reader& r) {
         for (Function& f : m_.functions) {
             std::int64_t line = 0;
@@ -403,7 +410,7 @@ std::expected<std::unique_ptr<Module>, std::string> decodePayload(std::span<cons
         if (top.failed()) {
             break;
         }
-        if (id <= last || id > static_cast<std::uint8_t>(Section::Lines)) {
+        if (id <= last || id > static_cast<std::uint8_t>(Section::Manifest)) {
             top.fail("unknown or out of order section");
             break;
         }
@@ -435,6 +442,9 @@ std::expected<std::unique_ptr<Module>, std::string> decodePayload(std::span<cons
             break;
         case Section::Lines:
             d.lines(r);
+            break;
+        case Section::Manifest:
+            d.manifest(r);
             break;
         }
         if (!r.failed() && !r.atEnd()) {

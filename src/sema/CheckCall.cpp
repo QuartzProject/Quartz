@@ -515,9 +515,27 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
 
 TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
     if (std::string pkg; !e->safe && packagePath(e->object, pkg)) {
-        diags_.error(e->span, std::format("use '{}.{}' through an import; qualified constants are not supported yet",
-                                          pkg, str(e->name)));
-        return ir::kError;
+        auto* g = static_cast<GlobalInfo*>(findIn(pkg, e->name, NameKind::Global));
+        if (g == nullptr) {
+            diags_.error(e->span, std::format("package '{}' has no public constant '{}'", pkg, str(e->name)));
+            return ir::kError;
+        }
+        e->global = g;
+        if (g->type == ir::kError && !g->checking) {
+            g->checking = true;
+            auto saved = std::move(scopes_);
+            scopes_.clear();
+            std::uint32_t savedFile = currentFile_;
+            currentFile_ = g->decl->span.file;
+            TypeId declared = g->decl->type != nullptr ? resolveType(g->decl->type) : ir::kError;
+            g->type = checkValue(g->decl->value, declared);
+            if (declared != ir::kError) {
+                g->type = declared;
+            }
+            scopes_ = std::move(saved);
+            currentFile_ = savedFile;
+        }
+        return g->type;
     }
     if (e->object->kind == ExprKind::Ident && !e->safe) {
         auto* id = static_cast<IdentExpr*>(e->object);

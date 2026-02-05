@@ -152,6 +152,78 @@ bool Sandbox::resolveStates(const CompiledFunction& fn, std::span<const Slot> ar
     return true;
 }
 
+std::expected<void, std::string> Sandbox::link(std::string_view package, Sandbox& provider) {
+    if (&provider == this) {
+        return std::unexpected("a sandbox cannot link to itself");
+    }
+    const ir::TypeTable& types = program_->module->types;
+    const ir::TypeTable& ptypes = provider.program_->module->types;
+    std::string prefix = std::string(package) + ".";
+    bool any = false;
+    const auto& imports = program_->module->imports;
+    for (std::size_t i = 0; i < imports.size(); ++i) {
+        const ir::HostImport& imp = imports[i];
+        if (!imp.name.starts_with(prefix)) {
+            continue;
+        }
+        std::string name = imp.name.substr(prefix.size());
+        std::uint32_t f = provider.program_->findFunction(name);
+        if (f == ~0U || !provider.program_->functions[f].exported || provider.program_->functions[f].isSuspend) {
+            return std::unexpected(std::format("{} does not export '{}'", package, name));
+        }
+        const CompiledFunction& fn = provider.program_->functions[f];
+        std::vector<ir::TypeId> hostParams;
+        for (ir::TypeId p : fn.params) {
+            if (ptypes.kind(p) != ir::TypeKind::State) {
+                hostParams.push_back(p);
+            }
+        }
+        // Type ids differ between programs; builtin scalar and str ids are fixed, so compare those.
+        auto simple = [](ir::TypeId t) { return t <= ir::kStr; };
+        bool match = hostParams.size() == imp.params.size() && fn.result == imp.result && simple(imp.result);
+        for (std::size_t k = 0; match && k < hostParams.size(); ++k) {
+            match = hostParams[k] == imp.params[k] && simple(imp.params[k]);
+        }
+        if (!match) {
+            return std::unexpected(std::format("'{}' of {} does not match its interface; rebuild against it", name, package));
+        }
+        (void)types;
+        links_.push_back(std::make_unique<LinkTarget>(LinkTarget{&provider, f, &imp}));
+        bindings_[i] = {&Sandbox::linkedCall, links_.back().get()};
+        any = true;
+    }
+    if (!any) {
+        return std::unexpected(std::format("nothing imports from {}", package));
+    }
+    return {};
+}
+
+bool Sandbox::linkedCall(HostCall& call, void* user) {
+    const auto* t = static_cast<const LinkTarget*>(user);
+    std::vector<Slot> args(t->import->params.size());
+    for (std::size_t k = 0; k < args.size(); ++k) {
+        args[k] = call.args[k];
+        if (t->import->params[k] == ir::kStr) {
+            args[k].p = t->provider->newStr(static_cast<const Str*>(call.args[k].p)->view());
+            if (args[k].p == nullptr) {
+                call.error = "out of memory passing an argument";
+                return false;
+            }
+        }
+    }
+    auto r = t->provider->call(t->function, args);
+    if (!r) {
+        call.error = std::format("in {}: {}", t->import->name, r.error().describe());
+        return false;
+    }
+    call.result = *r;
+    if (t->import->result == ir::kStr) {
+        call.result.p = call.string(static_cast<const Str*>(r->p)->view());
+        return call.result.p != nullptr;
+    }
+    return true;
+}
+
 void Sandbox::dropHandle(std::uint64_t handle) {
     const ir::Module& m = *program_->module;
     for (std::size_t i = 0; i < perHandle_.size(); ++i) {
@@ -226,6 +298,9 @@ std::expected<void, Trap> Sandbox::start() {
 }
 
 std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const Slot> args) {
+    if (inCall_) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, "re-entrant call into a running sandbox", {}, 0});
+    }
     if (!started_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "sandbox not started", {}, 0});
     }
