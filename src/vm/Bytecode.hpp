@@ -137,6 +137,7 @@ struct Program {
     std::vector<std::unique_ptr<std::byte[]>> staticStrings;
     std::uint32_t maxFrameSlots = 0;
     std::vector<std::uint32_t> importResultSlots;
+    std::vector<bool> importReprC; // an import passes or returns a @repr(C) struct
     std::shared_ptr<TierState> tier; // native code and hotness counters
 
     [[nodiscard]] std::uint32_t findFunction(std::string_view name) const;

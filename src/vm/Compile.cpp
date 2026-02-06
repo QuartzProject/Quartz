@@ -874,6 +874,11 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
     }
     for (const ir::HostImport& imp : prog->module->imports) {
         prog->importResultSlots.push_back(prog->layouts->slots(imp.result));
+        bool c = prog->module->types.info(imp.result).reprC;
+        for (ir::TypeId p : imp.params) {
+            c = c || prog->module->types.info(p).reprC;
+        }
+        prog->importReprC.push_back(c);
     }
     for (const ir::Function& fn : prog->module->functions) {
         FunctionCompiler fc(*prog, fn);

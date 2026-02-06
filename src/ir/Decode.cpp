@@ -163,7 +163,12 @@ private:
     void readGenerics(Reader& r, TypeId self, TypeInfo& info, std::uint32_t& depth) {
         depth = 0;
         info.version = r.u32();
-        info.persisted = r.u8() != 0;
+        std::uint8_t flags = r.u8();
+        info.persisted = (flags & 1) != 0;
+        info.reprC = (flags & 2) != 0;
+        if (flags > 3) {
+            r.fail("unknown type flags");
+        }
         info.persistPer = r.u32();
         if (info.persistPer >= self) {
             r.fail("per-handle state refers to a later type");

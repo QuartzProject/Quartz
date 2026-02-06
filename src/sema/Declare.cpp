@@ -197,6 +197,14 @@ void Checker::completeTypes() {
                     }
                     types_->mutableInfo(entry.type).persistPer = per;
                 }
+            } else if (an == "repr") {
+                bool c = a.args.size() == 1 && a.args[0].value->kind == ExprKind::Ident &&
+                         str(static_cast<IdentExpr*>(a.args[0].value)->name) == "C";
+                if (!c || info.kind != ir::TypeKind::Struct || !entry.decl->typeParams.empty()) {
+                    diags_.error(a.span, "@repr(C) goes on a non-generic struct");
+                    continue;
+                }
+                types_->mutableInfo(entry.type).reprC = true;
             } else if (an != "handle" && an != "awaitable") {
                 diags_.warning(a.span, std::format("unknown attribute '@{}'", an));
             }
@@ -208,6 +216,20 @@ void Checker::completeTypes() {
         done.complete = true;
     }
     types_->refreshInstances();
+    for (auto& entryPtr : typeEntries_) {
+        if (entryPtr->decl == nullptr || !types_->info(entryPtr->type).reprC) {
+            continue;
+        }
+        for (const ir::Field& f : types_->info(entryPtr->type).fields) {
+            bool ok = types_->isScalar(f.type) ||
+                      (types_->kind(f.type) == ir::TypeKind::Struct && types_->info(f.type).reprC);
+            if (!ok) {
+                diags_.error(entryPtr->decl->span, std::format("@repr(C) field '{}' must be a number, bool, char or "
+                                                               "another @repr(C) struct",
+                                                               f.name));
+            }
+        }
+    }
     // A struct that contains itself by value has no finite size.
     for (auto& entryPtr : typeEntries_) {
         TypeEntry& entry = *entryPtr;

@@ -137,6 +137,7 @@ public:
     bool run(std::uint32_t function, Slot* base);
     Status execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth);
     bool callHost(std::uint32_t import, const Slot* args, Slot* result);
+    bool callHostC(std::uint32_t import, const Slot* args, Slot* result);
 
     Trap trap_;
     bool trapped_ = false;

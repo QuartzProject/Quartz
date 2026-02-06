@@ -1,5 +1,7 @@
 #include "vm/Sandbox.hpp"
 
+#include "vm/ReprC.hpp"
+
 #include <algorithm>
 #include <charconv>
 #include <format>
@@ -160,6 +162,58 @@ Str* Sandbox::newStr(std::string_view text) {
 }
 
 Str* HostCall::string(std::string_view text) { return sandbox.newStr(text); }
+
+// `@repr(C)` structs reach the host as one slot holding a pointer to a C struct (D66).
+bool Sandbox::callHostC(std::uint32_t import, const Slot* args, Slot* result) {
+    const ir::HostImport& imp = program_->module->imports[import];
+    const ir::TypeTable& types = program_->module->types;
+    const Layouts& lay = *program_->layouts;
+    std::vector<Slot> cargs;
+    const Slot* in = args;
+    for (TypeId p : imp.params) {
+        if (types.info(p).reprC) {
+            CLayout cl = cLayout(types, p);
+            auto* buf = static_cast<std::uint8_t*>(cur_->allocate(cl.size));
+            if (buf == nullptr) {
+                return fail(ir::TrapCode::OutOfMemory);
+            }
+            std::memset(buf, 0, cl.size);
+            toC(types, lay, p, in, buf);
+            Slot s{};
+            s.p = buf;
+            cargs.push_back(s);
+        } else {
+            cargs.insert(cargs.end(), in, in + lay.slots(p));
+        }
+        in += lay.slots(p);
+    }
+    std::uint8_t* cresult = nullptr;
+    if (types.info(imp.result).reprC) {
+        CLayout cl = cLayout(types, imp.result);
+        cresult = static_cast<std::uint8_t*>(cur_->allocate(cl.size));
+        if (cresult == nullptr) {
+            return fail(ir::TrapCode::OutOfMemory);
+        }
+        std::memset(cresult, 0, cl.size);
+    }
+    HostCall hc{*this, cargs.data(), {}, {}, cresult != nullptr ? nullptr : result};
+    if (cresult != nullptr) {
+        hc.result.p = cresult;
+    }
+    const Binding& bnd = bindings_[import];
+    if (!bnd.fn(hc, bnd.user)) {
+        return fail(ir::TrapCode::HostError, std::move(hc.error));
+    }
+    if (trapped_) {
+        return false;
+    }
+    if (cresult != nullptr) {
+        fromC(types, lay, imp.result, cresult, result);
+    } else if (result != nullptr && program_->importResultSlots[import] == 1) {
+        *result = hc.result;
+    }
+    return true;
+}
 
 bool HostCall::charge(std::int64_t units) {
     sandbox.fuel_ -= units;

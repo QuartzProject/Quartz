@@ -3,6 +3,7 @@
 
 #include <doctest/doctest.h>
 #include <array>
+#include <cstring>
 #include <string>
 
 namespace {
@@ -202,4 +203,36 @@ TEST_CASE("a package loads only when signed by the key trusted for its name") {
     wrong.keys.emplace_back("economy", quartz::ir::publicKey(stranger));
     CHECK_FALSE(quartz::loadPackage(signedBytes, wrong).has_value());
     CHECK_FALSE(quartz::loadPackage(signedBytes, quartz::TrustPolicy{}).has_value());
+}
+
+TEST_CASE("repr(C) structs reach the host with the C layout and come back") {
+    struct CVec {
+        float x;
+        std::int16_t y;
+        double z;
+    };
+    static_assert(sizeof(CVec) == 16);
+    quartz::SourceInput in[] = {{"host.qzi", "@repr(C)\nstruct Vec {\n    x: f32\n    y: i16\n    z: f64\n}\n"
+                                             "fn scale(v: Vec, k: i32) -> Vec\n"},
+                                {"plugin.qz", R"(
+fn run() -> f64 {
+    let v = scale(Vec(1.5, -3, 0.25), 4)
+    return (v.x as f64) * 100.0 + (v.y as f64) * 10.0 + v.z
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    quartz::vm::Sandbox sb(out.program);
+    sb.bind("scale", [](quartz::vm::HostCall& c, void*) {
+        CVec v{};
+        std::memcpy(&v, c.args[0].p, sizeof v);
+        auto k = static_cast<std::int32_t>(c.args[1].i);
+        CVec r{v.x * static_cast<float>(k), static_cast<std::int16_t>(v.y * k), v.z * k};
+        std::memcpy(c.result.p, &r, sizeof r);
+        return true;
+    });
+    REQUIRE(sb.start().has_value());
+    auto r = sb.call(out.program->findFunction("run"), {});
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(r->f == 600.0 - 120.0 + 1.0);
 }

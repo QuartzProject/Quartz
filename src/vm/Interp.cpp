@@ -88,6 +88,9 @@ bool strEqNullable(const Str* a, const Str* b) {
 
 bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
     const Binding& bnd = bindings_[import];
+    if (program_->importReprC[import]) {
+        return callHostC(import, args, result);
+    }
     HostCall hc{*this, args, {}, {}, result};
     if (!bnd.fn(hc, bnd.user)) {
         return fail(ir::TrapCode::HostError, std::move(hc.error));
