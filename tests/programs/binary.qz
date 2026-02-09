@@ -1,5 +1,6 @@
 // expect: 5 104 ell héllo
 // expect: roundtrip true true true
+// expect: zstd true true true
 // expect: zip 2 a.txt 3 b.bin 2000
 // expect: crc 1095738169
 // expect: be 258 le 513
@@ -20,6 +21,8 @@ fn main() -> i64 {
     let z = zlibDecompress(zlibCompress(text)).unwrap()
     let g = gunzip(gzip(text, 1)).unwrap()
     print("roundtrip {raw.hex() == text.hex()} {z.len() == text.len()} {g.toStr() == text.toStr()}")
+    let zs = zstdCompress(text, 5)
+    print("zstd {zstdDecompress(zs).unwrap().hex() == text.hex()} {zs.len() < text.len() / 5} {zstdDecompress(text).isErr()}")
     var big: [i64] = []
     for i in 0..2000 {
         big.push(i % 251)

@@ -1,7 +1,9 @@
 #include "std/Builder.hpp"
 #include "std/Deflate.hpp"
 
+#include <algorithm>
 #include <format>
+#include <zstd.h>
 
 namespace quartz::stdlib {
 
@@ -295,6 +297,59 @@ bool decompressGzip(vm::HostCall& call, void*) {
     return okBytes(call, out);
 }
 
+bool compressZstd(vm::HostCall& call, void*) {
+    auto in = bytesOf(call.args[0]);
+    if (!call.charge(static_cast<std::int64_t>(in.size() / 2 + 1))) {
+        return false;
+    }
+    int level = static_cast<int>(std::clamp<std::int64_t>(call.args[1].i, 1, 19));
+    std::vector<std::uint8_t> out(ZSTD_compressBound(in.size()));
+    std::size_t n = ZSTD_compress(out.data(), out.size(), in.data(), in.size(), level);
+    if (ZSTD_isError(n) != 0) {
+        call.error = std::format("zstd: {}", ZSTD_getErrorName(n));
+        return false;
+    }
+    out.resize(n);
+    return returnBytes(call, out, &call.result);
+}
+
+// Streaming decode so a forged frame size cannot make it allocate past the limit.
+bool decompressZstd(vm::HostCall& call, void*) {
+    auto in = bytesOf(call.args[0]);
+    ZSTD_DCtx* ctx = ZSTD_createDCtx();
+    if (ctx == nullptr) {
+        call.error = "zstd: out of memory";
+        return false;
+    }
+    std::vector<std::uint8_t> out;
+    std::vector<std::uint8_t> chunk(ZSTD_DStreamOutSize());
+    ZSTD_inBuffer src{in.data(), in.size(), 0};
+    std::size_t last = 1;
+    std::string error;
+    while (src.pos < src.size || last != 0) {
+        ZSTD_outBuffer dst{chunk.data(), chunk.size(), 0};
+        last = ZSTD_decompressStream(ctx, &dst, &src);
+        if (ZSTD_isError(last) != 0) {
+            error = ZSTD_getErrorName(last);
+            break;
+        }
+        if (out.size() + dst.pos > kMaxInflate) {
+            error = "output too large";
+            break;
+        }
+        out.insert(out.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(dst.pos));
+        if (dst.pos == 0 && src.pos == src.size && last != 0) {
+            error = "truncated frame";
+            break;
+        }
+    }
+    ZSTD_freeDCtx(ctx);
+    if (!error.empty()) {
+        return errText(call, "zstd: " + error);
+    }
+    return okBytes(call, out);
+}
+
 std::uint32_t le32(std::span<const std::uint8_t> b, std::size_t at) {
     return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (static_cast<std::uint32_t>(b[at + 3]) << 24);
 }
@@ -471,6 +526,8 @@ void addBinaryNatives(std::vector<Native>& out) {
                               {"std.compress.zlibDecompress", decompressZlib},
                               {"std.compress.gzip", compressGzip},
                               {"std.compress.gunzip", decompressGzip},
+                              {"std.compress.zstdCompress", compressZstd},
+                              {"std.compress.zstdDecompress", decompressZstd},
                               {"std.zip.readZip", readZip},
                               {"std.zip.writeZip", writeZip},
                           });

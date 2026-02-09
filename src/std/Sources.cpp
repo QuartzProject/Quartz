@@ -115,6 +115,8 @@ fn zlibCompress(data: Bytes, level: i64 = 6) -> Bytes
 fn zlibDecompress(data: Bytes) -> Result<Bytes, str>
 fn gzip(data: Bytes, level: i64 = 6) -> Bytes
 fn gunzip(data: Bytes) -> Result<Bytes, str>
+fn zstdCompress(data: Bytes, level: i64 = 3) -> Bytes
+fn zstdDecompress(data: Bytes) -> Result<Bytes, str>
 )";
 
 constexpr std::string_view kZipQz = R"(package std.zip
