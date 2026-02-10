@@ -37,10 +37,10 @@ int usage() {
     return 2;
 }
 
-std::optional<std::string> readFile(const char* path) {
+std::optional<std::string> readFile(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        std::fprintf(stderr, "cannot read %s\n", path);
+        std::fprintf(stderr, "cannot read %s\n", path.string().c_str());
         return std::nullopt;
     }
     std::stringstream ss;
@@ -195,7 +195,7 @@ std::optional<Args> parseArgs(int argc, char** argv) {
                     files.push_back(e.path());
                 }
                 if (e.is_regular_file() && e.path().filename() == "package.toml") {
-                    auto text = readFile(e.path().c_str());
+                    auto text = readFile(e.path());
                     if (!text) {
                         return std::nullopt;
                     }
@@ -204,7 +204,7 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             }
             std::sort(files.begin(), files.end());
             for (const auto& f : files) {
-                auto text = readFile(f.c_str());
+                auto text = readFile(f);
                 if (!text) {
                     return std::nullopt;
                 }
