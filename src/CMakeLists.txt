@@ -1,4 +1,4 @@
-quartz_module(quartz_support SOURCES support/Source.cpp support/Diagnostics.cpp)
+quartz_module(quartz_support SOURCES support/Source.cpp support/Diagnostics.cpp support/Platform.cpp)
 quartz_module(quartz_syntax SOURCES syntax/Lexer.cpp syntax/Parser.cpp syntax/ParserExpr.cpp DEPS quartz_support)
 quartz_module(quartz_format SOURCES format/Format.cpp format/AstDump.cpp format/Printer.cpp format/PrintDecl.cpp
     format/PrintStmt.cpp format/PrintExpr.cpp DEPS quartz_syntax)

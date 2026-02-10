@@ -1,5 +1,6 @@
 #include "vm/Tier.hpp"
 
+#include "support/Platform.hpp"
 #include "vm/Bytecode.hpp"
 
 #include <chrono>
@@ -7,12 +8,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
-#include <dlfcn.h>
 #include <filesystem>
 #include <string_view>
-#include <sys/resource.h>
 #include <thread>
-#include <unistd.h>
 
 namespace quartz::vm {
 
@@ -51,31 +49,29 @@ struct Library {
         if (const char* p = std::getenv("QUARTZ_COMPILER_LIB"); p != nullptr && *p != '\0') {
             candidates.emplace_back(p);
         } else {
-            candidates.emplace_back("libquartz_compiler.so");
-            std::error_code ec;
-            auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
-            if (!ec) {
-                candidates.push_back((exe.parent_path() / "libquartz_compiler.so").string());
+            candidates.emplace_back(support::compilerLibraryName());
+            if (auto exe = support::executablePath(); !exe.empty()) {
+                candidates.push_back((exe.parent_path() / support::compilerLibraryName()).string());
             }
         }
-        void* handle = nullptr;
+        support::DynamicLibrary handle;
         for (const std::string& c : candidates) {
-            handle = dlopen(c.c_str(), RTLD_NOW | RTLD_LOCAL);
-            if (handle != nullptr) {
+            handle = support::DynamicLibrary::open(c, error);
+            if (handle) {
                 break;
             }
         }
-        if (handle == nullptr) {
-            const char* e = dlerror();
-            error = e != nullptr ? e : "libquartz_compiler.so not found";
+        if (!handle) {
             return;
         }
-        auto abi = reinterpret_cast<QcAbiFn>(dlsym(handle, "qc_abi"));
-        create = reinterpret_cast<QcCreateFn>(dlsym(handle, "qc_create"));
-        compile = reinterpret_cast<QcCompileFn>(dlsym(handle, "qc_compile"));
-        destroy = reinterpret_cast<QcDestroyFn>(dlsym(handle, "qc_destroy"));
+        error.clear();
+        auto abi = reinterpret_cast<QcAbiFn>(handle.symbol("qc_abi"));
+        create = reinterpret_cast<QcCreateFn>(handle.symbol("qc_create"));
+        compile = reinterpret_cast<QcCompileFn>(handle.symbol("qc_compile"));
+        destroy = reinterpret_cast<QcDestroyFn>(handle.symbol("qc_destroy"));
+        handle.keepLoaded();
         if (abi == nullptr || create == nullptr || compile == nullptr || destroy == nullptr || abi() != kNativeAbi) {
-            error = "libquartz_compiler.so does not match this version of Quartz";
+            error = std::string(support::compilerLibraryName()) + " does not match this version of Quartz";
             create = nullptr;
             return;
         }
@@ -130,7 +126,7 @@ public:
 
 private:
     void loop() {
-        setpriority(PRIO_PROCESS, static_cast<id_t>(gettid()), 10);
+        support::lowerThreadPriority();
         for (;;) {
             Job job;
             {
