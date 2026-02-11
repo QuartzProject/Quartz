@@ -32,6 +32,7 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_map_set", false, false},   {"qz_map_remove", false, false},  {"qz_state_store", false, false},
     {"qz_scope_in", false, false},  {"qz_scope_out", false, false},   {"qz_persist", false, false},
     {"qz_pow", false, false},       {"qz_sin", false, false},         {"qz_cos", false, false},
+    {"qz_task_wait", false, false}, {"qz_task_save", false, false},   {"qz_task_restore", false, false},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
 
@@ -241,6 +242,15 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
     case Rt::Cos:
         ty = llvm::FunctionType::get(f64, {f64}, false);
         break;
+    case Rt::TaskWait:
+        ty = llvm::FunctionType::get(v, {ptr, i32, i64, i32}, false);
+        break;
+    case Rt::TaskSave:
+        ty = llvm::FunctionType::get(v, {ptr, ptr, i32, i32, ptr, i32}, false);
+        break;
+    case Rt::TaskRestore:
+        ty = llvm::FunctionType::get(ptr, {ptr}, false);
+        break;
     case Rt::Count:
         break;
     }
@@ -388,9 +398,10 @@ void UnitCodegen::emitEntry(std::uint32_t root, const std::string& name) {
 std::string UnitCodegen::build(std::uint32_t root, const std::string& entryName) {
     collectReachable(root);
     computeCycles();
+    taskUnit = IR.functions[root].isSuspend;
     for (std::uint32_t f : reachable_) {
-        if (IR.functions[f].isSuspend) {
-            return IR.functions[f].name + ": suspend functions run in the interpreter";
+        if (IR.functions[f].isSuspend && !taskUnit) {
+            return IR.functions[f].name + ": suspend function reached outside a task";
         }
         const vm::CompiledFunction& cf = P.functions[f];
         if (cf.code.size() == 1 && cf.code[0].op == vm::Opc::Trap && IR.functions[f].code.size() > 1) {

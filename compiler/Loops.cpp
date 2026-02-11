@@ -119,6 +119,7 @@ bool FunctionCodegen::countedLoop(std::size_t loop, CountedLoop& out) const {
         switch (in.op) {
         case Op::Loop:
         case Op::Call:
+        case Op::Wait:
             return false;
         case Op::Block:
         case Op::If:
@@ -178,7 +179,7 @@ void FunctionCodegen::versionLoop(std::size_t loop, const CountedLoop& c) {
         checkFuel_ = head == slow;
         recordResume_ = head == slow;
         B_.SetInsertPoint(head);
-        frames_.push_back({Op::Loop, head});
+        frames_.push_back({Op::Loop, head, nullptr, loop});
         for (std::size_t pc = loop + 1; pc < c.end && error_.empty(); ++pc) {
             line_ = fn_.code[pc].line;
             pc_ = pc;

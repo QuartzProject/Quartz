@@ -1,12 +1,14 @@
 #pragma once
 
 #include "ir/Ir.hpp"
+#include "ir/Liveness.hpp"
 #include "vm/Bytecode.hpp"
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/MDBuilder.h>
 #include <llvm/IR/Module.h>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -54,6 +56,9 @@ enum class Rt : std::uint8_t {
     Pow,
     Sin,
     Cos,
+    TaskWait,
+    TaskSave,
+    TaskRestore,
     Count,
 };
 
@@ -78,6 +83,7 @@ public:
     const ir::Module& IR;
     const vm::Layouts& L;
     const ir::TypeTable& T;
+    bool taskUnit = false; // rooted at a suspend fn: everything runs inside a task
 
     llvm::Type* i1;
     llvm::Type* i8;
@@ -144,6 +150,14 @@ private:
         ir::Op op;
         llvm::BasicBlock* target; // loop header, or the block after a Block/If
         llvm::BasicBlock* elseBlock = nullptr;
+        std::size_t pc = 0;
+    };
+
+    struct ResumePoint {
+        std::uint32_t state;
+        std::vector<ir::Reg> regs;
+        ir::Reg waitDst;
+        llvm::BasicBlock* target;
     };
 
     // FunctionCodegen.cpp
@@ -163,6 +177,18 @@ private:
     llvm::Value* normalize(ir::TypeId t, llvm::Value* v);
     llvm::Value* divRem(const ir::Inst& in, llvm::Value* a, llvm::Value* b);
 
+    // Tasks.cpp (D56)
+    void wait(const ir::Inst& in);
+    /// Saves the registers kept at `state` into the task and returns as suspended.
+    void suspendAndReturn(std::uint32_t state, const std::vector<ir::Reg>& regs);
+    void addResume(std::uint32_t state, std::vector<ir::Reg> regs, ir::Reg waitDst, llvm::BasicBlock* target);
+    /// Fuel ran out in a suspend fn: yield to the host and continue at `resume` with `regs` restored.
+    void yieldIfOutOfFuel(llvm::Value* fuel, std::uint32_t state, llvm::BasicBlock* resume);
+    void overdrawOrTrap(llvm::Value* fuel);
+    /// Entry of a suspend fn: a resuming task restores its frame record and jumps to the saved state.
+    void emitDispatch(llvm::BasicBlock* body);
+    void zeroRefRegisters();
+
     // Loops.cpp
     std::size_t matchingEnd(std::size_t loop) const;
     bool countedLoop(std::size_t loop, CountedLoop& out) const;
@@ -179,6 +205,8 @@ private:
     void listGet(const ir::Inst& in);
     void listSet(const ir::Inst& in);
     void listPush(const ir::Inst& in);
+    /// True when storing references into `list` needs no deep copy or promotion.
+    llvm::Value* needsNoCopy(llvm::Value* list);
     void mapGet(const ir::Inst& in);
     void stringOp(const ir::Inst& in, ir::Intrinsic op);
     void mathOp(const ir::Inst& in, ir::Intrinsic op);
@@ -212,7 +240,8 @@ private:
     /// For runtime callbacks that already recorded the trap.
     void failIf(llvm::Value* failed);
     void emitTrap(ir::TrapCode code);
-    void chargeFuel();
+    /// Charges one unit; in a suspend fn running out yields at `state` and resumes at `resume`.
+    void chargeFuel(std::uint32_t state = 0, llvm::BasicBlock* resume = nullptr);
     void spillFuel();
     void reloadFuel();
     void deadBlock();
@@ -247,6 +276,8 @@ private:
     std::vector<Frame> frames_;
     std::uint32_t line_ = 0;
     std::string error_;
+    std::unique_ptr<ir::Liveness> live_; // suspend fns only
+    std::vector<ResumePoint> resumePoints_;
 };
 
 } // namespace quartz::compiler

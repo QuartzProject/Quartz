@@ -62,12 +62,9 @@ void FunctionCodegen::listSet(const ir::Inst& in) {
     llvm::BasicBlock* done = llvm::BasicBlock::Create(U.C, "set.end", F_);
     if (refs) {
         // parity: a state-owned list of references deep copies through the runtime (Sandbox::listSet)
-        llvm::Value* owner = loadField(U.i8, list, offsetof(vm::List, owner), U.tbaaList);
         llvm::BasicBlock* slow = llvm::BasicBlock::Create(U.C, "set.state", F_);
         llvm::BasicBlock* fast = llvm::BasicBlock::Create(U.C, "set.arena", F_);
-        llvm::Value* inState =
-            B_.CreateICmpEQ(owner, llvm::ConstantInt::get(U.i8, static_cast<std::uint8_t>(vm::Owner::State)));
-        B_.CreateCondBr(inState, slow, fast);
+        B_.CreateCondBr(needsNoCopy(list), fast, slow);
         B_.SetInsertPoint(slow);
         llvm::Value* s = scratch(static_cast<std::uint32_t>(k.size()));
         storeSlots(s, 0, v, k, U.tbaaSlot);
@@ -77,10 +74,10 @@ void FunctionCodegen::listSet(const ir::Inst& in) {
         B_.SetInsertPoint(fast);
     }
     llvm::Value* len = listLen(list);
-    if (k.size() == 1) {
+    if (k.size() == 1 && !refs) {
         trapIf(boundsFail(index, len), ir::TrapCode::IndexOutOfBounds);
     } else {
-        // parity: multi-slot elements go through Sandbox::listSet, whose trap carries a message
+        // parity: these elements go through Sandbox::listSet (ListSetN), whose trap carries a message
         llvm::BasicBlock* bad = llvm::BasicBlock::Create(U.C, "trap", F_);
         llvm::BasicBlock* ok = llvm::BasicBlock::Create(U.C, "cont", F_);
         B_.CreateCondBr(boundsFail(index, len), bad, ok, U.cold);
@@ -95,6 +92,16 @@ void FunctionCodegen::listSet(const ir::Inst& in) {
     B_.SetInsertPoint(done);
 }
 
+// parity: a list in the state deep copies, and one in an outer `scope` region promotes (Sandbox::listSet, D36)
+llvm::Value* FunctionCodegen::needsNoCopy(llvm::Value* list) {
+    llvm::Value* owner = loadField(U.i8, list, offsetof(vm::List, owner), U.tbaaList);
+    llvm::Value* level =
+        B_.CreateZExt(loadField(llvm::Type::getInt16Ty(U.C), list, offsetof(vm::List, level), U.tbaaList), U.i32);
+    llvm::Value* arena =
+        B_.CreateICmpEQ(owner, llvm::ConstantInt::get(U.i8, static_cast<std::uint8_t>(vm::Owner::Arena)));
+    return B_.CreateAnd(arena, B_.CreateICmpUGE(level, ctxField(offsetof(vm::NativeCtx, scopeLevel), U.i32)));
+}
+
 void FunctionCodegen::listPush(const ir::Inst& in) {
     ir::Reg listReg = fn_.args[in.argBegin];
     ir::Reg valueReg = fn_.args[in.argBegin + 1];
@@ -106,9 +113,7 @@ void FunctionCodegen::listPush(const ir::Inst& in) {
     llvm::Value* cap = loadField(U.i32, list, offsetof(vm::List, cap), U.tbaaList);
     llvm::Value* fastOk = B_.CreateICmpULT(len, cap);
     if (U.T.hasRefs(elem)) {
-        llvm::Value* owner = loadField(U.i8, list, offsetof(vm::List, owner), U.tbaaList);
-        fastOk = B_.CreateAnd(
-            fastOk, B_.CreateICmpNE(owner, llvm::ConstantInt::get(U.i8, static_cast<std::uint8_t>(vm::Owner::State))));
+        fastOk = B_.CreateAnd(fastOk, needsNoCopy(list));
     }
     llvm::BasicBlock* fast = llvm::BasicBlock::Create(U.C, "push.fast", F_);
     llvm::BasicBlock* slow = llvm::BasicBlock::Create(U.C, "push.slow", F_);

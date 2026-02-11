@@ -18,8 +18,59 @@ namespace quartz::vm {
 struct NativeRuntimeAccess {
     static std::int64_t& fuel(Sandbox& s) { return s.fuel_; }
 
+    static std::uint32_t level(const Sandbox& s) { return s.curLevel_; }
+
     static bool persist(Sandbox& s, ir::TypeId type, Slot* value, std::uint32_t levels) {
         return s.curLevel_ < levels || s.promoteInto(type, value, s.curLevel_ - levels);
+    }
+
+    static void wait(Sandbox& s, std::uint32_t kind, std::uint64_t handle, ir::TypeId type) {
+        s.suspendKind_ = static_cast<TaskOutcome::Kind>(kind + 1);
+        s.awaited_.u = handle;
+        s.suspendType_ = type;
+        s.suspendDst_ = type == ir::kVoid ? 0xFFFF : 0;
+    }
+
+    // Views into state memory must not outlive the invocation (D27, D35): the record gets task arena copies.
+    static bool save(Sandbox& s, NativeCtx* c, const Slot* rec, std::uint32_t n, std::uint32_t state,
+                     const std::uint32_t* reloc, std::uint32_t count) {
+        std::vector<Slot>& v = *s.nativeSaved_;
+        v.resize(c->saveTop);
+        std::size_t at = v.size();
+        v.insert(v.end(), rec, rec + n);
+        Slot meta;
+        meta.u = static_cast<std::uint64_t>(state) << 32 | n;
+        v.push_back(meta);
+        c->saveTop = static_cast<std::uint32_t>(v.size());
+        InvocationArena* cur = s.cur_;
+        std::uint32_t level = s.curLevel_;
+        s.cur_ = s.regions_[0];
+        s.curLevel_ = 0;
+        bool ok = true;
+        for (std::uint32_t i = 0; ok && i < count; ++i) {
+            Slot* p = v.data() + at + reloc[2 * i];
+            ok = s.copyToArena(reloc[2 * i + 1], p, p, Sandbox::Copy::StateOnly);
+        }
+        s.cur_ = cur;
+        s.curLevel_ = level;
+        return ok;
+    }
+
+    static Slot* restore(Sandbox& s, NativeCtx* c) {
+        std::vector<Slot>& v = *s.nativeSaved_;
+        c->resumeState = 0xFFFFFFFF;
+        if (c->saveTop == 0 || c->saveTop > v.size()) {
+            return v.data();
+        }
+        std::uint64_t meta = v[c->saveTop - 1].u;
+        auto n = static_cast<std::uint32_t>(meta);
+        if (n >= c->saveTop) {
+            c->saveTop = 0;
+            return v.data();
+        }
+        c->saveTop -= n + 1;
+        c->resumeState = static_cast<std::uint32_t>(meta >> 32);
+        return v.data() + c->saveTop;
     }
 };
 
@@ -57,9 +108,16 @@ std::uint32_t qzCallHost(NativeCtx* c, std::uint32_t import, const Slot* args, S
     return ok ? 1 : 0;
 }
 
-std::uint32_t qzScopeIn(NativeCtx* c) { return sb(c).scopeIn() ? 1 : 0; }
+std::uint32_t qzScopeIn(NativeCtx* c) {
+    bool ok = sb(c).scopeIn();
+    c->scopeLevel = NativeRuntimeAccess::level(sb(c));
+    return ok ? 1 : 0;
+}
 
-void qzScopeOut(NativeCtx* c) { sb(c).scopeOut(); }
+void qzScopeOut(NativeCtx* c) {
+    sb(c).scopeOut();
+    c->scopeLevel = NativeRuntimeAccess::level(sb(c));
+}
 
 std::uint32_t qzPersist(NativeCtx* c, std::uint32_t type, Slot* value, std::uint32_t levels) {
     return NativeRuntimeAccess::persist(sb(c), type, value, levels) ? 1 : 0;
@@ -203,6 +261,20 @@ std::uint32_t qzStateStore(NativeCtx* c, std::uint32_t type, const Slot* src, Sl
     return sb(c).storeState(type, src, dst) ? 1 : 0;
 }
 
+void qzTaskWait(NativeCtx* c, std::uint32_t kind, std::uint64_t handle, std::uint32_t type) {
+    NativeRuntimeAccess::wait(sb(c), kind, handle, type);
+    c->suspending = 1;
+}
+
+void qzTaskSave(NativeCtx* c, const Slot* rec, std::uint32_t n, std::uint32_t state, const std::uint32_t* reloc,
+                std::uint32_t count) {
+    if (!NativeRuntimeAccess::save(sb(c), c, rec, n, state, reloc, count)) {
+        c->suspending = 0;
+    }
+}
+
+Slot* qzTaskRestore(NativeCtx* c) { return NativeRuntimeAccess::restore(sb(c), c); }
+
 double qzPow(double a, double b) { return math::pow(a, b); }
 
 double qzSin(double a) { return math::sin(a); }
@@ -251,6 +323,9 @@ const NativeSymbol kSymbols[] = {
     {"qz_pow", addr(qzPow)},
     {"qz_sin", addr(qzSin)},
     {"qz_cos", addr(qzCos)},
+    {"qz_task_wait", addr(qzTaskWait)},
+    {"qz_task_save", addr(qzTaskSave)},
+    {"qz_task_restore", addr(qzTaskRestore)},
 };
 
 } // namespace

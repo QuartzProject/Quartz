@@ -46,7 +46,7 @@ void Sandbox::bindNatives() {
 }
 
 bool Sandbox::enter(std::uint32_t function, Slot* base) {
-    if (tierMode_ != TierMode::Interpreter) {
+    if (tierMode_ != TierMode::Interpreter && !program_->functions[function].isSuspend) {
         TierState& tier = *program_->tier;
         NativeEntry e = tier.entry(function);
         if (e == nullptr && tierMode_ == TierMode::Native) {
@@ -66,7 +66,7 @@ bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
     }
     auto sp = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
     NativeCtx ctx{this, fuel_, stackEnd, sp > limits_.nativeStackBytes ? sp - limits_.nativeStackBytes : 0,
-                  limits_.maxDepth, kNoTrapFunction, 0, 0};
+                  limits_.maxDepth, kNoTrapFunction, 0, curLevel_, 0, Slot{}, 0, 0, 0, 0};
     std::int32_t status = entry(base, &ctx);
     fuel_ = ctx.fuel;
     if (status != 0) {

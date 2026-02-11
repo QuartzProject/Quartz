@@ -158,13 +158,19 @@ void FunctionCodegen::failIf(llvm::Value* failed) {
     B_.SetInsertPoint(ok);
 }
 
-void FunctionCodegen::chargeFuel() {
+void FunctionCodegen::chargeFuel(std::uint32_t state, llvm::BasicBlock* resume) {
     llvm::Value* fuel = B_.CreateSub(B_.CreateLoad(U.i64, fuel_), constI64(1));
     B_.CreateStore(fuel, fuel_);
     if (!checkFuel_) {
         return;
     }
-    trapIf(B_.CreateICmpSLT(fuel, constI64(0)), ir::TrapCode::OutOfFuel);
+    if (live_ != nullptr && resume != nullptr) {
+        yieldIfOutOfFuel(fuel, state, resume);
+    } else if (U.taskUnit) {
+        overdrawOrTrap(fuel);
+    } else {
+        trapIf(B_.CreateICmpSLT(fuel, constI64(0)), ir::TrapCode::OutOfFuel);
+    }
 }
 
 void FunctionCodegen::spillFuel() {
@@ -206,6 +212,10 @@ std::string FunctionCodegen::run() {
             entryB_.CreateStore(F_->getArg(arg++), a);
         }
     }
+    if (fn_.isSuspend) {
+        live_ = std::make_unique<ir::Liveness>(fn_);
+        zeroRefRegisters();
+    }
     failBlock_ = llvm::BasicBlock::Create(U.C, "fail", F_);
     B_.SetInsertPoint(failBlock_);
     llvm::StructType* rt = U.resultType(index_);
@@ -239,8 +249,8 @@ std::string FunctionCodegen::run() {
         scratch_->eraseFromParent();
         scratch_ = big;
     }
-    entryB_.CreateBr(body);
-    return {};
+    emitDispatch(body);
+    return error_;
 }
 
 } // namespace quartz::compiler

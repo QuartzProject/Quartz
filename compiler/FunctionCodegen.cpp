@@ -26,7 +26,7 @@ void FunctionCodegen::lower(const ir::Inst& in) {
         llvm::BasicBlock* head = llvm::BasicBlock::Create(U.C, "loop", F_);
         B_.CreateBr(head);
         B_.SetInsertPoint(head);
-        frames_.push_back({Op::Loop, head});
+        frames_.push_back({Op::Loop, head, nullptr, pc_});
         return;
     }
     case Op::If: {
@@ -167,7 +167,7 @@ void FunctionCodegen::lower(const ir::Inst& in) {
         scope(in);
         return;
     case Op::Wait:
-        error_ = "suspension points run in the interpreter";
+        wait(in);
         return;
     }
     error_ = "unsupported instruction";
@@ -206,8 +206,9 @@ void FunctionCodegen::branch(std::uint32_t depth, llvm::Value* cond) {
         B_.SetInsertPoint(cont);
         return;
     }
+    std::uint32_t state = ir::resumeState(f.pc, ir::ResumeAt::LoopHead);
     if (cond == nullptr) {
-        chargeFuel();
+        chargeFuel(state, f.target);
         B_.CreateBr(f.target);
         return;
     }
@@ -215,7 +216,7 @@ void FunctionCodegen::branch(std::uint32_t depth, llvm::Value* cond) {
     llvm::BasicBlock* cont = llvm::BasicBlock::Create(U.C, "cont", F_);
     B_.CreateCondBr(cond, back, cont);
     B_.SetInsertPoint(back);
-    chargeFuel();
+    chargeFuel(state, f.target);
     B_.CreateBr(f.target);
     B_.SetInsertPoint(cont);
 }
@@ -489,6 +490,14 @@ void FunctionCodegen::convert(const ir::Inst& in) {
 void FunctionCodegen::call(const ir::Inst& in) {
     std::uint32_t callee = in.imm;
     const vm::CompiledFunction& target = U.P.functions[callee];
+    bool suspends = U.IR.functions[callee].isSuspend;
+    llvm::BasicBlock* retry = nullptr;
+    if (live_ != nullptr) {
+        // parity: a call whose fuel charge yields runs again, checks included, when the task resumes
+        retry = llvm::BasicBlock::Create(U.C, "call.retry", F_);
+        B_.CreateBr(retry);
+        B_.SetInsertPoint(retry);
+    }
     llvm::Value* nb = gep(base_, static_cast<std::uint64_t>(cf_.argBase) * 8);
     llvm::Value* end = gep(nb, static_cast<std::uint64_t>(target.frameSlots) * 8);
     llvm::Value* stackEnd = ctxField(offsetof(vm::NativeCtx, stackEnd), U.ptr);
@@ -501,7 +510,14 @@ void FunctionCodegen::call(const ir::Inst& in) {
         llvm::Value* limit = ctxField(offsetof(vm::NativeCtx, nativeStackLimit), U.i64);
         trapIf(B_.CreateICmpULT(B_.CreatePtrToInt(fa, U.i64), limit), ir::TrapCode::StackOverflow);
     }
-    chargeFuel();
+    chargeFuel(ir::resumeState(pc_, ir::ResumeAt::BeforeCall), retry);
+    llvm::BasicBlock* site = nullptr;
+    if (suspends) {
+        site = llvm::BasicBlock::Create(U.C, "call.site", F_);
+        B_.CreateBr(site);
+        B_.SetInsertPoint(site);
+        nb = gep(base_, static_cast<std::uint64_t>(cf_.argBase) * 8); // the resume path enters here
+    }
     std::vector<llvm::Value*> args{nb, ctx_, B_.CreateAdd(depth_, constI32(1))};
     for (std::uint32_t i = 0; i < in.argCount; ++i) {
         Values v = read(fn_.args[in.argBegin + i]);
@@ -511,7 +527,23 @@ void FunctionCodegen::call(const ir::Inst& in) {
     llvm::CallInst* r = B_.CreateCall(U.function(callee), args);
     r->setCallingConv(llvm::CallingConv::Fast);
     reloadFuel();
-    failIf(B_.CreateExtractValue(r, 0));
+    if (suspends) {
+        llvm::BasicBlock* failed = llvm::BasicBlock::Create(U.C, "call.failed", F_);
+        llvm::BasicBlock* suspended = llvm::BasicBlock::Create(U.C, "call.suspended", F_);
+        llvm::BasicBlock* ok = llvm::BasicBlock::Create(U.C, "cont", F_);
+        B_.CreateCondBr(B_.CreateExtractValue(r, 0), failed, ok, U.cold);
+        B_.SetInsertPoint(failed);
+        llvm::Value* flag = ctxField(offsetof(vm::NativeCtx, suspending), U.i32);
+        B_.CreateCondBr(B_.CreateICmpNE(flag, constI32(0)), suspended, failBlock_);
+        B_.SetInsertPoint(suspended);
+        std::uint32_t state = ir::resumeState(pc_, ir::ResumeAt::After);
+        std::vector<ir::Reg> kept = live_->kept(pc_, ir::ResumeAt::After);
+        suspendAndReturn(state, kept);
+        addResume(state, std::move(kept), ir::kNoReg, site);
+        B_.SetInsertPoint(ok);
+    } else {
+        failIf(B_.CreateExtractValue(r, 0));
+    }
     if (in.dst != ir::kNoReg) {
         Values out;
         for (std::size_t i = 0; i < regs_[in.dst].size(); ++i) {

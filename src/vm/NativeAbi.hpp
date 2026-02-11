@@ -13,7 +13,7 @@ namespace quartz::vm {
 class Sandbox;
 
 /// Bumped whenever NativeCtx, the runtime symbols or the qc_* signatures change.
-inline constexpr std::uint32_t kNativeAbi = 2;
+inline constexpr std::uint32_t kNativeAbi = 3;
 
 /// Per-invocation state shared by compiled code and the runtime callbacks.
 struct NativeCtx {
@@ -24,7 +24,14 @@ struct NativeCtx {
     std::uint32_t maxDepth;
     std::uint32_t trapFunction;
     std::uint32_t trapLine;
-    std::uint32_t pad;
+    std::uint32_t scopeLevel; // level of the innermost open `scope` region (D36)
+    // Tasks (D56): normal functions called from a task overdraw down to fuelFloor before trapping.
+    std::int64_t fuelFloor;
+    Slot resumeValue;          // what the resumed `wait` produces
+    std::uint32_t saveTop;     // slots of saved frames still to restore; nonzero only while a task resumes
+    std::uint32_t suspending;  // a failed return is a suspension, not a trap
+    std::uint32_t resumeState; // state of the frame record restored last
+    std::uint32_t pad2;
 };
 
 inline constexpr std::uint32_t kNoTrapFunction = 0xFFFFFFFF;

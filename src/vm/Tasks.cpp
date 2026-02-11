@@ -306,9 +306,96 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     }
     std::memset(stack_.data() + fn.paramSlots, 0, (fn.frameSlots - fn.paramSlots) * sizeof(Slot));
     fuel_ = limits_.fuelPerCall;
-    auto r = runTask(id, &fn, fn.code.data(), stack_.data(), calls_.size());
+    task.root = function;
+    task.native = taskEntry(function);
+    task.saved.clear();
+    auto r = task.native != nullptr ? runNativeTask(id, Slot{})
+                                    : runTask(id, &fn, fn.code.data(), stack_.data(), calls_.size());
+    if (task.native == nullptr && tierMode_ == TierMode::Auto) {
+        program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_));
+    }
     heap_.flush();
     return r;
+}
+
+NativeEntry Sandbox::taskEntry(std::uint32_t function) {
+    if (tierMode_ == TierMode::Interpreter) {
+        return nullptr;
+    }
+    NativeEntry e = program_->tier->entry(function);
+    if (e == nullptr && tierMode_ == TierMode::Native) {
+        e = program_->tier->compile(*program_, function);
+    }
+    return e;
+}
+
+std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, Slot resumeValue) {
+    Task& task = tasks_[id];
+    const CompiledFunction& fn = program_->functions[task.root];
+    const Slot* stackEnd = stack_.data() + stack_.size();
+    TaskOutcome out;
+    out.task = id;
+    if (stack_.data() + fn.frameSlots > stackEnd) {
+        fail(ir::TrapCode::StackOverflow);
+        cancel(id);
+        return std::unexpected(trap_);
+    }
+    taskMode_ = true;
+    resetRegions(task.arena.get());
+    for (auto& sc : task.scopes) {
+        regions_.push_back(sc.get());
+        scopeArenas_.push_back(std::move(sc));
+    }
+    task.scopes.clear();
+    cur_ = regions_.back();
+    curLevel_ = static_cast<std::uint32_t>(regions_.size() - 1);
+    inCall_ = true;
+    nativeSaved_ = &task.saved;
+    auto sp = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
+    NativeCtx ctx{this,
+                  fuel_,
+                  stackEnd,
+                  sp > limits_.nativeStackBytes ? sp - limits_.nativeStackBytes : 0,
+                  limits_.maxDepth,
+                  kNoTrapFunction,
+                  0,
+                  curLevel_,
+                  -limits_.fuelPerCall,
+                  resumeValue,
+                  static_cast<std::uint32_t>(task.saved.size()),
+                  0,
+                  0,
+                  0};
+    std::int32_t status = task.native(stack_.data(), &ctx);
+    inCall_ = false;
+    nativeSaved_ = nullptr;
+    fuel_ = ctx.fuel;
+    taskMode_ = false;
+    bool suspended = status != 0 && ctx.suspending != 0;
+    if (suspended) {
+        task.saved.resize(ctx.saveTop);
+        task.scopes = takeScopes();
+    }
+    resetRegions(&arena_);
+    if (suspended) {
+        task.waitDst = suspendDst_;
+        task.waitType = suspendType_;
+        out.kind = suspendKind_;
+        out.value = awaited_;
+        return out;
+    }
+    retired_.push_back(std::move(task.arena));
+    task.live = false;
+    task.saved.clear();
+    if (status != 0) {
+        trap_.function =
+            ctx.trapFunction < program_->functions.size() ? program_->functions[ctx.trapFunction].name : "";
+        trap_.line = ctx.trapLine;
+        return std::unexpected(trap_);
+    }
+    out.kind = TaskOutcome::Kind::Done;
+    out.value = stack_[0];
+    return out;
 }
 
 std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
@@ -320,6 +407,27 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     hostArenas_[hostArena_ ^ 1].reset();
     retired_.clear();
     Task& task = tasks_[id];
+    if (task.native == nullptr) {
+        if (NativeEntry e = taskEntry(task.root); e != nullptr && migrateTask(task, e)) {
+            task.native = e;
+        }
+    }
+    trapped_ = false;
+    if (task.native != nullptr) {
+        if (task.waitDst != 0xFFFF) {
+            cur_ = task.arena.get();
+            curLevel_ = 0;
+            bool ok = copyToArena(task.waitType, &value, &value, Copy::All);
+            cur_ = &arena_;
+            if (!ok) {
+                return std::unexpected(trap_);
+            }
+        }
+        fuel_ = limits_.fuelPerCall;
+        auto r = runNativeTask(id, value);
+        heap_.flush();
+        return r;
+    }
     const Program& P = *program_;
     std::copy(task.slots.begin(), task.slots.end(), stack_.begin());
     std::size_t entryDepth = calls_.size();
@@ -342,10 +450,16 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
         }
     }
     fuel_ = limits_.fuelPerCall;
+    std::uint32_t root = task.root;
     auto r = runTask(id, fn, fn->code.data() + task.pc, R, entryDepth);
+    if (tierMode_ == TierMode::Auto) {
+        program_->tier->charge(program_, root, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_));
+    }
     heap_.flush();
     return r;
 }
+
+bool Sandbox::migrateTask(Task&, NativeEntry) { return false; }
 
 void Sandbox::cancel(std::uint32_t id) {
     if (id < tasks_.size() && tasks_[id].live) {
@@ -357,6 +471,8 @@ void Sandbox::cancel(std::uint32_t id) {
         tasks_[id].live = false;
         tasks_[id].slots.clear();
         tasks_[id].frames.clear();
+        tasks_[id].saved.clear();
+        tasks_[id].native = nullptr;
     }
 }
 

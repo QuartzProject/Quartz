@@ -161,9 +161,15 @@ private:
         std::vector<std::unique_ptr<InvocationArena>> scopes; // regions of `scope`s open at the suspension
         std::uint16_t waitDst = 0xFFFF;
         ir::TypeId waitType = ir::kVoid;
+        std::uint32_t root = 0;
+        NativeEntry native = nullptr; // set when the task runs compiled code (D56)
+        std::vector<Slot> saved;       // native frame records, innermost first
     };
     std::expected<TaskOutcome, Trap> runTask(std::uint32_t id, const CompiledFunction* fn, const Ins* pc, Slot* R,
                                              std::size_t entryDepth);
+    std::expected<TaskOutcome, Trap> runNativeTask(std::uint32_t id, Slot resumeValue);
+    NativeEntry taskEntry(std::uint32_t function);
+    bool migrateTask(Task& task, NativeEntry entry);
     enum class Copy : std::uint8_t { All, StateOnly, NewerThan };
     bool copyToArena(ir::TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level = 0);
     bool promoteInto(ir::TypeId type, Slot* slot, std::uint32_t level);
@@ -205,6 +211,7 @@ private:
     ir::TypeId suspendType_ = ir::kVoid;
     TaskOutcome::Kind suspendKind_ = TaskOutcome::Kind::Wait;
     Slot awaited_{};
+    std::vector<Slot>* nativeSaved_ = nullptr; // save stack of the native task running now
 
     std::shared_ptr<const Program> program_;
     Limits limits_;
