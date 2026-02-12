@@ -207,8 +207,16 @@ void FunctionCodegen::branch(std::uint32_t depth, llvm::Value* cond) {
         return;
     }
     std::uint32_t state = ir::resumeState(f.pc, ir::ResumeAt::LoopHead);
+    // parity: the interpreter reports the line of the instruction before the loop head (Interp.cpp, SHORT_JUMP)
+    std::uint32_t line = line_;
+    for (const auto& [pc, l] : cf_.loopLines) {
+        if (pc == f.pc) {
+            line_ = l;
+        }
+    }
     if (cond == nullptr) {
         chargeFuel(state, f.target);
+        line_ = line;
         B_.CreateBr(f.target);
         return;
     }
@@ -217,6 +225,7 @@ void FunctionCodegen::branch(std::uint32_t depth, llvm::Value* cond) {
     B_.CreateCondBr(cond, back, cont);
     B_.SetInsertPoint(back);
     chargeFuel(state, f.target);
+    line_ = line;
     B_.CreateBr(f.target);
     B_.SetInsertPoint(cont);
 }

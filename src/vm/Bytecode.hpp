@@ -117,6 +117,8 @@ struct CompiledFunction {
     std::uint32_t resultSlots = 0;
     std::uint32_t argBase = 0; // callee frames start here (the outgoing argument area)
     std::vector<std::uint32_t> lines; // source line per instruction
+    /// Per IR loop: the line a fuel trap on its back edge reports (the instruction before the jump target).
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> loopLines;
     std::vector<ir::TypeId> params;
     ir::TypeId result = ir::kVoid;
     bool exported = false;

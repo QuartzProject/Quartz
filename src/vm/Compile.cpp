@@ -102,6 +102,7 @@ public:
         }
         out.code = std::move(code_);
         out.lines = std::move(lines_);
+        out.loopLines = std::move(loopLines_);
         if (tooBig_) {
             out.code.clear();
             out.code.push_back({Opc::Trap, 0, static_cast<std::uint16_t>(ir::TrapCode::Unreachable), 0, 0});
@@ -605,7 +606,10 @@ private:
         }
         switch (in.op) {
         case Op::Block: frames_.push_back({Op::Block, code_.size(), {}, ~std::size_t{0}}); return;
-        case Op::Loop: frames_.push_back({Op::Loop, code_.size(), {}, ~std::size_t{0}}); return;
+        case Op::Loop:
+            loopLines_.emplace_back(static_cast<std::uint32_t>(pc_), lines_.empty() ? 0 : lines_.back());
+            frames_.push_back({Op::Loop, code_.size(), {}, ~std::size_t{0}});
+            return;
         case Op::If: {
             std::size_t j = put(Opc::JmpF, s(in.a));
             frames_.push_back({Op::If, code_.size(), {}, j});
@@ -821,6 +825,7 @@ private:
     std::uint32_t maxOutgoing_ = 0;
     std::vector<Ins> code_;
     std::vector<std::uint32_t> lines_;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> loopLines_;
     std::vector<Frame> frames_;
     std::size_t pc_ = 0;
     std::uint32_t line_ = 0;

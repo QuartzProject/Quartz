@@ -111,6 +111,126 @@ std::shared_ptr<const quartz::vm::Program> withStd(const std::string& name, cons
 
 } // namespace
 
+// Every suspension is logged with its kind and handle, so the sequences must match too.
+Outcome runTask(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mode, std::int64_t fuel) {
+    Outcome o;
+    quartz::vm::Limits limits;
+    limits.tier = mode;
+    limits.fuelPerCall = fuel;
+    quartz::vm::Sandbox sb(p, limits);
+    sb.bind("print", logText, &o.log);
+    sb.bind("i64.ticks", hostTicks);
+    sb.bind("ask", hostTicks);
+    REQUIRE(sb.start().has_value());
+    std::uint32_t f = p->findFunction("main");
+    auto t = sb.spawn(f, {});
+    for (int steps = 0; t && t->kind != quartz::vm::TaskOutcome::Kind::Done && steps < 100'000; ++steps) {
+        o.log += std::format("[{} {}]\n", static_cast<int>(t->kind), t->value.u);
+        Slot v;
+        v.u = t->value.u * 10 + 1;
+        t = sb.resume(t->task, v);
+    }
+    if (t) {
+        o.log += std::format("result {}\n", t->value.i);
+    } else {
+        o.trap = t.error().describe();
+    }
+    if (mode == TierMode::Native) {
+        requireNative(*p, f);
+    }
+    return o;
+}
+
+constexpr std::string_view kAsk = R"(@handle
+@awaitable(i64)
+struct Ask {}
+
+fn ask(n: i64) -> Ask
+)";
+
+constexpr std::string_view kTaskProgram = R"(state Hub {
+    names: [str]
+    total: i64
+}
+
+fn work(n: i64) -> i64 {
+    var s = 0
+    for i in 0..n {
+        s += i % 7
+    }
+    return s
+}
+
+suspend fn child(hub: Hub, k: i64) -> str {
+    var acc = ""
+    var i = 0
+    while i < k {
+        let v = wait ask(i)
+        acc = acc + "{v},"
+        hub.total += work(50 * k)
+        i += 1
+    }
+    var spin = 0
+    while spin < 300 {
+        spin += 1
+    }
+    return acc
+}
+
+suspend fn main(hub: Hub) -> i64 {
+    hub.names.push("a")
+    let first = hub.names[0]
+    let r = child(hub, 3)
+    hub.names[0] = "renamed"
+    at 2.ticks {
+        print("inside {first}")
+    }
+    var n = 0
+    every 1.ticks {
+        scope {
+            let t = "n{n}"
+            hub.names.push(t)
+        }
+        n += 1
+        if n == 4 {
+            break
+        }
+    }
+    print("{r} {hub.total} {hub.names.join("-")} {first} {work(BIG)}")
+    return n
+}
+)";
+
+TEST_CASE("native tasks suspend, yield and print like the interpreter") {
+    for (const auto& e : fs::directory_iterator("tests/programs")) {
+        if (e.path().extension() != ".qz") {
+            continue;
+        }
+        auto p = build(programInputs(e.path()));
+        if (!p->functions[p->findFunction("main")].isSuspend) {
+            continue;
+        }
+        for (std::int64_t fuel : {100'000'000, 40, 97, 1'000}) {
+            CAPTURE(e.path().string());
+            CAPTURE(fuel);
+            CHECK(runTask(p, TierMode::Native, fuel) == runTask(p, TierMode::Interpreter, fuel));
+        }
+    }
+    for (std::string big : {"10", "3000"}) {
+        std::string text(kTaskProgram);
+        text.replace(text.find("BIG"), 3, big);
+        auto p = build({{"task.qz", text}, {"ask.qzi", std::string(kAsk)}, {"<std>.qzi", std::string(kStd)}});
+        for (std::int64_t fuel : {100'000'000, 60, 250, 1'000, 2'500}) {
+            CAPTURE(big);
+            CAPTURE(fuel);
+            Outcome native = runTask(p, TierMode::Native, fuel);
+            Outcome interp = runTask(p, TierMode::Interpreter, fuel);
+            CHECK(native.log == interp.log);
+            CHECK(native.trap == interp.trap);
+        }
+    }
+}
+
 TEST_CASE("native code prints and returns what the interpreter does") {
     for (const auto& e : fs::directory_iterator("tests/programs")) {
         if (e.path().extension() != ".qz") {
@@ -141,6 +261,8 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         "var s = 0\n    for i in 0..100001 { s += i }\n    return s",
         "var s = 0\n    for i in 0..=100000 { s += i }\n    return s",
         "var s = 0\n    for i in 0..100000 { s += i }\n    return s",
+        "var s = 0\n    for i in 0..100000 {\n        s += i % 7\n    }\n    return s",
+        "var s = 0\n    var i = 0\n    while i < 100000 {\n        s += i % 7\n        i += 1\n    }\n    return s",
     };
     for (const char* body : bodies) {
         CAPTURE(body);
@@ -149,7 +271,8 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         auto p = withStd("trap.qz", text);
         Outcome native = runMain(p, TierMode::Native, 100'000);
         Outcome interp = runMain(p, TierMode::Interpreter, 100'000);
-        CHECK(native == interp);
+        CHECK(native.log == interp.log);
+        CHECK(native.trap == interp.trap);
     }
 }
 
