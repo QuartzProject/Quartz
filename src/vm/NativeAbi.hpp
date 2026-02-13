@@ -53,6 +53,18 @@ struct NativeCompileStats {
     double optimizeMs;
     std::uint32_t functions;
     std::uint32_t irInstructions;
+    std::uint32_t cache; // NativeCache* below
+    std::uint32_t pad;
+};
+
+inline constexpr std::uint32_t kNativeCacheOff = 0;
+inline constexpr std::uint32_t kNativeCacheHit = 1;
+inline constexpr std::uint32_t kNativeCacheStored = 2;
+
+/// On-disk object cache (D57): `digest` identifies the program and everything the code generator reads from it.
+struct NativeCacheRequest {
+    const char* dir;
+    std::uint8_t digest[32];
 };
 
 struct NativeJit;
@@ -62,9 +74,11 @@ using QcAbiFn = std::uint32_t (*)();
 /// optLevel 0 to 3; returns null and fills `err` on failure.
 using QcCreateFn = NativeJit* (*)(const NativeSymbol* runtime, std::uint32_t count, int optLevel, char* err,
                                   std::size_t errLen);
-/// `program` is a `const vm::Program*` built by the same Quartz version (checked through kNativeAbi).
-using QcCompileFn = int (*)(NativeJit* jit, const void* program, std::uint32_t function, NativeEntry* entry,
-                            NativeCompileStats* stats, char* err, std::size_t errLen);
+/// `program` is a `const vm::Program*` built by the same Quartz version (checked through kNativeAbi); `cache` may be
+/// null. A JIT serves one program only.
+using QcCompileFn = int (*)(NativeJit* jit, const void* program, std::uint32_t function,
+                            const NativeCacheRequest* cache, NativeEntry* entry, NativeCompileStats* stats, char* err,
+                            std::size_t errLen);
 using QcDestroyFn = void (*)(NativeJit* jit);
 
 } // namespace quartz::vm

@@ -3,10 +3,13 @@
 #include "support/Platform.hpp"
 #include "vm/Bytecode.hpp"
 
+#include "ir/Serialize.hpp"
+
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
 #include <filesystem>
 #include <string_view>
@@ -92,6 +95,7 @@ const Library& library() {
 struct Job {
     std::shared_ptr<const Program> program;
     std::uint32_t function;
+    std::string cacheDir;
 };
 
 /// One low priority background thread compiles hot functions (spec 10.1).
@@ -138,7 +142,7 @@ private:
                 job = std::move(queue_.front());
                 queue_.pop_front();
             }
-            job.program->tier->compile(*job.program, job.function);
+            job.program->tier->compile(*job.program, job.function, job.cacheDir);
         }
     }
 
@@ -173,7 +177,8 @@ TierState::~TierState() {
     }
 }
 
-void TierState::charge(const std::shared_ptr<const Program>& program, std::uint32_t f, std::uint64_t fuelUsed) {
+void TierState::charge(const std::shared_ptr<const Program>& program, std::uint32_t f, std::uint64_t fuelUsed,
+                       const std::string& cacheDir) {
     if (status_[f].load(std::memory_order_relaxed) != kCold) {
         return;
     }
@@ -183,11 +188,11 @@ void TierState::charge(const std::shared_ptr<const Program>& program, std::uint3
     }
     std::uint8_t expected = kCold;
     if (status_[f].compare_exchange_strong(expected, kQueued)) {
-        worker().push({program, f});
+        worker().push({program, f, cacheDir});
     }
 }
 
-NativeEntry TierState::compile(const Program& program, std::uint32_t f) {
+NativeEntry TierState::compile(const Program& program, std::uint32_t f, const std::string& cacheDir) {
     std::lock_guard lock(mutex_);
     if (NativeEntry e = entries_[f].load(std::memory_order_acquire)) {
         return e;
@@ -208,7 +213,16 @@ NativeEntry TierState::compile(const Program& program, std::uint32_t f) {
     }
     NativeEntry e = nullptr;
     NativeCompileStats st{};
-    if (lib.compile(jit_, &program, f, &e, &st, err, sizeof err) != 0 || e == nullptr) {
+    NativeCacheRequest cache{cacheDir.c_str(), {}};
+    if (!cacheDir.empty()) {
+        if (!digested_) {
+            programDigest(program, digest_);
+            digested_ = true;
+        }
+        std::memcpy(cache.digest, digest_, sizeof digest_);
+    }
+    if (lib.compile(jit_, &program, f, cacheDir.empty() ? nullptr : &cache, &e, &st, err, sizeof err) != 0 ||
+        e == nullptr) {
         errors_[f] = err;
         status_[f].store(kFailed);
         if (logEnabled()) {
@@ -221,8 +235,9 @@ NativeEntry TierState::compile(const Program& program, std::uint32_t f) {
     status_[f].store(kReady);
     if (logEnabled()) {
         std::fprintf(
-            stderr, "quartz: compiled '%s' (%u functions, %u IR instructions) in %.2f ms (lower %.2f, opt %.2f)\n",
-            program.functions[f].name.c_str(), st.functions, st.irInstructions, st.totalMs, st.lowerMs, st.optimizeMs);
+            stderr, "quartz: compiled '%s' (%u functions, %u IR instructions) in %.2f ms (lower %.2f, opt %.2f)%s\n",
+            program.functions[f].name.c_str(), st.functions, st.irInstructions, st.totalMs, st.lowerMs, st.optimizeMs,
+            st.cache == kNativeCacheHit ? " from the cache" : st.cache == kNativeCacheStored ? ", cached" : "");
     }
     return e;
 }
@@ -235,6 +250,42 @@ std::string TierState::error(std::uint32_t f) const {
 NativeCompileStats TierState::stats(std::uint32_t f) const {
     std::lock_guard lock(mutex_);
     return f < count_ ? stats_[f] : NativeCompileStats{};
+}
+
+void programDigest(const Program& program, std::uint8_t (&out)[32]) {
+    std::vector<std::uint8_t> bytes = ir::encodePayload(*program.module);
+    auto put = [&](std::uint32_t v) {
+        for (int i = 0; i < 4; ++i) {
+            bytes.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
+        }
+    };
+    put(static_cast<std::uint32_t>(program.functions.size()));
+    for (const CompiledFunction& f : program.functions) {
+        put(f.paramSlots);
+        put(f.frameSlots);
+        put(f.resultSlots);
+        put(f.argBase);
+        put(static_cast<std::uint32_t>(f.code.size()));
+        put(static_cast<std::uint32_t>(f.loopLines.size()));
+        for (const auto& [pc, line] : f.loopLines) {
+            put(pc);
+            put(line);
+        }
+    }
+    put(static_cast<std::uint32_t>(program.importResultSlots.size()));
+    for (std::uint32_t s : program.importResultSlots) {
+        put(s);
+    }
+    ir::ContentHash h = ir::contentHash(bytes);
+    std::memcpy(out, h.data(), sizeof out);
+}
+
+std::string resolveCacheDir(const std::string& requested) {
+    if (!requested.empty()) {
+        return requested;
+    }
+    const char* v = std::getenv("QUARTZ_NATIVE_CACHE");
+    return v != nullptr ? v : "";
 }
 
 std::shared_ptr<TierState> makeTierState(std::size_t functions) { return std::make_shared<TierState>(functions); }

@@ -9,7 +9,7 @@ execute_process(COMMAND ${QUARTZ_LLVM_CONFIG} --link-static --system-libs orcjit
 separate_arguments(QUARTZ_LLVM_LIBS)
 separate_arguments(QUARTZ_LLVM_SYSTEM_LIBS)
 
-add_library(quartz_compiler SHARED Api.cpp Codegen.cpp FunctionCodegen.cpp FunctionSupport.cpp Intrinsics.cpp Loops.cpp
+add_library(quartz_compiler SHARED Api.cpp Cache.cpp Codegen.cpp FunctionCodegen.cpp FunctionSupport.cpp Intrinsics.cpp Loops.cpp
     Tasks.cpp ${PROJECT_SOURCE_DIR}/src/ir/Types.cpp ${PROJECT_SOURCE_DIR}/src/ir/Liveness.cpp)
 target_include_directories(quartz_compiler PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(quartz_compiler SYSTEM PRIVATE ${QUARTZ_LLVM_INCLUDE})

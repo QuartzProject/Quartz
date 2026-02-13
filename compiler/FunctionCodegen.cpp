@@ -83,8 +83,7 @@ void FunctionCodegen::lower(const ir::Inst& in) {
         TypeId t = fn_.regs[in.dst];
         llvm::Value* v = nullptr;
         if (c.kind == ir::ConstKind::Str) {
-            auto addr = reinterpret_cast<std::uintptr_t>(U.P.constants[in.imm].p);
-            v = llvm::ConstantExpr::getIntToPtr(llvm::ConstantInt::get(U.i64, addr), U.ptr);
+            v = U.stringConstant(in.imm);
         } else if (c.kind == ir::ConstKind::Float) {
             double d = std::bit_cast<double>(c.bits);
             v = t == ir::kF32 ? llvm::ConstantFP::get(U.f32, static_cast<double>(static_cast<float>(d)))

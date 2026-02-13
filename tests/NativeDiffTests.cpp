@@ -350,10 +350,12 @@ bool hText(quartz::vm::HostCall& c, void* user) {
     return true;
 }
 
-std::string runPlugin(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mode) {
+std::string runPlugin(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mode,
+                      const std::string& cacheDir = {}) {
     Host host;
     quartz::vm::Limits limits;
     limits.tier = mode;
+    limits.nativeCacheDir = cacheDir;
     quartz::vm::Sandbox sb(p, limits);
     sb.bind("Player.id", hId);
     sb.bind("Player.level", hLevel);
@@ -415,6 +417,33 @@ TEST_CASE("native code runs the benchmark plugin like the interpreter") {
         build({{"host.qzi", readFile("bench/plugin/host.qzi")}, {"plugin.qz", readFile("bench/plugin/plugin.qz")}});
     std::string native = runPlugin(p, TierMode::Native);
     CHECK(native == runPlugin(p, TierMode::Interpreter));
+}
+
+TEST_CASE("cached native objects are reused, and ignored when damaged") {
+    fs::path dir = fs::path(QUARTZ_COMPILER_PATH).parent_path() / "native-cache-test";
+    fs::remove_all(dir);
+    std::vector<quartz::SourceInput> src{{"host.qzi", readFile("bench/plugin/host.qzi")},
+                                         {"plugin.qz", readFile("bench/plugin/plugin.qz")}};
+    std::string expected = runPlugin(build(src), TierMode::Interpreter);
+    const char* names[] = {"init", "onBreak", "onTransfer", "onChat", "onTick", "onSieve"};
+    auto round = [&](std::uint32_t want) {
+        auto p = build(src);
+        CHECK(runPlugin(p, TierMode::Native, dir.string()) == expected);
+        for (const char* f : names) {
+            CAPTURE(f);
+            CHECK(p->tier->stats(p->findFunction(f)).cache == want);
+        }
+    };
+    round(quartz::vm::kNativeCacheStored);
+    round(quartz::vm::kNativeCacheHit);
+    for (const auto& e : fs::directory_iterator(dir)) {
+        std::fstream f(e.path(), std::ios::in | std::ios::out | std::ios::binary);
+        f.seekp(-1, std::ios::end);
+        f.put('\x5a');
+    }
+    round(quartz::vm::kNativeCacheStored);
+    round(quartz::vm::kNativeCacheHit);
+    fs::remove_all(dir);
 }
 
 int main(int argc, char** argv) {

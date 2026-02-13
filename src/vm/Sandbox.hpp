@@ -35,6 +35,7 @@ struct Limits {
     std::uint32_t maxDepth = 4096;
     TierMode tier = TierMode::Default;
     std::size_t nativeStackBytes = 1u << 20; // native stack that recursive compiled code may use
+    std::string nativeCacheDir; // compiled objects on disk (D57); empty reads QUARTZ_NATIVE_CACHE, which may be unset
 };
 
 class Sandbox;
@@ -250,6 +251,7 @@ private:
     std::unique_ptr<stdlib::DataTypes> dataTypes_;
     std::vector<std::unique_ptr<stdlib::NativeCtx>> nativeCtx_;
     TierMode tierMode_ = TierMode::Interpreter;
+    std::string nativeCache_;
 
     friend struct HostCall;
     friend class Interpreter;

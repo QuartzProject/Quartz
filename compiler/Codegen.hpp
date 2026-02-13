@@ -105,6 +105,8 @@ public:
     const std::vector<SlotKind>& kinds(ir::TypeId t);
     llvm::Type* kindType(SlotKind k) const;
     llvm::FunctionCallee runtime(Rt rt);
+    /// A string constant, linked by name (`qzk.<index>`) so cached objects hold no process addresses (D57).
+    llvm::Constant* stringConstant(std::uint32_t index);
     llvm::Function* function(std::uint32_t index);
     llvm::StructType* resultType(std::uint32_t index);
     /// True when a call from `caller` to `callee` can come back to `caller` (a recursion cycle).

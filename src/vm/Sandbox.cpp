@@ -15,6 +15,9 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
     bindings_.resize(program_->module->imports.size());
     calls_.reserve(limits_.maxDepth + 1);
     tierMode_ = resolveTierMode(limits_.tier);
+    if (tierMode_ != TierMode::Interpreter) {
+        nativeCache_ = resolveCacheDir(limits_.nativeCacheDir);
+    }
     resetRegions(&arena_);
     bindNatives();
 }
@@ -50,7 +53,7 @@ bool Sandbox::enter(std::uint32_t function, Slot* base) {
         TierState& tier = *program_->tier;
         NativeEntry e = tier.entry(function);
         if (e == nullptr && tierMode_ == TierMode::Native) {
-            e = tier.compile(*program_, function);
+            e = tier.compile(*program_, function, nativeCache_);
         }
         if (e != nullptr) {
             return runNative(e, function, base);
@@ -339,7 +342,8 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     bool ok = enter(function, stack_.data());
     inCall_ = false;
     if (tierMode_ == TierMode::Auto) {
-        program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_));
+        program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_),
+                               nativeCache_);
     }
     heap_.flush();
     if (!ok) {

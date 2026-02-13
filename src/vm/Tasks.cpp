@@ -313,7 +313,8 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     auto r = task.native != nullptr ? runNativeTask(id, Slot{})
                                     : runTask(id, &fn, fn.code.data(), stack_.data(), calls_.size());
     if (task.native == nullptr && tierMode_ == TierMode::Auto) {
-        program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_));
+        program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_),
+                               nativeCache_);
     }
     heap_.flush();
     return r;
@@ -325,7 +326,7 @@ NativeEntry Sandbox::taskEntry(std::uint32_t function) {
     }
     NativeEntry e = program_->tier->entry(function);
     if (e == nullptr && tierMode_ == TierMode::Native) {
-        e = program_->tier->compile(*program_, function);
+        e = program_->tier->compile(*program_, function, nativeCache_);
     }
     return e;
 }
@@ -454,7 +455,7 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     std::uint32_t root = task.root;
     auto r = runTask(id, fn, fn->code.data() + task.pc, R, entryDepth);
     if (tierMode_ == TierMode::Auto) {
-        program_->tier->charge(program_, root, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_));
+        program_->tier->charge(program_, root, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_), nativeCache_);
     }
     heap_.flush();
     return r;

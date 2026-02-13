@@ -1,12 +1,15 @@
+#include "Cache.hpp"
 #include "Codegen.hpp"
 #include "vm/NativeAbi.hpp"
 
 #include <chrono>
 #include <cstdio>
+#include <expected>
 #include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/StringSaver.h>
@@ -20,7 +23,7 @@ struct quartz::vm::NativeJit {
     std::unique_ptr<llvm::orc::LLJIT> jit;
     std::unique_ptr<llvm::TargetMachine> tm;
     int opt = 1;
-    std::uint64_t serial = 0;
+    const void* program = nullptr; // string constants are defined for this program on its first compile
 };
 
 namespace {
@@ -34,6 +37,40 @@ void setError(char* err, std::size_t len, const std::string& msg) {
 }
 
 std::string take(llvm::Error e) { return llvm::toString(std::move(e)); }
+
+// Code refers to string constants by name (`qzk.<index>`); this program's addresses resolve them.
+llvm::Error defineConstants(NativeJit& jit, const quartz::vm::Program& prog) {
+    if (jit.program == &prog) {
+        return llvm::Error::success();
+    }
+    if (jit.program != nullptr) {
+        return llvm::createStringError("a native JIT serves one program");
+    }
+    llvm::orc::MangleAndInterner mangle(jit.jit->getExecutionSession(), jit.jit->getDataLayout());
+    llvm::orc::SymbolMap symbols;
+    for (std::size_t i = 0; i < prog.module->constants.size(); ++i) {
+        if (prog.module->constants[i].kind == quartz::ir::ConstKind::Str) {
+            symbols[mangle("qzk." + std::to_string(i))] = {llvm::orc::ExecutorAddr::fromPtr(prog.constants[i].p),
+                                                           llvm::JITSymbolFlags::Exported};
+        }
+    }
+    jit.program = &prog;
+    if (symbols.empty()) {
+        return llvm::Error::success();
+    }
+    return jit.jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(std::move(symbols)));
+}
+
+std::expected<std::string, std::string> emitObject(llvm::TargetMachine& tm, llvm::Module& mod) {
+    llvm::SmallVector<char, 0> buf;
+    llvm::raw_svector_ostream os(buf);
+    llvm::legacy::PassManager pm;
+    if (tm.addPassesToEmitFile(pm, os, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+        return std::unexpected("the target cannot emit objects");
+    }
+    pm.run(mod);
+    return std::string(buf.data(), buf.size());
+}
 
 double msSince(std::chrono::steady_clock::time_point t0) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -113,7 +150,8 @@ QC_API NativeJit* qc_create(const quartz::vm::NativeSymbol* runtime, std::uint32
     return out.release();
 }
 
-QC_API int qc_compile(NativeJit* jit, const void* program, std::uint32_t function, quartz::vm::NativeEntry* entry,
+QC_API int qc_compile(NativeJit* jit, const void* program, std::uint32_t function,
+                      const quartz::vm::NativeCacheRequest* cache, quartz::vm::NativeEntry* entry,
                       quartz::vm::NativeCompileStats* stats, char* err, std::size_t errLen) {
     auto t0 = std::chrono::steady_clock::now();
     const auto& prog = *static_cast<const quartz::vm::Program*>(program);
@@ -121,11 +159,40 @@ QC_API int qc_compile(NativeJit* jit, const void* program, std::uint32_t functio
         setError(err, errLen, "no such function");
         return 1;
     }
+    if (auto e = defineConstants(*jit, prog)) {
+        setError(err, errLen, take(std::move(e)));
+        return 1;
+    }
+    std::string name = "qz_entry_" + std::to_string(function);
+    std::string dir = cache != nullptr && cache->dir != nullptr ? cache->dir : "";
+    quartz::compiler::CacheKey key{};
+    if (!dir.empty()) {
+        key = quartz::compiler::cacheKey(cache->digest, function, *jit->tm, jit->opt);
+        if (std::unique_ptr<llvm::MemoryBuffer> obj = quartz::compiler::loadObject(dir, key)) {
+            if (auto ae = jit->jit->addObjectFile(std::move(obj))) {
+                quartz::compiler::dropObject(dir, key);
+                setError(err, errLen, take(std::move(ae)));
+                return 1;
+            }
+            auto sym = jit->jit->lookup(name);
+            if (!sym) {
+                quartz::compiler::dropObject(dir, key);
+                setError(err, errLen, take(sym.takeError()));
+                return 1;
+            }
+            *entry = sym->toPtr<quartz::vm::NativeEntry>();
+            if (stats != nullptr) {
+                *stats = {};
+                stats->totalMs = msSince(t0);
+                stats->cache = quartz::vm::kNativeCacheHit;
+            }
+            return 0;
+        }
+    }
     auto ctx = std::make_unique<llvm::LLVMContext>();
     auto mod = std::make_unique<llvm::Module>("quartz", *ctx);
     mod->setDataLayout(jit->jit->getDataLayout());
     mod->setTargetTriple(jit->jit->getTargetTriple());
-    std::string name = "qz_entry_" + std::to_string(function) + "_" + std::to_string(jit->serial++);
     quartz::compiler::UnitCodegen unit(*ctx, *mod, prog);
     std::string e = unit.build(function, name);
     if (!e.empty()) {
@@ -151,7 +218,20 @@ QC_API int qc_compile(NativeJit* jit, const void* program, std::uint32_t functio
     if (std::getenv("QUARTZ_DUMP_LLVM") != nullptr) {
         mod->print(llvm::errs(), nullptr);
     }
-    if (auto ae = jit->jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod), std::move(ctx)))) {
+    std::uint32_t cached = quartz::vm::kNativeCacheOff;
+    if (!dir.empty()) {
+        auto obj = emitObject(*jit->tm, *mod);
+        if (!obj) {
+            setError(err, errLen, obj.error());
+            return 1;
+        }
+        quartz::compiler::storeObject(dir, key, *obj);
+        cached = quartz::vm::kNativeCacheStored;
+        if (auto ae = jit->jit->addObjectFile(llvm::MemoryBuffer::getMemBufferCopy(*obj, name))) {
+            setError(err, errLen, take(std::move(ae)));
+            return 1;
+        }
+    } else if (auto ae = jit->jit->addIRModule(llvm::orc::ThreadSafeModule(std::move(mod), std::move(ctx)))) {
         setError(err, errLen, take(std::move(ae)));
         return 1;
     }
@@ -167,6 +247,7 @@ QC_API int qc_compile(NativeJit* jit, const void* program, std::uint32_t functio
         stats->optimizeMs = optMs;
         stats->functions = unit.loweredFunctions();
         stats->irInstructions = unit.loweredInstructions();
+        stats->cache = cached;
     }
     return 0;
 }

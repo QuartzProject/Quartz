@@ -273,6 +273,14 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
     return callee;
 }
 
+llvm::Constant* UnitCodegen::stringConstant(std::uint32_t index) {
+    std::string name = "qzk." + std::to_string(index);
+    if (llvm::GlobalVariable* g = M.getNamedGlobal(name)) {
+        return g;
+    }
+    return new llvm::GlobalVariable(M, i8, true, llvm::GlobalValue::ExternalLinkage, nullptr, name);
+}
+
 llvm::StructType* UnitCodegen::resultType(std::uint32_t index) {
     if (results_[index] == nullptr) {
         std::vector<llvm::Type*> fields{i1};
