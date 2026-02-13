@@ -1,6 +1,7 @@
 #include "vm/Bytecode.hpp"
 
 #include "vm/Tier.hpp"
+#include "ir/Liveness.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -61,6 +62,9 @@ public:
         }
         regSlots_ = next;
         origOffset_ = offset_;
+        if (fn_.isSuspend) {
+            live_ = std::make_unique<ir::Liveness>(fn_);
+        }
         analyze();
         for (pc_ = 0; pc_ < fn_.code.size(); ++pc_) {
             if (skip_ > 0) {
@@ -103,6 +107,7 @@ public:
         out.code = std::move(code_);
         out.lines = std::move(lines_);
         out.loopLines = std::move(loopLines_);
+        out.resumeRecords = std::move(resumeRecords_);
         if (tooBig_) {
             out.code.clear();
             out.code.push_back({Opc::Trap, 0, static_cast<std::uint16_t>(ir::TrapCode::Unreachable), 0, 0});
@@ -708,6 +713,9 @@ private:
             std::uint32_t base = outgoing(argsOf(in));
             std::uint32_t dst = in.dst != ir::kNoReg ? offset_[in.dst] : 0;
             put(in.op == Op::Call ? Opc::Call : Opc::CallHost, dst, in.imm, base);
+            if (in.op == Op::Call && prog_.module->functions[in.imm].isSuspend) {
+                recordResume();
+            }
             return;
         }
         case Op::Intrinsic: intrinsic(in); return;
@@ -798,6 +806,7 @@ private:
         case Op::Wait:
             put(Opc::Wait, s(in.a), in.dst == ir::kNoReg ? 0xFFFF : s(in.dst), in.imm);
             word(in.dst == ir::kNoReg ? ir::kVoid : ty(in.dst));
+            recordResume();
             return;
         case Op::EnumField: {
             const ir::VariantInfo& v = types.info(ty(in.a)).variants[in.imm];
@@ -826,6 +835,19 @@ private:
     std::vector<Ins> code_;
     std::vector<std::uint32_t> lines_;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> loopLines_;
+    std::unique_ptr<ir::Liveness> live_;
+    std::vector<CompiledFunction::ResumeRecord> resumeRecords_;
+
+    // Where each register kept by the native frame record lives in this interpreter frame (D56).
+    void recordResume() {
+        CompiledFunction::ResumeRecord r;
+        r.resumePc = static_cast<std::uint32_t>(code_.size());
+        r.state = ir::resumeState(pc_, ir::ResumeAt::After);
+        for (Reg k : live_->kept(pc_, ir::ResumeAt::After)) {
+            r.slots.emplace_back(offset_[k], n(k));
+        }
+        resumeRecords_.push_back(std::move(r));
+    }
     std::vector<Frame> frames_;
     std::size_t pc_ = 0;
     std::uint32_t line_ = 0;

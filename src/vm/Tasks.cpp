@@ -223,6 +223,7 @@ std::expected<TaskOutcome, Trap> Sandbox::runTask(std::uint32_t id, const Compil
         task.base = static_cast<std::uint32_t>(suspendR_ - stack_.data());
         task.waitDst = suspendDst_;
         task.waitType = suspendType_;
+        task.kind = suspendKind_;
         auto end = static_cast<std::size_t>(suspendR_ + suspendFn_->frameSlots - stack_.data());
         task.slots.assign(stack_.begin(), stack_.begin() + static_cast<std::ptrdiff_t>(end));
         out.kind = suspendKind_;
@@ -459,7 +460,48 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     return r;
 }
 
-bool Sandbox::migrateTask(Task&, NativeEntry) { return false; }
+// An interpreted task moves to compiled code at a `wait` once its root is compiled (D56): each saved frame becomes the
+// record the native frame would have written at the same point. Fuel yields stay interpreted until the next wait.
+bool Sandbox::migrateTask(Task& task, NativeEntry) {
+    if (task.kind == TaskOutcome::Kind::Yield || task.kind == TaskOutcome::Kind::Done) {
+        return false;
+    }
+    const Program& P = *program_;
+    std::vector<Slot> saved;
+    auto add = [&](std::uint32_t function, std::uint32_t pc, std::uint32_t base) {
+        const CompiledFunction& f = P.functions[function];
+        for (const CompiledFunction::ResumeRecord& r : f.resumeRecords) {
+            if (r.resumePc != pc) {
+                continue;
+            }
+            std::size_t n = 0;
+            for (const auto& [off, slots] : r.slots) {
+                if (static_cast<std::size_t>(base) + off + slots > task.slots.size()) {
+                    return false;
+                }
+                saved.insert(saved.end(), task.slots.begin() + base + off, task.slots.begin() + base + off + slots);
+                n += slots;
+            }
+            Slot meta;
+            meta.u = static_cast<std::uint64_t>(r.state) << 32 | n;
+            saved.push_back(meta);
+            return true;
+        }
+        return false;
+    };
+    if (!add(task.function, task.pc, task.base)) {
+        return false;
+    }
+    for (std::size_t i = task.frames.size(); i-- > 0;) {
+        if (!add(task.frames[i].function, task.frames[i].pc, task.frames[i].base)) {
+            return false;
+        }
+    }
+    task.saved = std::move(saved);
+    task.slots = {};
+    task.frames = {};
+    return true;
+}
 
 void Sandbox::cancel(std::uint32_t id) {
     if (id < tasks_.size() && tasks_[id].live) {
@@ -474,6 +516,10 @@ void Sandbox::cancel(std::uint32_t id) {
         tasks_[id].saved.clear();
         tasks_[id].native = nullptr;
     }
+}
+
+bool Sandbox::taskNative(std::uint32_t task) const {
+    return task < tasks_.size() && tasks_[task].live && tasks_[task].native != nullptr;
 }
 
 std::size_t Sandbox::liveTasks() const {

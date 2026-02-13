@@ -8,6 +8,7 @@
 #include <format>
 #include <fstream>
 #include <sstream>
+#include <thread>
 
 namespace {
 
@@ -124,8 +125,15 @@ Outcome runTask(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
     REQUIRE(sb.start().has_value());
     std::uint32_t f = p->findFunction("main");
     auto t = sb.spawn(f, {});
+    bool migrated = false;
     for (int steps = 0; t && t->kind != quartz::vm::TaskOutcome::Kind::Done && steps < 100'000; ++steps) {
         o.log += std::format("[{} {}]\n", static_cast<int>(t->kind), t->value.u);
+        if (mode == TierMode::Auto) {
+            for (int i = 0; i < 2000 && p->tier->entry(f) == nullptr; ++i) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            migrated = migrated || sb.taskNative(t->task);
+        }
         Slot v;
         v.u = t->value.u * 10 + 1;
         t = sb.resume(t->task, v);
@@ -137,6 +145,9 @@ Outcome runTask(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
     }
     if (mode == TierMode::Native) {
         requireNative(*p, f);
+    }
+    if (mode == TierMode::Auto) {
+        CHECK(migrated);
     }
     return o;
 }
@@ -229,6 +240,16 @@ TEST_CASE("native tasks suspend, yield and print like the interpreter") {
             CHECK(native.trap == interp.trap);
         }
     }
+}
+
+TEST_CASE("interpreted tasks move to native code at a wait and behave the same") {
+    std::string text(kTaskProgram);
+    text.replace(text.find("BIG"), 3, "10");
+    auto p = build({{"task.qz", text}, {"ask.qzi", std::string(kAsk)}, {"<std>.qzi", std::string(kStd)}});
+    Outcome interp = runTask(p, TierMode::Interpreter, 100'000'000);
+    Outcome moved = runTask(p, TierMode::Auto, 100'000'000);
+    CHECK(moved.log == interp.log);
+    CHECK(moved.trap == interp.trap);
 }
 
 TEST_CASE("native code prints and returns what the interpreter does") {
@@ -398,6 +419,7 @@ TEST_CASE("native code runs the benchmark plugin like the interpreter") {
 
 int main(int argc, char** argv) {
     setenv("QUARTZ_COMPILER_LIB", QUARTZ_COMPILER_PATH, 1);
+    setenv("QUARTZ_TIER_THRESHOLD", "1", 1);
     doctest::Context ctx(argc, argv);
     return ctx.run();
 }

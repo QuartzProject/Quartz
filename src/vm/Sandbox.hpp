@@ -81,6 +81,8 @@ public:
     std::expected<TaskOutcome, Trap> resume(std::uint32_t task, Slot value = {});
     void cancel(std::uint32_t task);
     [[nodiscard]] std::size_t liveTasks() const;
+    /// True when the task runs compiled code (spawned native, or moved there at a `wait`).
+    [[nodiscard]] bool taskNative(std::uint32_t task) const;
 
     [[nodiscard]] const Program& program() const { return *program_; }
 
@@ -162,6 +164,7 @@ private:
         std::uint16_t waitDst = 0xFFFF;
         ir::TypeId waitType = ir::kVoid;
         std::uint32_t root = 0;
+        TaskOutcome::Kind kind = TaskOutcome::Kind::Wait; // of the last suspension
         NativeEntry native = nullptr; // set when the task runs compiled code (D56)
         std::vector<Slot> saved;       // native frame records, innermost first
     };

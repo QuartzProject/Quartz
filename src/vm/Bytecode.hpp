@@ -119,6 +119,13 @@ struct CompiledFunction {
     std::vector<std::uint32_t> lines; // source line per instruction
     /// Per IR loop: the line a fuel trap on its back edge reports (the instruction before the jump target).
     std::vector<std::pair<std::uint32_t, std::uint32_t>> loopLines;
+    /// Suspend fns: per `wait` and suspend call, the resume pc, the native state and the (offset, slots) it keeps.
+    struct ResumeRecord {
+        std::uint32_t resumePc;
+        std::uint32_t state;
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> slots;
+    };
+    std::vector<ResumeRecord> resumeRecords;
     std::vector<ir::TypeId> params;
     ir::TypeId result = ir::kVoid;
     bool exported = false;
