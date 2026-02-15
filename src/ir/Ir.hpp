@@ -151,6 +151,8 @@ struct Constant {
     std::string text;       // Str
 };
 
+enum class Inlining : std::uint8_t { Default, Always, Never };
+
 struct Function {
     std::string name;
     std::vector<TypeId> regs;   // regs[0 .. paramCount) are the parameters
@@ -160,6 +162,7 @@ struct Function {
     std::vector<Reg> args;      // argument lists referenced by Inst::argBegin
     bool exported = false;      // callable by the host
     bool isSuspend = false;
+    Inlining inlining = Inlining::Default; // `@inline` / `@noinline`, hints for the native tier (D58)
 };
 
 struct HostImport {

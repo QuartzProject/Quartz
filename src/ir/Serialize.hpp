@@ -13,7 +13,7 @@
 namespace quartz::ir {
 
 /// Bumped on any change to the encoding, to the opcode, intrinsic or trap numbering, or to the builtin types.
-inline constexpr std::uint16_t kFormatVersion = 4;
+inline constexpr std::uint16_t kFormatVersion = 5;
 inline constexpr std::size_t kHeaderSize = 44;
 inline constexpr std::size_t kSignatureEntrySize = 96;
 inline constexpr std::uint8_t kMaxSignatures = 16;

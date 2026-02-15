@@ -80,7 +80,8 @@ std::string print(const Module& m) {
         for (std::uint32_t p = 0; p < fn.paramCount; ++p) {
             out += std::format("{}r{}: {}", p ? ", " : "", p, m.types.name(fn.regs[p]));
         }
-        out += std::format(") -> {}{}\n", m.types.name(fn.result), fn.exported ? " export" : "");
+        const char* inl = fn.inlining == Inlining::Always ? " inline" : fn.inlining == Inlining::Never ? " noinline" : "";
+        out += std::format(") -> {}{}{}\n", m.types.name(fn.result), fn.exported ? " export" : "", inl);
         int indent = 1;
         for (const Inst& in : fn.code) {
             if (in.op == Op::End || in.op == Op::Else) {

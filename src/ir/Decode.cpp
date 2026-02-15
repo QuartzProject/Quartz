@@ -338,6 +338,13 @@ private:
         }
         f.exported = (flags & bin::kFnExported) != 0;
         f.isSuspend = (flags & bin::kFnSuspend) != 0;
+        if ((flags & bin::kFnInline) != 0 && (flags & bin::kFnNoInline) != 0) {
+            r.fail("function both inline and noinline");
+            return;
+        }
+        f.inlining = (flags & bin::kFnInline) != 0     ? Inlining::Always
+                     : (flags & bin::kFnNoInline) != 0 ? Inlining::Never
+                                                       : Inlining::Default;
         f.paramCount = r.u32();
         f.result = r.u32();
         std::uint32_t regs = r.count(limits_.maxRegisters);

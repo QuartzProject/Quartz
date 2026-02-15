@@ -23,7 +23,9 @@ inline constexpr std::uint8_t kInstMask = 31;
 
 inline constexpr std::uint8_t kFnExported = 1;
 inline constexpr std::uint8_t kFnSuspend = 2;
-inline constexpr std::uint8_t kFnMask = 3;
+inline constexpr std::uint8_t kFnInline = 4;
+inline constexpr std::uint8_t kFnNoInline = 8;
+inline constexpr std::uint8_t kFnMask = 15;
 
 inline std::uint64_t zigzag(std::int64_t v) {
     return (static_cast<std::uint64_t>(v) << 1) ^ static_cast<std::uint64_t>(v >> 63);

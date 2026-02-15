@@ -66,6 +66,13 @@ void Checker::checkAttributes(FnInfo* fn) {
             diags_.warning(a.span, std::format("unknown attribute '@{}'", name));
             continue;
         }
+        if (name == "inline" || name == "noinline") {
+            ir::Inlining want = name == "inline" ? ir::Inlining::Always : ir::Inlining::Never;
+            if (fn->inlining != ir::Inlining::Default && fn->inlining != want) {
+                diags_.error(a.span, "a function cannot be both '@inline' and '@noinline'");
+            }
+            fn->inlining = want;
+        }
         if (!exported) {
             continue;
         }

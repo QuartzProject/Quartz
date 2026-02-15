@@ -247,6 +247,7 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     }
     out.result = T(fn->result);
     out.isSuspend = fn->isSuspend;
+    out.inlining = fn->inlining;
     out.exported = fn->owner == kError;
     scopes_.clear();
     for (sema::Local* l : fn->paramLocals) {

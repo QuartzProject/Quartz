@@ -310,6 +310,12 @@ llvm::Function* UnitCodegen::function(std::uint32_t index) {
     f->addFnAttr(llvm::Attribute::NoUnwind);
     f->addParamAttr(0, llvm::Attribute::NoAlias);
     f->addParamAttr(1, llvm::Attribute::NoAlias);
+    if (fn.inlining == ir::Inlining::Never) {
+        f->addFnAttr(llvm::Attribute::NoInline);
+    } else if (fn.inlining == ir::Inlining::Always) {
+        // A recursive function cannot be inlined into itself: there `@inline` stays a hint.
+        f->addFnAttr(recursive(index, index) ? llvm::Attribute::InlineHint : llvm::Attribute::AlwaysInline);
+    }
     functions_[index] = f;
     return f;
 }

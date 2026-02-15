@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ir/Ir.hpp"
 #include "ir/Types.hpp"
 #include "support/Diagnostics.hpp"
 #include "support/Interner.hpp"
@@ -48,6 +49,7 @@ struct FnInfo {
     bool hasSelf = false;
     bool isHost = false;         // declared without a body in a `.qzi`
     bool isSuspend = false;
+    ir::Inlining inlining = ir::Inlining::Default;
     bool isProperty = false; // `@property` host method read without parentheses
     std::vector<TypeId> params;  // includes the receiver first when hasSelf
     std::vector<Symbol> paramNames;

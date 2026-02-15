@@ -124,7 +124,10 @@ void writeInst(Writer& w, const Inst& in) {
 
 void writeFunction(Writer& w, const Function& f) {
     w.str(f.name);
-    std::uint8_t flags = (f.exported ? bin::kFnExported : 0) | (f.isSuspend ? bin::kFnSuspend : 0);
+    std::uint8_t flags = (f.exported ? bin::kFnExported : 0) | (f.isSuspend ? bin::kFnSuspend : 0) |
+                         (f.inlining == Inlining::Always  ? bin::kFnInline
+                          : f.inlining == Inlining::Never ? bin::kFnNoInline
+                                                          : 0);
     w.u8(flags);
     w.u32(f.paramCount);
     w.u32(f.result);
