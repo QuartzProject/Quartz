@@ -68,8 +68,16 @@ bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
         return fail(ir::TrapCode::StackOverflow);
     }
     auto sp = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
-    NativeCtx ctx{this, fuel_, stackEnd, sp > limits_.nativeStackBytes ? sp - limits_.nativeStackBytes : 0,
-                  limits_.maxDepth, kNoTrapFunction, 0, curLevel_, 0, Slot{}, 0, 0, 0, 0};
+    // The task fields stay unset: only code compiled for a task reads them.
+    NativeCtx ctx;
+    ctx.sandbox = this;
+    ctx.fuel = fuel_;
+    ctx.stackEnd = stackEnd;
+    ctx.nativeStackLimit = sp > limits_.nativeStackBytes ? sp - limits_.nativeStackBytes : 0;
+    ctx.maxDepth = limits_.maxDepth;
+    ctx.trapFunction = kNoTrapFunction;
+    ctx.trapLine = 0;
+    ctx.scopeLevel = curLevel_;
     std::int32_t status = entry(base, &ctx);
     fuel_ = ctx.fuel;
     if (status != 0) {

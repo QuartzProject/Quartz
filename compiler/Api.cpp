@@ -112,6 +112,9 @@ QC_API NativeJit* qc_create(const quartz::vm::NativeSymbol* runtime, std::uint32
         return nullptr;
     }
     jtmb->setCodeGenOptLevel(optLevel == 0 ? llvm::CodeGenOptLevel::None : llvm::CodeGenOptLevel::Default);
+    // Objects emitted for the cache must link wherever JITLink places them, like the ones LLJIT compiles itself.
+    jtmb->setRelocationModel(llvm::Reloc::PIC_);
+    jtmb->setCodeModel(llvm::CodeModel::Small);
     // parity: never fuse a*b+c into an FMA, the interpreter rounds twice (D24)
     jtmb->getOptions().AllowFPOpFusion = llvm::FPOpFusion::Strict;
     auto tm = jtmb->createTargetMachine();

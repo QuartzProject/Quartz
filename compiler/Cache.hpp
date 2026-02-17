@@ -18,7 +18,7 @@ namespace quartz::compiler {
 
 using CacheKey = std::array<std::uint8_t, 32>;
 
-/// Program digest, function, compiler library, LLVM version, target CPU and features, and optimization level.
+/// Program digest (which also covers the compiler library file), function, LLVM version, CPU, features and opt level.
 CacheKey cacheKey(const std::uint8_t (&digest)[32], std::uint32_t function, const llvm::TargetMachine& tm, int opt);
 
 /// The object stored under `key`; null when missing, truncated, corrupt or written for another key.

@@ -44,6 +44,7 @@ struct Library {
     QcCompileFn compile = nullptr;
     QcDestroyFn destroy = nullptr;
     std::string error;
+    std::string identity; // size and write time of the library file, part of every native cache key (D57)
     int optLevel = 1;
     std::uint64_t threshold = kDefaultThreshold;
 
@@ -61,6 +62,12 @@ struct Library {
         for (const std::string& c : candidates) {
             handle = support::DynamicLibrary::open(c, error);
             if (handle) {
+                std::error_code ec;
+                auto size = std::filesystem::file_size(c, ec);
+                auto time = std::filesystem::last_write_time(c, ec);
+                if (!ec) {
+                    identity = c + ":" + std::to_string(size) + ":" + std::to_string(time.time_since_epoch().count());
+                }
                 break;
             }
         }
@@ -276,6 +283,7 @@ void programDigest(const Program& program, std::uint8_t (&out)[32]) {
     for (std::uint32_t s : program.importResultSlots) {
         put(s);
     }
+    bytes.insert(bytes.end(), library().identity.begin(), library().identity.end());
     ir::ContentHash h = ir::contentHash(bytes);
     std::memcpy(out, h.data(), sizeof out);
 }

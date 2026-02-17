@@ -4,15 +4,12 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <filesystem>
 #include <fstream>
 #include <llvm/Config/llvm-config.h>
 #include <llvm/Support/BLAKE3.h>
 #include <llvm/Target/TargetMachine.h>
 #include <random>
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace quartz::compiler {
 
@@ -23,21 +20,6 @@ constexpr char kMagic[4] = {'Q', 'Z', 'N', 'C'};
 constexpr std::uint32_t kCacheVersion = 1;
 // magic, version, key, object length, object hash
 constexpr std::size_t kHeader = 4 + 4 + 32 + 8 + 32;
-
-// The library file's size and modification time: a rebuilt compiler never reuses objects of the old one.
-std::string libraryIdentity() {
-    static const std::string id = [] {
-        Dl_info info{};
-        struct stat st{};
-        if (dladdr(reinterpret_cast<void*>(&libraryIdentity), &info) == 0 || info.dli_fname == nullptr ||
-            stat(info.dli_fname, &st) != 0) {
-            return std::string("unknown");
-        }
-        return std::to_string(st.st_size) + ":" + std::to_string(st.st_mtim.tv_sec) + "." +
-               std::to_string(st.st_mtim.tv_nsec);
-    }();
-    return id;
-}
 
 std::string hex(const CacheKey& key) {
     static constexpr char kDigits[] = "0123456789abcdef";
@@ -92,7 +74,6 @@ CacheKey cacheKey(const std::uint8_t (&digest)[32], std::uint32_t function, cons
     put32(nums, static_cast<std::uint32_t>(opt));
     field(h, nums);
     field(h, LLVM_VERSION_STRING);
-    field(h, libraryIdentity());
     field(h, tm.getTargetTriple().str());
     field(h, tm.getTargetCPU());
     field(h, tm.getTargetFeatureString());
@@ -137,7 +118,8 @@ void storeObject(const std::string& dir, const CacheKey& key, llvm::StringRef ob
     out.append(object.data(), object.size());
     std::filesystem::path path = entryPath(dir, key);
     std::filesystem::path tmp = path;
-    tmp += ".tmp" + std::to_string(getpid()) + "." + std::to_string(std::random_device{}());
+    std::random_device rd;
+    tmp += ".tmp" + std::to_string(rd()) + std::to_string(rd());
     {
         std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
         f.write(out.data(), static_cast<std::streamsize>(out.size()));
