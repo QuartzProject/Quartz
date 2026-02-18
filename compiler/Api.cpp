@@ -17,7 +17,11 @@
 #include <llvm/Target/TargetMachine.h>
 #include <mutex>
 
+#ifdef _WIN32
+#define QC_API extern "C" __declspec(dllexport)
+#else
 #define QC_API extern "C" __attribute__((visibility("default")))
+#endif
 
 struct quartz::vm::NativeJit {
     std::unique_ptr<llvm::orc::LLJIT> jit;

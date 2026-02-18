@@ -64,7 +64,7 @@ int runFmt(int argc, char** argv) {
     for (const fs::path& path : files) {
         std::ifstream in(path, std::ios::binary);
         if (!in) {
-            std::fprintf(stderr, "cannot read %s\n", path.c_str());
+            std::fprintf(stderr, "cannot read %s\n", path.string().c_str());
             status = 1;
             continue;
         }
@@ -81,14 +81,14 @@ int runFmt(int argc, char** argv) {
             continue;
         }
         if (check) {
-            std::printf("%s\n", path.c_str());
+            std::printf("%s\n", path.string().c_str());
             status = 1;
             continue;
         }
         std::ofstream file(path, std::ios::binary | std::ios::trunc);
         file << *out;
         if (!file) {
-            std::fprintf(stderr, "cannot write %s\n", path.c_str());
+            std::fprintf(stderr, "cannot write %s\n", path.string().c_str());
             status = 1;
         }
     }

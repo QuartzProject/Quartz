@@ -446,9 +446,21 @@ TEST_CASE("cached native objects are reused, and ignored when damaged") {
     fs::remove_all(dir);
 }
 
+namespace {
+
+void setEnv(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
-    setenv("QUARTZ_COMPILER_LIB", QUARTZ_COMPILER_PATH, 1);
-    setenv("QUARTZ_TIER_THRESHOLD", "1", 1);
+    setEnv("QUARTZ_COMPILER_LIB", QUARTZ_COMPILER_PATH);
+    setEnv("QUARTZ_TIER_THRESHOLD", "1");
     doctest::Context ctx(argc, argv);
     return ctx.run();
 }
