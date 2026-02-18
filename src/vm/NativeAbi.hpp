@@ -25,7 +25,7 @@ struct NativeCtx {
     std::uint32_t trapFunction;
     std::uint32_t trapLine;
     std::uint32_t scopeLevel; // level of the innermost open `scope` region (D36)
-    // Tasks (D56): normal functions called from a task overdraw down to fuelFloor before trapping.
+    // Tasks (D69): normal functions called from a task overdraw down to fuelFloor before trapping.
     std::int64_t fuelFloor;
     Slot resumeValue;          // what the resumed `wait` produces
     std::uint32_t saveTop;     // slots of saved frames still to restore; nonzero only while a task resumes
@@ -61,7 +61,7 @@ inline constexpr std::uint32_t kNativeCacheOff = 0;
 inline constexpr std::uint32_t kNativeCacheHit = 1;
 inline constexpr std::uint32_t kNativeCacheStored = 2;
 
-/// On-disk object cache (D57): `digest` identifies the program and everything the code generator reads from it.
+/// On-disk object cache (D70): `digest` identifies the program and everything the code generator reads from it.
 struct NativeCacheRequest {
     const char* dir;
     std::uint8_t digest[32];

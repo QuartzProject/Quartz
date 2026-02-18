@@ -35,7 +35,7 @@ struct Limits {
     std::uint32_t maxDepth = 4096;
     TierMode tier = TierMode::Default;
     std::size_t nativeStackBytes = 1u << 20; // native stack that recursive compiled code may use
-    std::string nativeCacheDir; // compiled objects on disk (D57); empty reads QUARTZ_NATIVE_CACHE, which may be unset
+    std::string nativeCacheDir; // compiled objects on disk (D70); empty reads QUARTZ_NATIVE_CACHE, which may be unset
 };
 
 class Sandbox;
@@ -166,7 +166,7 @@ private:
         ir::TypeId waitType = ir::kVoid;
         std::uint32_t root = 0;
         TaskOutcome::Kind kind = TaskOutcome::Kind::Wait; // of the last suspension
-        NativeEntry native = nullptr; // set when the task runs compiled code (D56)
+        NativeEntry native = nullptr; // set when the task runs compiled code (D69)
         std::vector<Slot> saved;       // native frame records, innermost first
     };
     std::expected<TaskOutcome, Trap> runTask(std::uint32_t id, const CompiledFunction* fn, const Ins* pc, Slot* R,

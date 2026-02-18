@@ -8,7 +8,7 @@
 
 namespace quartz::compiler {
 
-// A suspend fn is a state machine (D56): a suspension stores the registers still live into a record on the task's
+// A suspend fn is a state machine (D69): a suspension stores the registers still live into a record on the task's
 // save stack and returns as failed with ctx->suspending set; on resume the entry pops the record and jumps back.
 
 void FunctionCodegen::zeroRefRegisters() {

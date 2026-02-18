@@ -9,7 +9,7 @@ quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/Op
 quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/Migrate.cpp vm/Math.cpp vm/ReprC.cpp vm/Interp.cpp
     std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Binary.cpp
     DEPS quartz_ir quartz_zstd)
-# Suspension-point liveness, shared with the native compiler (D56).
+# Suspension-point liveness, shared with the native compiler (D69).
 target_sources(quartz_ir PRIVATE ir/Liveness.cpp)
 # The native tier loads libquartz_compiler at run time (D15); the core never links LLVM.
 target_sources(quartz_vm PRIVATE vm/Tier.cpp vm/NativeRuntime.cpp)

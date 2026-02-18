@@ -838,7 +838,7 @@ private:
     std::unique_ptr<ir::Liveness> live_;
     std::vector<CompiledFunction::ResumeRecord> resumeRecords_;
 
-    // Where each register kept by the native frame record lives in this interpreter frame (D56).
+    // Where each register kept by the native frame record lives in this interpreter frame (D69).
     void recordResume() {
         CompiledFunction::ResumeRecord r;
         r.resumePc = static_cast<std::uint32_t>(code_.size());

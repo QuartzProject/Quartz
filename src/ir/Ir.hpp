@@ -162,7 +162,7 @@ struct Function {
     std::vector<Reg> args;      // argument lists referenced by Inst::argBegin
     bool exported = false;      // callable by the host
     bool isSuspend = false;
-    Inlining inlining = Inlining::Default; // `@inline` / `@noinline`, hints for the native tier (D58)
+    Inlining inlining = Inlining::Default; // `@inline` / `@noinline`, hints for the native tier (D71)
 };
 
 struct HostImport {

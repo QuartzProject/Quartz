@@ -31,7 +31,7 @@ public:
     /// Adds the work of one interpreted call and queues a background compile once the function is hot.
     void charge(const std::shared_ptr<const Program>& program, std::uint32_t f, std::uint64_t fuelUsed,
                 const std::string& cacheDir = {});
-    /// Compiles on the calling thread, or loads the object from `cacheDir` (D57); null when it cannot be compiled.
+    /// Compiles on the calling thread, or loads the object from `cacheDir` (D70); null when it cannot be compiled.
     NativeEntry compile(const Program& program, std::uint32_t f, const std::string& cacheDir = {});
     [[nodiscard]] std::string error(std::uint32_t f) const;
     [[nodiscard]] NativeCompileStats stats(std::uint32_t f) const;

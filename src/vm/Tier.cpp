@@ -44,7 +44,7 @@ struct Library {
     QcCompileFn compile = nullptr;
     QcDestroyFn destroy = nullptr;
     std::string error;
-    std::string identity; // size and write time of the library file, part of every native cache key (D57)
+    std::string identity; // size and write time of the library file, part of every native cache key (D70)
     int optLevel = 1;
     std::uint64_t threshold = kDefaultThreshold;
 

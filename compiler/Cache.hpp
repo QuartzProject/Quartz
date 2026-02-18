@@ -1,6 +1,6 @@
 #pragma once
 
-// On-disk cache of compiled objects (D57). Integrity only: an entry is used when it is bound to the exact key and its
+// On-disk cache of compiled objects (D70). Integrity only: an entry is used when it is bound to the exact key and its
 // bytes hash to what the entry says; the directory itself must be as trusted as the host binary.
 
 #include <array>

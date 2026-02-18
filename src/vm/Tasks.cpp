@@ -461,7 +461,7 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     return r;
 }
 
-// An interpreted task moves to compiled code at a `wait` once its root is compiled (D56): each saved frame becomes the
+// An interpreted task moves to compiled code at a `wait` once its root is compiled (D69): each saved frame becomes the
 // record the native frame would have written at the same point. Fuel yields stay interpreted until the next wait.
 bool Sandbox::migrateTask(Task& task, NativeEntry) {
     if (task.kind == TaskOutcome::Kind::Yield || task.kind == TaskOutcome::Kind::Done) {

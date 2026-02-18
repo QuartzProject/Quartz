@@ -7,7 +7,7 @@
 
 namespace quartz::ir {
 
-/// Where a suspended frame continues (D56): after a `wait` or a suspend call, before a call whose fuel charge
+/// Where a suspended frame continues (D69): after a `wait` or a suspend call, before a call whose fuel charge
 /// yielded, or at the head of a loop whose back edge yielded.
 enum class ResumeAt : std::uint32_t { After = 0, BeforeCall = 1, LoopHead = 2 };
 

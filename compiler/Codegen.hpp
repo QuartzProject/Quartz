@@ -105,7 +105,7 @@ public:
     const std::vector<SlotKind>& kinds(ir::TypeId t);
     llvm::Type* kindType(SlotKind k) const;
     llvm::FunctionCallee runtime(Rt rt);
-    /// A string constant, linked by name (`qzk.<index>`) so cached objects hold no process addresses (D57).
+    /// A string constant, linked by name (`qzk.<index>`) so cached objects hold no process addresses (D70).
     llvm::Constant* stringConstant(std::uint32_t index);
     llvm::Function* function(std::uint32_t index);
     llvm::StructType* resultType(std::uint32_t index);
@@ -179,7 +179,7 @@ private:
     llvm::Value* normalize(ir::TypeId t, llvm::Value* v);
     llvm::Value* divRem(const ir::Inst& in, llvm::Value* a, llvm::Value* b);
 
-    // Tasks.cpp (D56)
+    // Tasks.cpp (D69)
     void wait(const ir::Inst& in);
     /// Saves the registers kept at `state` into the task and returns as suspended.
     void suspendAndReturn(std::uint32_t state, const std::vector<ir::Reg>& regs);
