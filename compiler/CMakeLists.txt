@@ -31,6 +31,10 @@ set_target_properties(quartz_compiler PROPERTIES CXX_VISIBILITY_PRESET hidden VI
 if(WIN32)
     set_target_properties(quartz_compiler PROPERTIES PREFIX "")
     target_link_options(quartz_compiler PRIVATE -Wl,--gc-sections)
+elseif(APPLE)
+    target_link_options(quartz_compiler PRIVATE -Wl,-dead_strip
+        -Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports.darwin)
+    set_property(TARGET quartz_compiler APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/exports.darwin)
 else()
     target_link_options(quartz_compiler PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--as-needed
         -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map)

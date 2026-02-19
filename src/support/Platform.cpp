@@ -13,6 +13,11 @@
 #include <sys/resource.h>
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <cstdint>
+#include <mach-o/dyld.h>
+#include <pthread/qos.h>
+#endif
 
 namespace quartz::support {
 
@@ -84,6 +89,22 @@ const char* compilerLibraryName() { return "libquartz_compiler.dylib"; }
 const char* compilerLibraryName() { return "libquartz_compiler.so"; }
 #endif
 
+#ifdef __APPLE__
+std::filesystem::path executablePath() {
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buf(size, '\0');
+    if (_NSGetExecutablePath(buf.data(), &size) != 0) {
+        return {};
+    }
+    buf.resize(buf.find('\0') == std::string::npos ? buf.size() : buf.find('\0'));
+    std::error_code ec;
+    auto exe = std::filesystem::canonical(buf, ec);
+    return ec ? std::filesystem::path(buf) : exe;
+}
+
+void lowerThreadPriority() { pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0); }
+#else
 std::filesystem::path executablePath() {
     std::error_code ec;
     auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
@@ -95,6 +116,7 @@ void lowerThreadPriority() {
     setpriority(PRIO_PROCESS, static_cast<id_t>(gettid()), 10);
 #endif
 }
+#endif
 
 unsigned long processId() { return static_cast<unsigned long>(getpid()); }
 
