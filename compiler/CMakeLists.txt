@@ -1,5 +1,5 @@
 # quartz-compiler: the optional LLVM backend, a shared library the host loads with dlopen (D15).
-if(WIN32)
+if(WIN32 OR CMAKE_CROSSCOMPILING)
     # Cross builds have no llvm-config for the target; its CMake package says the same.
     find_package(LLVM REQUIRED CONFIG)
     if(NOT LLVM_VERSION_MAJOR EQUAL 23)
