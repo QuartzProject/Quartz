@@ -236,3 +236,41 @@ fn run() -> f64 {
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     CHECK(r->f == 600.0 - 120.0 + 1.0);
 }
+
+TEST_CASE("the host passes a struct argument spread over its slots, to a call and to a task") {
+    quartz::SourceInput in[] = {{"host.qzi", "fn note(text: str)\n"},
+                                {"plugin.qz", R"(
+struct Event {
+    level: i64
+    name: str
+    flag: bool
+}
+fn total(e: Event, extra: i64) -> i64 {
+    var n = e.level + extra
+    if e.flag {
+        n += e.name.len()
+    }
+    return n
+}
+suspend fn task(e: Event) -> i64 {
+    return e.level * 2 + e.name.len()
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    quartz::vm::Sandbox sb(out.program);
+    sb.bind("note", [](quartz::vm::HostCall&, void*) { return true; });
+    REQUIRE(sb.start().has_value());
+    quartz::vm::Slot args[4]{};
+    args[0].i = 5;
+    args[1].p = sb.newStr("Steve");
+    args[2].i = 1;
+    args[3].i = 10;
+    auto r = sb.call(out.program->findFunction("total"), args);
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(r->i == 20);
+    auto t = sb.spawn(out.program->findFunction("task"), std::span<const quartz::vm::Slot>(args, 3));
+    REQUIRE(t.has_value());
+    CHECK(t->value.i == 15);
+    CHECK_FALSE(sb.call(out.program->findFunction("total"), std::span<const quartz::vm::Slot>(args, 3)).has_value());
+}

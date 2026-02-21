@@ -916,7 +916,7 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
             cf = plain.run();
         }
         for (TypeId p : cf.params) {
-            std::int32_t plan = prog->layouts->slots(p) == 1 ? CompiledFunction::kHostArg : CompiledFunction::kBadArg;
+            std::int32_t plan = prog->layouts->slots(p) >= 1 ? CompiledFunction::kHostArg : CompiledFunction::kBadArg;
             std::int32_t handleArg = -1;
             for (std::size_t s = 0; s < prog->module->states.size(); ++s) {
                 if (prog->module->states[s] == p) {
@@ -928,7 +928,7 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
                         if (per != 0 && q == per && handleArg < 0) {
                             handleArg = hostIndex;
                         }
-                        hostIndex += isState ? 0 : 1;
+                        hostIndex += isState ? 0 : static_cast<std::int32_t>(prog->layouts->slots(q));
                     }
                     if (per != 0 && handleArg < 0) {
                         plan = CompiledFunction::kBadArg; // the validator-free path: no handle to pick the instance

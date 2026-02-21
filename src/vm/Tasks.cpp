@@ -1,5 +1,6 @@
 #include "vm/Sandbox.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace quartz::vm {
@@ -291,13 +292,15 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
             stack_[slot++].p = resolved[pi];
             continue;
         }
-        if (program_->layouts->slots(p) != 1 || next >= args.size()) {
+        const std::size_t width = program_->layouts->slots(p);
+        if (width == 0 || next + width > args.size()) {
             ok = false;
             break;
         }
-        stack_[slot] = args[next++];
+        std::copy_n(args.begin() + static_cast<std::ptrdiff_t>(next), width, stack_.begin() + slot);
+        next += width;
         ok = copyToArena(p, &stack_[slot], &stack_[slot], Copy::All);
-        ++slot;
+        slot += static_cast<std::uint32_t>(width);
     }
     resetRegions(&arena_);
     if (!ok || next != args.size()) {

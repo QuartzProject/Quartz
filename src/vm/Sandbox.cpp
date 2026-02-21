@@ -2,6 +2,7 @@
 
 #include "std/Std.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace quartz::vm {
@@ -336,10 +337,13 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
             stack_[slot++].p = resolved[pi];
             continue;
         }
-        if (plan == CompiledFunction::kBadArg || next >= args.size()) {
+        const std::size_t width = plan == CompiledFunction::kBadArg ? 0 : program_->layouts->slots(fn.params[pi]);
+        if (width == 0 || next + width > args.size()) {
             return std::unexpected(Trap{ir::TrapCode::HostError, "argument mismatch", fn.name, 0});
         }
-        stack_[slot++] = args[next++];
+        std::copy_n(args.begin() + static_cast<std::ptrdiff_t>(next), width, stack_.begin() + slot);
+        next += width;
+        slot += static_cast<std::uint32_t>(width);
     }
     if (next != args.size()) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "too many arguments", fn.name, 0});
