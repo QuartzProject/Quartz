@@ -29,8 +29,8 @@ bool hostPrint(quartz::vm::HostCall& call, void*) {
 
 int usage() {
     std::fprintf(stderr, "usage: quartz check|ir|run|dis <file.qz|file.qzi>... | <file.qzb> [--entry name]\n"
-                         "                [--trust <public key hex>]... [--require-signature]\n"
-                         "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] [--strip-lines]\n"
+                         "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
+                         "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] [--strip-lines] [--host-only]\n"
                          "       quartz interface <package.qzb>\n"
                          "       quartz keygen <seed file>\n"
                          "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
@@ -159,6 +159,7 @@ struct Args {
     std::vector<quartz::ir::PublicKey> trusted;
     bool requireSignature = false;
     bool lines = true;
+    bool hostOnly = false;
     std::string manifest;
 };
 
@@ -167,7 +168,9 @@ std::optional<Args> parseArgs(int argc, char** argv) {
     for (int i = 2; i < argc; ++i) {
         std::string_view arg = argv[i];
         bool hasValue = i + 1 < argc;
-        if (arg == "--entry" && hasValue) {
+        if (arg == "--host-only") {
+            a.hostOnly = true;
+        } else if (arg == "--entry" && hasValue) {
             a.entry = argv[++i];
         } else if (arg == "-o" && hasValue) {
             a.output = argv[++i];
@@ -225,7 +228,9 @@ int build(Args& a) {
     if (a.output.empty() || a.inputs.empty() || !a.binaryPath.empty()) {
         return usage();
     }
-    a.inputs.push_back({std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
+    if (!a.hostOnly) {
+        a.inputs.push_back({std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
+    }
     quartz::CompileOptions opts;
     opts.emitBinary = true;
     opts.binaryLines = a.lines;
@@ -301,8 +306,10 @@ int main(int argc, char** argv) {
             irText = quartz::ir::print(*program->module);
         }
     } else {
-        args->inputs.push_back(
-            {std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
+        if (!args->hostOnly) {
+            args->inputs.push_back(
+                {std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
+        }
         quartz::CompileOptions opts;
         opts.printIr = cmd == "ir";
         quartz::CompileOutput out = quartz::compile(args->inputs, opts);
