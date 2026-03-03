@@ -104,6 +104,9 @@ public:
     std::expected<void, std::string> link(std::string_view package, Sandbox& provider);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
     [[nodiscard]] TierMode tierMode() const { return tierMode_; }
+    /// Changes the fuel each call and each task slice gets, so a host can keep a wall-clock budget as the tier changes.
+    void setFuelPerCall(std::int64_t fuel) { limits_.fuelPerCall = fuel; }
+    [[nodiscard]] std::int64_t fuelPerCall() const { return limits_.fuelPerCall; }
     /// Fuel left after the last call.
     [[nodiscard]] std::int64_t fuelLeft() const { return fuel_; }
     /// Outside a call: a string for the next call's arguments, valid until the call after it starts.
