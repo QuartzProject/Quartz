@@ -62,7 +62,7 @@ std::shared_ptr<TierState> makeTierState(std::size_t functions);
 /// Resolves Default from the environment and drops to the interpreter when the compiler is missing.
 TierMode resolveTierMode(TierMode requested);
 
-/// Why the compiler library could not be loaded; empty when it is available.
+/// Why the native tier is unavailable (library missing, or no JIT could be created); empty when it is available.
 std::string nativeCompilerError();
 
 /// Runtime callbacks handed to the compiler (NativeRuntime.cpp).

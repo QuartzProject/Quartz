@@ -1,9 +1,8 @@
 #include "vm/Tier.hpp"
 
+#include "ir/Serialize.hpp"
 #include "support/Platform.hpp"
 #include "vm/Bytecode.hpp"
-
-#include "ir/Serialize.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -12,6 +11,7 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <mutex>
 #include <string_view>
 #include <thread>
 
@@ -93,6 +93,15 @@ struct Library {
 
     [[nodiscard]] bool ok() const { return create != nullptr; }
 };
+
+// The first failure to create a JIT (no executable memory, unsupported linker) makes the tier unavailable for good.
+std::mutex gUnavailableMutex;
+std::string gUnavailable;
+
+std::string unavailableReason() {
+    std::lock_guard lock(gUnavailableMutex);
+    return gUnavailable;
+}
 
 const Library& library() {
     static const Library lib;
@@ -210,9 +219,18 @@ NativeEntry TierState::compile(const Program& program, std::uint32_t f, const st
     const Library& lib = library();
     char err[512] = {};
     if (jit_ == nullptr) {
+        if (std::string why = unavailableReason(); !why.empty()) {
+            errors_[f] = why;
+            status_[f].store(kFailed);
+            return nullptr;
+        }
         std::span<const NativeSymbol> rt = nativeRuntimeSymbols();
         jit_ = lib.create(rt.data(), static_cast<std::uint32_t>(rt.size()), lib.optLevel, err, sizeof err);
         if (jit_ == nullptr) {
+            {
+                std::lock_guard unavailable(gUnavailableMutex);
+                gUnavailable = err[0] != '\0' ? err : "the native compiler could not create a JIT";
+            }
             errors_[f] = err;
             status_[f].store(kFailed);
             return nullptr;
@@ -244,7 +262,9 @@ NativeEntry TierState::compile(const Program& program, std::uint32_t f, const st
         std::fprintf(
             stderr, "quartz: compiled '%s' (%u functions, %u IR instructions) in %.2f ms (lower %.2f, opt %.2f)%s\n",
             program.functions[f].name.c_str(), st.functions, st.irInstructions, st.totalMs, st.lowerMs, st.optimizeMs,
-            st.cache == kNativeCacheHit ? " from the cache" : st.cache == kNativeCacheStored ? ", cached" : "");
+            st.cache == kNativeCacheHit      ? " from the cache"
+            : st.cache == kNativeCacheStored ? ", cached"
+                                             : "");
     }
     return e;
 }
@@ -311,6 +331,11 @@ TierMode resolveTierMode(TierMode requested) {
     return mode;
 }
 
-std::string nativeCompilerError() { return library().error; }
+std::string nativeCompilerError() {
+    if (std::string why = unavailableReason(); !why.empty()) {
+        return why;
+    }
+    return library().error;
+}
 
 } // namespace quartz::vm

@@ -8,7 +8,10 @@
 #include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/CommandLine.h>
@@ -16,6 +19,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
 #include <mutex>
+#include <optional>
 
 #ifdef _WIN32
 #define QC_API extern "C" __declspec(dllexport)
@@ -76,6 +80,63 @@ std::expected<std::string, std::string> emitObject(llvm::TargetMachine& tm, llvm
     return std::string(buf.data(), buf.size());
 }
 
+// QUARTZ_NATIVE_LINKER: "rtdyld" forces the RuntimeDyld linker, "none" makes the tier unavailable (D73).
+// By default Windows uses RuntimeDyld (JITLink has no COFF AArch64 backend) and everything else LLJIT's choice.
+std::string linkerChoice() {
+    const char* v = std::getenv("QUARTZ_NATIVE_LINKER");
+    if (v != nullptr && *v != '\0') {
+        return v;
+    }
+#ifdef _WIN32
+    return "rtdyld";
+#else
+    return "default";
+#endif
+}
+
+void useRuntimeDyld(llvm::orc::LLJITBuilder& builder, bool coff) {
+    builder.setObjectLinkingLayerCreator(
+        [coff](llvm::orc::ExecutionSession& es,
+               llvm::jitlink::JITLinkMemoryManager&) -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
+            auto layer = std::make_unique<llvm::orc::RTDyldObjectLinkingLayer>(
+                es, [](const llvm::MemoryBuffer&) { return std::make_unique<llvm::SectionMemoryManager>(); });
+            if (coff) {
+                layer->setOverrideObjectFlagsWithResponsibilityFlags(true);
+                layer->setAutoClaimResponsibilityForObjectSymbols(true);
+            }
+            return std::unique_ptr<llvm::orc::ObjectLayer>(std::move(layer));
+        });
+}
+
+// Compiles, links and runs a one-function module, so a platform that cannot execute JIT code is found once, early.
+llvm::Error runCanary(llvm::orc::LLJIT& jit) {
+    constexpr std::int32_t kExpected = 0x5a17;
+    auto ctx = std::make_unique<llvm::LLVMContext>();
+    auto mod = std::make_unique<llvm::Module>("quartz-canary", *ctx);
+    mod->setDataLayout(jit.getDataLayout());
+    mod->setTargetTriple(jit.getTargetTriple());
+    auto* i32 = llvm::Type::getInt32Ty(*ctx);
+    auto* fn = llvm::Function::Create(llvm::FunctionType::get(i32, false), llvm::Function::ExternalLinkage, "qz_canary",
+                                      mod.get());
+    llvm::IRBuilder<> b(llvm::BasicBlock::Create(*ctx, "entry", fn));
+    b.CreateRet(llvm::ConstantInt::get(i32, kExpected));
+    if (auto e = jit.addIRModule(llvm::orc::ThreadSafeModule(std::move(mod), std::move(ctx)))) {
+        return e;
+    }
+    auto sym = jit.lookup("qz_canary");
+    if (!sym) {
+        return sym.takeError();
+    }
+    if (sym->toPtr<std::int32_t (*)()>()() != kExpected) {
+        return llvm::createStringError("the canary function returned the wrong value");
+    }
+    return llvm::Error::success();
+}
+
+std::mutex gCanaryMutex;
+std::optional<std::string> gCanaryFailure; // set once the first JIT of the process has been tried
+bool gCanaryDone = false;
+
 double msSince(std::chrono::steady_clock::time_point t0) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
 }
@@ -126,10 +187,40 @@ QC_API NativeJit* qc_create(const quartz::vm::NativeSymbol* runtime, std::uint32
         setError(err, errLen, take(tm.takeError()));
         return nullptr;
     }
-    auto jit = llvm::orc::LLJITBuilder().setJITTargetMachineBuilder(*jtmb).create();
+    std::string linker = linkerChoice();
+    if (linker == "none") {
+        setError(err, errLen, "the native tier is disabled by QUARTZ_NATIVE_LINKER=none");
+        return nullptr;
+    }
+    {
+        std::lock_guard lock(gCanaryMutex);
+        if (gCanaryDone && gCanaryFailure) {
+            setError(err, errLen, *gCanaryFailure);
+            return nullptr;
+        }
+    }
+    llvm::orc::LLJITBuilder builder;
+    builder.setJITTargetMachineBuilder(*jtmb);
+    if (linker == "rtdyld") {
+        useRuntimeDyld(builder, jtmb->getTargetTriple().isOSBinFormatCOFF());
+    }
+    auto jit = builder.create();
     if (!jit) {
         setError(err, errLen, take(jit.takeError()));
         return nullptr;
+    }
+    {
+        std::lock_guard lock(gCanaryMutex);
+        if (!gCanaryDone) {
+            gCanaryDone = true;
+            if (auto e = runCanary(**jit)) {
+                gCanaryFailure = "native code cannot be linked or run on this platform: " + take(std::move(e));
+            }
+        }
+        if (gCanaryFailure) {
+            setError(err, errLen, *gCanaryFailure);
+            return nullptr;
+        }
     }
     llvm::orc::JITDylib& jd = (*jit)->getMainJITDylib();
     llvm::orc::MangleAndInterner mangle((*jit)->getExecutionSession(), (*jit)->getDataLayout());

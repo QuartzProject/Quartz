@@ -23,6 +23,11 @@ std::string readFile(const fs::path& p) {
     return ss.str();
 }
 
+bool forcedUnavailable() {
+    const char* v = std::getenv("QUARTZ_NATIVE_LINKER");
+    return v != nullptr && std::string_view(v) == "none";
+}
+
 std::shared_ptr<const quartz::vm::Program> build(std::vector<quartz::SourceInput> inputs) {
     quartz::CompileOutput out = quartz::compile(inputs);
     REQUIRE_MESSAGE(out.program, out.diagnostics);
@@ -444,6 +449,35 @@ TEST_CASE("cached native objects are reused, and ignored when damaged") {
     round(quartz::vm::kNativeCacheStored);
     round(quartz::vm::kNativeCacheHit);
     fs::remove_all(dir);
+}
+
+TEST_CASE("results do not depend on the native tier being available") {
+    auto p = withStd("unavailable.qz", "fn add(a: i64, b: i64) -> i64 {\n    return a * 3 + b\n}\n");
+    std::uint32_t f = p->findFunction("add");
+    std::string log;
+    for (TierMode mode : {TierMode::Native, TierMode::Auto}) {
+        quartz::vm::Limits limits;
+        limits.tier = mode;
+        quartz::vm::Sandbox sb(p, limits);
+        sb.bind("print", logText, &log);
+        sb.bind("i64.ticks", hostTicks);
+        REQUIRE(sb.start().has_value());
+        Slot a[2];
+        a[0].i = 5;
+        a[1].i = 2;
+        for (int i = 0; i < 3; ++i) {
+            auto r = sb.call(f, a);
+            REQUIRE(r.has_value());
+            CHECK(r->i == 17);
+        }
+    }
+    bool native = p->tier->entry(f) != nullptr;
+    MESSAGE("native tier ", native ? "available" : "unavailable: " + quartz::vm::nativeCompilerError());
+    if (forcedUnavailable()) {
+        CHECK_FALSE(native);
+        CHECK_FALSE(p->tier->error(f).empty());
+        CHECK_FALSE(quartz::vm::nativeCompilerError().empty());
+    }
 }
 
 namespace {
