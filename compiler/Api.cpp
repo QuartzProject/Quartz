@@ -20,6 +20,7 @@
 #include <llvm/Target/TargetMachine.h>
 #include <mutex>
 #include <optional>
+#include <string_view>
 
 #ifdef _WIN32
 #define QC_API extern "C" __declspec(dllexport)
@@ -84,7 +85,7 @@ std::expected<std::string, std::string> emitObject(llvm::TargetMachine& tm, llvm
 // By default Windows uses RuntimeDyld (JITLink has no COFF AArch64 backend) and everything else LLJIT's choice.
 std::string linkerChoice() {
     const char* v = std::getenv("QUARTZ_NATIVE_LINKER");
-    if (v != nullptr && *v != '\0') {
+    if (v != nullptr && *v != '\0' && std::string_view(v) != "default") {
         return v;
     }
 #ifdef _WIN32
