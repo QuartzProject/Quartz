@@ -13,6 +13,11 @@
 #include <sys/resource.h>
 #include <unistd.h>
 #endif
+#ifdef __FreeBSD__
+#include <climits>
+#include <sys/sysctl.h>
+#include <sys/types.h>
+#endif
 #ifdef __APPLE__
 #include <cstdint>
 #include <mach-o/dyld.h>
@@ -104,6 +109,18 @@ std::filesystem::path executablePath() {
 }
 
 void lowerThreadPriority() { pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0); }
+#elif defined(__FreeBSD__)
+std::filesystem::path executablePath() {
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+    char buf[PATH_MAX];
+    std::size_t len = sizeof buf;
+    if (sysctl(mib, 4, buf, &len, nullptr, 0) != 0 || len == 0) {
+        return {};
+    }
+    return std::filesystem::path(buf);
+}
+
+void lowerThreadPriority() {}
 #else
 std::filesystem::path executablePath() {
     std::error_code ec;
