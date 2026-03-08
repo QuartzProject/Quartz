@@ -8,7 +8,7 @@ struct Pair {
     tags: [str]
 }
 
-fn build(n: i64) -> str {
+fn build(n: int) -> str {
     var out = ""
     scope {
         let tmp = "x{n}"
@@ -17,7 +17,7 @@ fn build(n: i64) -> str {
     return out
 }
 
-fn early(n: i64) -> str {
+fn early(n: int) -> str {
     scope {
         let s = "inner {n}"
         return s
@@ -25,7 +25,7 @@ fn early(n: i64) -> str {
     return ""
 }
 
-suspend fn main() -> i64 {
+suspend fn main() -> int {
     var kept: [str] = []
     var last = ""
     var pair = Pair("p", [])

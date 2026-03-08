@@ -8,10 +8,10 @@ import c.d.{x, y} as z
 /* block
    comment */
 @on(PlayerJoin, priority = Normal) // why
-pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> i64 {
+pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> int {
     let x = (a + b) * c // keep parens
     let y = a + (b * c)
-    var z: Map<str, List<i64>> = Map()
+    var z: Map<str, List<int>> = Map()
     z >>= 1
     z <<= 2
     let s = "hi {a + b} and {"nested {x}"} \{ esc }"
@@ -31,7 +31,7 @@ pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> i64 {
             // only a comment
         }
     }
-    let f = (x: i64, y) => x * 2
+    let f = (x: int, y) => x * 2
     let g = ((x) => x)(1)
     let h = (x?).y
     let q = x?.y ?? -1
@@ -41,7 +41,7 @@ pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> i64 {
         3,
     )
     let w = wait 20.ticks
-    let cast = (300.7) as u8 + (-1) as u64
+    let cast = (300.7) as byte + (-1) as u64
     let r = x is Foo
     let chain = a &&
         b
@@ -78,23 +78,23 @@ pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> i64 {
 }
 
 struct P {
-    x: i64 = 0
+    x: int = 0
     @renamed("old")
-    y: i64
+    y: int
 }
 
 state S<T> {
     // field comment
-    a: [i64; 3]
+    a: [int; 3]
 
-    b: (i64, str)?
-    c: (i64) -> bool
+    b: (int, str)?
+    c: (int) -> bool
 }
 @handle
 struct Player
 enum E {
     A
-    B(i64, [str])
+    B(int, [str])
     C
 }
 impl Show for P {
@@ -102,13 +102,13 @@ impl Show for P {
         return "p"
     }
 
-    pub fn other(self, n: i64) {}
+    pub fn other(self, n: int) {}
 }
 trait Show {
     fn show(self) -> str
     suspend fn later(self)
 }
-const MAX: i64 = 100 // max
+const MAX: int = 100 // max
 private fn hidden() {}
 // end of file
 fn f() {
@@ -134,8 +134,8 @@ fn f() {
     let n = (a ?? b) ?? c
     let o = a - (b - c)
     let p = (a - b) - c
-    let q = -(x as i64)
-    let r = (-x) as i64
+    let q = -(x as int)
+    let r = (-x) as int
     let s = !(a && b)
     let t = (a..b)
     let u = x?.y?.z
@@ -160,8 +160,8 @@ fn f() {
 }
 
 fn g(
-    a: i64, // first
-    b: i64,
+    a: int, // first
+    b: int,
 ) {}
 fn f() {
     let a = "x {"in {"deep"} er"} y \{ not } \u{1F600} \" q"

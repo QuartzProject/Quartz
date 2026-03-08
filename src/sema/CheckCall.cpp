@@ -258,7 +258,7 @@ TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expecte
         }
         TypeId t = checkValue(call->args[0].value, expected);
         if (t != ir::kI64 && t != ir::kF64 && t != ir::kError) {
-            diags_.error(call->span, std::format("'{}' works on i64 and f64", n));
+            diags_.error(call->span, std::format("'{}' works on int and float", n));
             return ir::kError;
         }
         bool isF = t == ir::kF64;

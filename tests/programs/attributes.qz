@@ -2,7 +2,7 @@
 // expect: 12 5
 
 struct JoinEvent {
-    level: i64
+    level: int
     name: str
 }
 
@@ -12,21 +12,21 @@ fn onJoin(event: JoinEvent) {
 }
 
 @command("heal", perm = "basalt.heal")
-fn heal(amount: i64) -> bool {
+fn heal(amount: int) -> bool {
     return amount > 0
 }
 
 @inline
-fn twice(x: i64) -> i64 {
+fn twice(x: int) -> int {
     return x * 2
 }
 
 @noinline
-fn half(x: i64) -> i64 {
+fn half(x: int) -> int {
     return x / 2
 }
 
-fn main() -> i64 {
+fn main() -> int {
     onJoin(JoinEvent(7, "Steve"))
     print("{twice(6)} {half(10)}")
     return 0

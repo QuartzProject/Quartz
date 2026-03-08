@@ -18,11 +18,11 @@ using quartz::lsp::Json;
 constexpr std::string_view kUri = "file:///quartz-lsp-test-missing-dir/main.qz";
 
 // `"é😀" + 1` checks UTF-16 columns: 12 bytes but 9 code units before the end of the error.
-constexpr std::string_view kSource = "fn add(a: i64, b: i64) -> i64 {\n"
+constexpr std::string_view kSource = "fn add(a: int, b: int) -> int {\n"
                                      "    return a + b\n"
                                      "}\n"
                                      "\n"
-                                     "fn main() -> i64 {\n"
+                                     "fn main() -> int {\n"
                                      "    let s = \"\xc3\xa9\xf0\x9f\x98\x80\" + 1\n"
                                      "    return add(1,2)\n"
                                      "}\n";
@@ -113,14 +113,14 @@ TEST_CASE("scripted session: diagnostics, hover, definition and formatting") {
     REQUIRE(diags->size() == 1);
     const Json& d = (*diags)[0];
     CHECK(d["severity"].integer() == 1);
-    CHECK(d["message"].str().find("mismatched types 'str' and 'i64'") != std::string_view::npos);
+    CHECK(d["message"].str().find("mismatched types 'str' and 'int'") != std::string_view::npos);
     CHECK(d["range"]["start"]["line"].integer() == 5);
     CHECK(d["range"]["start"]["character"].integer() == 12);
     CHECK(d["range"]["end"]["character"].integer() == 21);
 
     const Json* hover = response(msgs, 2);
     REQUIRE(hover != nullptr);
-    CHECK((*hover)["result"]["contents"]["value"].str() == "```quartz\nfn add(a: i64, b: i64) -> i64\n```");
+    CHECK((*hover)["result"]["contents"]["value"].str() == "```quartz\nfn add(a: int, b: int) -> int\n```");
 
     const Json* def = response(msgs, 3);
     REQUIRE(def != nullptr);

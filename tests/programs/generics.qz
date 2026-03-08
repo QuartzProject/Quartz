@@ -10,8 +10,8 @@ trait Show {
 }
 
 struct P {
-    x: i64
-    y: i64
+    x: int
+    y: int
 }
 
 impl Show for P {
@@ -20,7 +20,7 @@ impl Show for P {
     }
 }
 
-impl Show for i64 {
+impl Show for int {
     fn show(self) -> str {
         return "{self}"
     }
@@ -79,11 +79,11 @@ fn swap<A, B>(pair: (A, B)) -> (B, A) {
     return (pair.1, pair.0)
 }
 
-fn main() -> i64 {
+fn main() -> int {
     let xs = [3, 4]
     let words = ["hello"]
     print("{first(xs) ?? 0} {first(words) ?? "-"}")
-    let some: Maybe<i64> = Maybe.Just(7)
+    let some: Maybe<int> = Maybe.Just(7)
     let none: Maybe<str> = Maybe.Nothing
     print("{orElse(some, 0)} {orElse(none, "none")}")
     let b = Box(5)

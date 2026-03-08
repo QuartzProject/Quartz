@@ -26,19 +26,19 @@
 
 struct V {
     a: i32
-    b: f64
+    b: float
     c: bool
 }
 enum E {
-    A(i64, f64)
+    A(int, float)
     B(str)
     C
 }
 state S {
-    n: i64
+    n: int
     names: [str]
     m: Map<str, V>
-    opt: i64?
+    opt: int?
     e: [E]
 }
 
@@ -53,13 +53,13 @@ fn show(e: E) -> str {
 fn fill(s: S) {
     s.n = s.n + 1
     s.names.push("n{s.n}")
-    s.m["k{s.n}"] = V(s.n as i32, s.n as f64 * 0.5, s.n % 2 == 0)
+    s.m["k{s.n}"] = V(s.n as i32, s.n as float * 0.5, s.n % 2 == 0)
     s.opt = s.n * 10
     s.e.push(E.A(s.n, 1.5))
     s.e.push(E.B("x{s.n}"))
 }
 
-fn main(st: S) -> i64 {
+fn main(st: S) -> int {
     for i in 0..4 {
         fill(st)
     }
@@ -67,25 +67,25 @@ fn main(st: S) -> i64 {
     print("{st.n} {st.names.join(",")} {kv.a} {kv.b} {kv.c} {st.opt ?? -1} {show(st.e[5])} {st.e.len()}")
     let a: i8 = 127
     let b: i8 = a + 1
-    let c: u8 = 0
-    let d: u8 = c - 1
+    let c: byte = 0
+    let d: byte = c - 1
     let e: i16 = -32768
     let f: u16 = 65535
     let g: u32 = 4294967295
-    let h: i64 = 9223372036854775807
+    let h: int = 9223372036854775807
     print("{b} {d} {e - 1} {f + 1} {g + 1} {h + 1}")
     print("{a * 3} {d * d} {g * g} {~a} {~d} {-e}")
-    let m: i64 = -9223372036854775807 - 1
+    let m: int = -9223372036854775807 - 1
     print("{m / -1} {m % -1} {-7 / 2} {7 % -3} {-7 % 3}")
     let mi: i32 = -2147483647 - 1
     print("{mi / -1} {mi % -1} {mi - 1}")
     let s: i32 = 1
-    let k: i64 = 65
-    print("{s << 33} {s << 31} {-16 >> 2} {(1 as i64) << k} {(-16 as u32) >> 2} {(-1 as u64) >> 63}")
+    let k: int = 65
+    print("{s << 33} {s << 31} {-16 >> 2} {(1 as int) << k} {(-16 as u32) >> 2} {(-1 as u64) >> 63}")
     print("{0xF0 & 0x3C} {0xF0 | 0x0F} {0xFF ^ 0x0F}")
-    print("{(300.7) as u8} {(-5.5) as u8} {(1e20) as i32} {(-1e20) as i64} {(1e30) as u64} {(0.0 / 0.0) as i32}")
-    print("{(2.9) as i8} {(-2.9) as i16} {(255.9) as u8} {(4294967295.5) as u32}")
-    print("{(-1) as u8} {(300) as i8} {(70000) as u16} {(-1) as u32} {(3000000000) as i32}")
+    print("{(300.7) as byte} {(-5.5) as byte} {(1e20) as i32} {(-1e20) as int} {(1e30) as u64} {(0.0 / 0.0) as i32}")
+    print("{(2.9) as i8} {(-2.9) as i16} {(255.9) as byte} {(4294967295.5) as u32}")
+    print("{(-1) as byte} {(300) as i8} {(70000) as u16} {(-1) as u32} {(3000000000) as i32}")
     let x = 0.1
     let y = 0.2
     print("{x + y} {x * y} {x / y} {x - y} {7.5 % 2.0} {-7.5 % 2.0}")
@@ -93,7 +93,7 @@ fn main(st: S) -> i64 {
     print("{sqrt(2.0)} {floor(-1.5)} {ceil(-1.5)} {abs(-2.5)} {abs(-7)} {pow(2.0, 0.5)} {sin(1.0)} {cos(1.0)}")
     let fa: f32 = 0.1
     let fb: f32 = 0.2
-    print("{(fa + fb) as f64} {(fa * fb) as f64} {(16777217 as f32) as f64} {(fa as f64)}")
+    print("{(fa + fb) as float} {(fa * fb) as float} {(16777217 as f32) as float} {(fa as float)}")
     print("{1.0 / 0.0} {-1.0 / 0.0} {1e300 * 1e300} {5e-324 / 2.0}")
     let v = V(-3, 2.5, true)
     var w = v
@@ -108,7 +108,7 @@ fn main(st: S) -> i64 {
     print("{total} {words.join("-")} {"abc" < "abd"} {"b" > "abc"} {"x" == "x"} {"Hello".upper()}")
     let t = "héllo wörld"
     print("{t.len()} {t.byteAt(1)} {t.slice(0, 1)} {t.find("wö") ?? -1} {t.find("zz") ?? -1} {t.startsWith("hé")} {t.endsWith("x")}")
-    let xs: [i64] = []
+    let xs: [int] = []
     for i in 0..20 {
         xs.push(i * i)
     }
@@ -116,7 +116,7 @@ fn main(st: S) -> i64 {
     print("{xs.len()} {p ?? -1} {xs[19 - 1]}")
     xs.clear()
     print("{xs.len()} {xs.pop() ?? -5}")
-    let mp: Map<i64, str> = Map()
+    let mp: Map<int, str> = Map()
     for i in 0..50 {
         mp[i * 7] = "v{i}"
     }
@@ -130,8 +130,8 @@ fn main(st: S) -> i64 {
         }
     }
     let ch: char = 'é'
-    print("{on} {ch} {true} {false} {(ch as i64)} {(65 as u8) as char}")
-    var opt: f64? = null
+    print("{on} {ch} {true} {false} {(ch as int)} {(65 as byte) as char}")
+    var opt: float? = null
     print("{opt == null} {opt ?? 1.5}")
     opt = 2.5
     print("{opt == null} {opt ?? 1.5}")

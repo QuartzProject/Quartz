@@ -46,7 +46,7 @@ constexpr std::string_view kStd = R"(fn print(text: str)
 @handle
 @awaitable
 struct Delay {}
-impl i64 {
+impl int {
     @property
     fn ticks(self) -> Delay
 }
@@ -96,7 +96,7 @@ Outcome runMain(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
     limits.fuelPerCall = fuel;
     quartz::vm::Sandbox sb(p, limits);
     sb.bind("print", logText, &o.log);
-    sb.bind("i64.ticks", hostTicks);
+    sb.bind("int.ticks", hostTicks);
     REQUIRE(sb.start().has_value());
     std::uint32_t f = p->findFunction("main");
     auto r = sb.call(f, {});
@@ -125,7 +125,7 @@ Outcome runTask(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
     limits.fuelPerCall = fuel;
     quartz::vm::Sandbox sb(p, limits);
     sb.bind("print", logText, &o.log);
-    sb.bind("i64.ticks", hostTicks);
+    sb.bind("int.ticks", hostTicks);
     sb.bind("ask", hostTicks);
     REQUIRE(sb.start().has_value());
     std::uint32_t f = p->findFunction("main");
@@ -158,18 +158,18 @@ Outcome runTask(const std::shared_ptr<const quartz::vm::Program>& p, TierMode mo
 }
 
 constexpr std::string_view kAsk = R"(@handle
-@awaitable(i64)
+@awaitable(int)
 struct Ask {}
 
-fn ask(n: i64) -> Ask
+fn ask(n: int) -> Ask
 )";
 
 constexpr std::string_view kTaskProgram = R"(state Hub {
     names: [str]
-    total: i64
+    total: int
 }
 
-fn work(n: i64) -> i64 {
+fn work(n: int) -> int {
     var s = 0
     for i in 0..n {
         s += i % 7
@@ -177,7 +177,7 @@ fn work(n: i64) -> i64 {
     return s
 }
 
-suspend fn child(hub: Hub, k: i64) -> str {
+suspend fn child(hub: Hub, k: int) -> str {
     var acc = ""
     var i = 0
     while i < k {
@@ -193,7 +193,7 @@ suspend fn child(hub: Hub, k: i64) -> str {
     return acc
 }
 
-suspend fn main(hub: Hub) -> i64 {
+suspend fn main(hub: Hub) -> int {
     hub.names.push("a")
     let first = hub.names[0]
     let r = child(hub, 3)
@@ -275,7 +275,7 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
     const char* bodies[] = {
         "let z = [0][0]\n    return 10 / z",
         "let xs = [1, 2, 3]\n    return xs[xs.len()]",
-        "let m: Map<str, i64> = Map()\n    return m[\"nope\"]",
+        "let m: Map<str, int> = Map()\n    return m[\"nope\"]",
         "let s = \"x\"\n    panic(\"boom {s}\")\n    return 0",
         "var i = 0\n    while true { i += 1 }\n    return i",
         "return rec(0)",
@@ -293,7 +293,7 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
     for (const char* body : bodies) {
         CAPTURE(body);
         std::string text =
-            std::format("fn rec(n: i64) -> i64 {{ return rec(n + 1) + 1 }}\nfn main() -> i64 {{\n    {}\n}}\n", body);
+            std::format("fn rec(n: int) -> int {{ return rec(n + 1) + 1 }}\nfn main() -> int {{\n    {}\n}}\n", body);
         auto p = withStd("trap.qz", text);
         Outcome native = runMain(p, TierMode::Native, 100'000);
         Outcome interp = runMain(p, TierMode::Interpreter, 100'000);
@@ -304,7 +304,7 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
 
 TEST_CASE("fuel charged by host functions inside a counted loop matches the interpreter") {
     std::string text = "import std.data.*\n"
-                       "fn main() -> i64 {\n"
+                       "fn main() -> int {\n"
                        "    var n = 0\n"
                        "    for i in 0..300 {\n"
                        "        match parseJson(\"[1, 2, 3, 4, 5, 6, 7, 8]\") {\n"
@@ -452,7 +452,7 @@ TEST_CASE("cached native objects are reused, and ignored when damaged") {
 }
 
 TEST_CASE("results do not depend on the native tier being available") {
-    auto p = withStd("unavailable.qz", "fn add(a: i64, b: i64) -> i64 {\n    return a * 3 + b\n}\n");
+    auto p = withStd("unavailable.qz", "fn add(a: int, b: int) -> int {\n    return a * 3 + b\n}\n");
     std::uint32_t f = p->findFunction("add");
     std::string log;
     for (TierMode mode : {TierMode::Native, TierMode::Auto}) {
@@ -460,7 +460,7 @@ TEST_CASE("results do not depend on the native tier being available") {
         limits.tier = mode;
         quartz::vm::Sandbox sb(p, limits);
         sb.bind("print", logText, &log);
-        sb.bind("i64.ticks", hostTicks);
+        sb.bind("int.ticks", hostTicks);
         REQUIRE(sb.start().has_value());
         Slot a[2];
         a[0].i = 5;

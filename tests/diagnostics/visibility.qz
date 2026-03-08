@@ -7,18 +7,18 @@ package app
 import lib.*
 import nowhere.Thing
 
-fn main() -> i64 {
+fn main() -> int {
     return secret() + internalHelper() + hidden
 }
 
 // file: lib.qz
 package lib
 
-fn secret() -> i64 {
+fn secret() -> int {
     return 1
 }
 
-internal fn internalHelper() -> i64 {
+internal fn internalHelper() -> int {
     return 2
 }
 

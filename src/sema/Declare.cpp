@@ -220,6 +220,17 @@ void Checker::completeTypes() {
         if (entryPtr->decl == nullptr || !types_->info(entryPtr->type).reprC) {
             continue;
         }
+        for (const FieldDecl& fd : entryPtr->decl->fields) {
+            if (fd.type == nullptr || fd.type->kind != TypeExprKind::Named) {
+                continue;
+            }
+            auto* named = static_cast<NamedTypeExpr*>(fd.type);
+            std::string_view n = named->path.size() == 1 ? str(named->path[0]) : std::string_view{};
+            if (n == "int" || n == "float") {
+                diags_.error(fd.span, std::format("'{}' has no fixed C width; write {} in a @repr(C) field", n,
+                                                  n == "int" ? "i64 or i32" : "f64 or f32"));
+            }
+        }
         for (const ir::Field& f : types_->info(entryPtr->type).fields) {
             bool ok = types_->isScalar(f.type) ||
                       (types_->kind(f.type) == ir::TypeKind::Struct && types_->info(f.type).reprC);
@@ -263,6 +274,7 @@ TypeId Checker::lookupTypeName(Symbol name, Span span, bool report) {
         {"void", ir::kVoid}, {"bool", ir::kBool}, {"i8", ir::kI8},   {"i16", ir::kI16},   {"i32", ir::kI32},
         {"i64", ir::kI64},   {"u8", ir::kU8},     {"u16", ir::kU16}, {"u32", ir::kU32},   {"u64", ir::kU64},
         {"f32", ir::kF32},   {"f64", ir::kF64},   {"char", ir::kChar}, {"str", ir::kStr}, {"Bytes", ir::kBytes},
+        {"int", ir::kI64},   {"float", ir::kF64}, {"byte", ir::kU8},
     };
     std::string_view text = str(name);
     for (const auto& [n, id] : builtins) {

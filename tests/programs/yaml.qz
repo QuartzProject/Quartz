@@ -3,7 +3,7 @@
 
 import std.data.*
 
-fn main() -> i64 {
+fn main() -> int {
     let doc = """
 # server config
 name: Hub

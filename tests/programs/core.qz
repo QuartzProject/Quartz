@@ -10,22 +10,22 @@
 // expect: fib 6765
 
 struct P {
-    x: i64
-    y: i64
+    x: int
+    y: int
 }
 enum Shape {
-    Circle(f64)
-    Rect(f64, f64)
+    Circle(float)
+    Rect(float, float)
     Empty
 }
-fn area(s: Shape) -> f64 {
+fn area(s: Shape) -> float {
     return match s {
         Circle(r) => r * r * 3.0
         Rect(w, h) => w * h
         Empty => 0.0
     }
 }
-fn band(n: i64) -> str {
+fn band(n: int) -> str {
     return match n {
         1..5 => "low"
         5..=9 => "mid"
@@ -33,13 +33,13 @@ fn band(n: i64) -> str {
     }
 }
 
-fn fib(n: i64) -> i64 {
+fn fib(n: int) -> int {
     if n < 2 {
         return n
     }
     return fib(n - 1) + fib(n - 2)
 }
-fn main() -> i64 {
+fn main() -> int {
     var total = 0
     for i in 0..10 {
         total += i
@@ -56,7 +56,7 @@ fn main() -> i64 {
         s += v
     }
     print("sum {s} len {xs.len()}")
-    let m: Map<str, i64> = Map()
+    let m: Map<str, int> = Map()
     m["a"] = 1
     m["b"] = 2
     m["a"] += 5
@@ -65,8 +65,8 @@ fn main() -> i64 {
     let word = "Hello World".lower()
     print("{word} {word.contains("wor")} {word.slice(0, 5)} {1.5} {2.0 / 3.0}")
     let n: i32 = 2147483647
-    print("wrap {n + 1} {-7 / 2} {-7 % 2} {(300.7) as u8} {(-1) as u64}")
-    let opt: i64? = null
+    print("wrap {n + 1} {-7 / 2} {-7 % 2} {(300.7) as byte} {(-1) as u64}")
+    let opt: int? = null
     if let v = opt {
         print("bad")
     } else {

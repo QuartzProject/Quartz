@@ -10,7 +10,7 @@ inline constexpr std::string_view kHostInterface = R"(fn print(text: str)
 @handle
 @awaitable
 struct Delay {}
-impl i64 {
+impl int {
     @property
     fn ticks(self) -> Delay
 }

@@ -115,7 +115,7 @@ int keygen(const char* path) {
 int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry) {
     quartz::vm::Sandbox sb(program);
     sb.bind("print", hostPrint);
-    sb.bind("i64.ticks", hostTicks);
+    sb.bind("int.ticks", hostTicks);
     if (auto s = sb.start(); !s) {
         std::fprintf(stderr, "%s\n", s.error().describe().c_str());
         return 3;

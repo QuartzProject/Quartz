@@ -5,11 +5,11 @@
 // expect: done 3 visits 3
 
 state Hub {
-    visits: Map<str, i64>
+    visits: Map<str, int>
     names: [str]
 }
 
-suspend fn greet(hub: Hub, who: str) -> i64 {
+suspend fn greet(hub: Hub, who: str) -> int {
     hub.names.push(who)
     let name = hub.names[0]
     print("hello {name}")
@@ -26,7 +26,7 @@ suspend fn greet(hub: Hub, who: str) -> i64 {
     return n
 }
 
-suspend fn main(hub: Hub) -> i64 {
+suspend fn main(hub: Hub) -> int {
     let n = greet(hub, "Steve")
     wait 5.ticks
     print("done {n} visits {hub.visits["Steve"]}")

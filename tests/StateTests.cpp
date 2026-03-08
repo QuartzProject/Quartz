@@ -24,8 +24,8 @@ std::int64_t callInt(quartz::vm::Sandbox& sb, const char* fn) {
 constexpr const char* kV1 = R"(
 @version(1)
 state Hub {
-    visits: Map<str, i64>
-    count: i64
+    visits: Map<str, int>
+    count: int
     old: str
 }
 fn fill(hub: Hub) {
@@ -46,12 +46,12 @@ TEST_CASE("reload carries state over by field name, honours @renamed and refuses
     auto v2 = build(R"(
 @version(2)
 state Hub {
-    visits: Map<str, i64>
+    visits: Map<str, int>
     @renamed("count")
-    total: i64
-    added: i64 = 40
+    total: int
+    added: int = 40
 }
-fn check(hub: Hub) -> i64 {
+fn check(hub: Hub) -> int {
     return (hub.visits.get("Steve") ?? 0) * 1000 + hub.total * 100 + hub.added
 }
 )");
@@ -73,13 +73,13 @@ import std.data.*
 @version(2)
 state Hub {
     visits: Map<str, str>
-    seen: i64
+    seen: int
 }
 fn migrateHub(old: Value, hub: Hub) {
     hub.visits["Steve"] = "{old.get("visits")?.get("Steve")?.asInt() ?? -1}"
     hub.seen = old.get("count")?.asInt() ?? -1
 }
-fn check(hub: Hub) -> i64 {
+fn check(hub: Hub) -> int {
     return hub.seen * 10 + (hub.visits["Steve"].len())
 }
 )"));
@@ -92,14 +92,14 @@ fn check(hub: Hub) -> i64 {
 }
 
 TEST_CASE("per-handle states are separate per handle and survive a save and load") {
-    quartz::SourceInput in[] = {{"host.qzi", "@handle\nstruct Player {\n    id: i64\n}\n"},
+    quartz::SourceInput in[] = {{"host.qzi", "@handle\nstruct Player {\n    id: int\n}\n"},
                                 {"plugin.qz", R"(
 @persist(per = Player)
 state Stats {
-    joins: i64
+    joins: int
     title: str = "new"
 }
-fn join(p: Player, s: Stats) -> i64 {
+fn join(p: Player, s: Stats) -> int {
     s.joins += 1
     s.title = "veteran"
     return s.joins
@@ -132,12 +132,12 @@ fn join(p: Player, s: Stats) -> i64 {
 TEST_CASE("packages call each other through generated interfaces and load in dependency order") {
     quartz::SourceInput eco[] = {{"eco.qz", R"(package economy
 state Bank {
-    money: Map<str, i64>
+    money: Map<str, int>
 }
-fn balance(bank: Bank, who: str) -> i64 {
+fn balance(bank: Bank, who: str) -> int {
     return bank.money.get(who) ?? 100
 }
-fn pay(bank: Bank, who: str, amount: i64) -> str {
+fn pay(bank: Bank, who: str, amount: int) -> str {
     bank.money[who] = balance(bank, who) + amount
     return "{who}={bank.money[who]}"
 }
@@ -181,7 +181,7 @@ fn buy(who: str) -> str {
 }
 
 TEST_CASE("a package loads only when signed by the key trusted for its name") {
-    quartz::SourceInput src[] = {{"eco.qz", "package economy\nfn one() -> i64 {\n    return 1\n}\n"}};
+    quartz::SourceInput src[] = {{"eco.qz", "package economy\nfn one() -> int {\n    return 1\n}\n"}};
     quartz::CompileOptions opts;
     opts.emitBinary = true;
     opts.manifest = "name = \"economy\"\nversion = \"1.0.0\"\n";
@@ -215,9 +215,9 @@ TEST_CASE("repr(C) structs reach the host with the C layout and come back") {
     quartz::SourceInput in[] = {{"host.qzi", "@repr(C)\nstruct Vec {\n    x: f32\n    y: i16\n    z: f64\n}\n"
                                              "fn scale(v: Vec, k: i32) -> Vec\n"},
                                 {"plugin.qz", R"(
-fn run() -> f64 {
+fn run() -> float {
     let v = scale(Vec(1.5, -3, 0.25), 4)
-    return (v.x as f64) * 100.0 + (v.y as f64) * 10.0 + v.z
+    return (v.x as float) * 100.0 + (v.y as float) * 10.0 + v.z
 }
 )"}};
     quartz::CompileOutput out = quartz::compile(in);
@@ -241,18 +241,18 @@ TEST_CASE("the host passes a struct argument spread over its slots, to a call an
     quartz::SourceInput in[] = {{"host.qzi", "fn note(text: str)\n"},
                                 {"plugin.qz", R"(
 struct Event {
-    level: i64
+    level: int
     name: str
     flag: bool
 }
-fn total(e: Event, extra: i64) -> i64 {
+fn total(e: Event, extra: int) -> int {
     var n = e.level + extra
     if e.flag {
         n += e.name.len()
     }
     return n
 }
-suspend fn task(e: Event) -> i64 {
+suspend fn task(e: Event) -> int {
     return e.level * 2 + e.name.len()
 }
 )"}};

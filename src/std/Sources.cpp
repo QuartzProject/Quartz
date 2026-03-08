@@ -9,8 +9,8 @@ constexpr std::string_view kDataQz = R"(package std.data
 pub enum Value {
     Null
     Bool(bool)
-    Int(i64)
-    Float(f64)
+    Int(int)
+    Float(float)
     Str(str)
     List([Value])
     Table(Map<str, Value>)
@@ -24,14 +24,14 @@ impl Value {
         }
     }
 
-    pub fn item(self, index: i64) -> Value? {
+    pub fn item(self, index: int) -> Value? {
         return match self {
             List(items) => if index >= 0 && index < items.len() { items[index] } else { null }
             _ => null
         }
     }
 
-    pub fn len(self) -> i64 {
+    pub fn len(self) -> int {
         return match self {
             List(items) => items.len()
             Table(t) => t.len()
@@ -54,17 +54,17 @@ impl Value {
         }
     }
 
-    pub fn asInt(self) -> i64? {
+    pub fn asInt(self) -> int? {
         return match self {
             Int(i) => i
             _ => null
         }
     }
 
-    pub fn asFloat(self) -> f64? {
+    pub fn asFloat(self) -> float? {
         return match self {
             Float(f) => f
-            Int(i) => i as f64
+            Int(i) => i as float
             _ => null
         }
     }
@@ -81,7 +81,7 @@ impl Value {
 constexpr std::string_view kDataQzi = R"(package std.data
 
 fn parseJson(text: str) -> Result<Value, str>
-fn toJson(value: Value, indent: i64 = 0) -> str
+fn toJson(value: Value, indent: int = 0) -> str
 fn parseToml(text: str) -> Result<Value, str>
 fn parseYaml(text: str) -> Result<Value, str>
 )";
@@ -89,11 +89,11 @@ fn parseYaml(text: str) -> Result<Value, str>
 constexpr std::string_view kBytesQzi = R"(package std.bytes
 
 impl Bytes {
-    fn len(self) -> i64
-    fn get(self, index: i64) -> i64
-    fn slice(self, begin: i64, end: i64) -> Bytes
+    fn len(self) -> int
+    fn get(self, index: int) -> int
+    fn slice(self, begin: int, end: int) -> Bytes
     fn toStr(self) -> str?
-    fn toList(self) -> [i64]
+    fn toList(self) -> [int]
     fn hex(self) -> str
 }
 
@@ -101,21 +101,21 @@ impl str {
     fn toBytes(self) -> Bytes
 }
 
-fn bytesOf(values: [i64]) -> Bytes
+fn bytesOf(values: [int]) -> Bytes
 fn concatBytes(parts: [Bytes]) -> Bytes
-fn readUInt(data: Bytes, offset: i64, size: i64, bigEndian: bool = false) -> i64
-fn crc32(data: Bytes) -> i64
+fn readUInt(data: Bytes, offset: int, size: int, bigEndian: bool = false) -> int
+fn crc32(data: Bytes) -> int
 )";
 
 constexpr std::string_view kCompressQzi = R"(package std.compress
 
-fn deflate(data: Bytes, level: i64 = 6) -> Bytes
+fn deflate(data: Bytes, level: int = 6) -> Bytes
 fn inflate(data: Bytes) -> Result<Bytes, str>
-fn zlibCompress(data: Bytes, level: i64 = 6) -> Bytes
+fn zlibCompress(data: Bytes, level: int = 6) -> Bytes
 fn zlibDecompress(data: Bytes) -> Result<Bytes, str>
-fn gzip(data: Bytes, level: i64 = 6) -> Bytes
+fn gzip(data: Bytes, level: int = 6) -> Bytes
 fn gunzip(data: Bytes) -> Result<Bytes, str>
-fn zstdCompress(data: Bytes, level: i64 = 3) -> Bytes
+fn zstdCompress(data: Bytes, level: int = 3) -> Bytes
 fn zstdDecompress(data: Bytes) -> Result<Bytes, str>
 )";
 
@@ -130,7 +130,7 @@ pub struct ZipEntry {
 constexpr std::string_view kZipQzi = R"(package std.zip
 
 fn readZip(data: Bytes) -> Result<[ZipEntry], str>
-fn writeZip(entries: [ZipEntry], level: i64 = 6) -> Bytes
+fn writeZip(entries: [ZipEntry], level: int = 6) -> Bytes
 )";
 
 } // namespace

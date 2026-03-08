@@ -3,13 +3,13 @@ package net.blueva.hub
 import org.basaltmc.server.*
 
 struct Vec3 {
-    x: f64
-    y: f64
-    z: f64
+    x: float
+    y: float
+    z: float
 }
 
 state HubData {
-    visits: Map<str, i64>
+    visits: Map<str, int>
 }
 
 const SPAWN = Vec3(0.0, 64.0, 0.0)

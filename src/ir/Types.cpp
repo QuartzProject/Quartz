@@ -7,9 +7,9 @@ namespace quartz::ir {
 TypeTable::TypeTable() {
     const std::pair<TypeKind, const char*> builtins[] = {
         {TypeKind::Error, "<error>"}, {TypeKind::Void, "void"}, {TypeKind::Bool, "bool"}, {TypeKind::I8, "i8"},
-        {TypeKind::I16, "i16"},       {TypeKind::I32, "i32"},   {TypeKind::I64, "i64"},   {TypeKind::U8, "u8"},
+        {TypeKind::I16, "i16"},       {TypeKind::I32, "i32"},   {TypeKind::I64, "int"},   {TypeKind::U8, "byte"},
         {TypeKind::U16, "u16"},       {TypeKind::U32, "u32"},   {TypeKind::U64, "u64"},   {TypeKind::F32, "f32"},
-        {TypeKind::F64, "f64"},       {TypeKind::Char, "char"}, {TypeKind::Str, "str"},   {TypeKind::Bytes, "Bytes"},
+        {TypeKind::F64, "float"},       {TypeKind::Char, "char"}, {TypeKind::Str, "str"},   {TypeKind::Bytes, "Bytes"},
         {TypeKind::Null, "null"},    {TypeKind::Never, "never"},
     };
     for (const auto& [kind, name] : builtins) {

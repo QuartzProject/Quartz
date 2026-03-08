@@ -1,18 +1,18 @@
 package org.basaltmc.examples.math
 
 struct Vec3 {
-    x: f64
-    y: f64
-    z: f64
+    x: float
+    y: float
+    z: float
 }
 
 impl Vec3 {
-    fn lengthSquared(self) -> f64 {
+    fn lengthSquared(self) -> float {
         return self.x * self.x + self.y * self.y + self.z * self.z
     }
 }
 
-fn sumSquares(nums: [i64]) -> i64 {
+fn sumSquares(nums: [int]) -> int {
     var total = 0
     for n in nums {
         total += n * n

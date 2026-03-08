@@ -1,11 +1,11 @@
 // error: a suspend function cannot keep a list or map of the state in a variable
 // error: 'wait' can only be used in a suspend function
-// error: cannot wait on 'i64'
+// error: cannot wait on 'int'
 // error: state cannot be accessed inside 'at'
 // error: 'xs' cannot be used inside 'at'
 
 state S {
-    items: [i64]
+    items: [int]
 }
 
 fn delay() -> Delay

@@ -9,12 +9,12 @@ namespace quartz::lsp {
 namespace {
 
 constexpr BuiltinFunction kFunctions[] = {
-    {"sqrt", "sqrt(x: f64) -> f64"},
-    {"floor", "floor(x: f64) -> f64"},
-    {"ceil", "ceil(x: f64) -> f64"},
-    {"sin", "sin(x: f64) -> f64"},
-    {"cos", "cos(x: f64) -> f64"},
-    {"pow", "pow(x: f64, y: f64) -> f64"},
+    {"sqrt", "sqrt(x: float) -> float"},
+    {"floor", "floor(x: float) -> float"},
+    {"ceil", "ceil(x: float) -> float"},
+    {"sin", "sin(x: float) -> float"},
+    {"cos", "cos(x: float) -> float"},
+    {"pow", "pow(x: float, y: float) -> float"},
     {"abs", "abs<T>(x: T) -> T"},
     {"min", "min<T>(a: T, b: T) -> T"},
     {"max", "max<T>(a: T, b: T) -> T"},
@@ -25,8 +25,9 @@ constexpr BuiltinFunction kFunctions[] = {
     {"Map", "Map<K, V>() -> Map<K, V>"},
 };
 
-constexpr std::string_view kTypes[] = {"void", "bool", "i8",  "i16",  "i32", "i64",   "u8",   "u16", "u32",
-                                       "u64",  "f32",  "f64", "char", "str", "Bytes", "List", "Map", "Result"};
+constexpr std::string_view kTypes[] = {"void",  "bool", "int", "float",  "byte", "char", "str",
+                                       "Bytes", "List", "Map", "Result", "i8",   "i16",  "i32",
+                                       "i64",   "u8",   "u16", "u32",    "u64",  "f32",  "f64"};
 
 #define QUARTZ_KW_TEXT(name, text) std::string_view(text),
 constexpr std::string_view kKeywords[] = {QUARTZ_KEYWORDS(QUARTZ_KW_TEXT)};
@@ -43,18 +44,18 @@ std::vector<BuiltinMethod> builtinMethods(const Analysis& a, std::uint32_t recv)
     const ir::TypeInfo& info = p->types.info(recv);
     auto add = [&](std::string_view n, std::string sig) { out.push_back({std::string(n), std::string(n) + sig}); };
     if (recv == ir::kStr) {
-        add("len", "() -> i64");
+        add("len", "() -> int");
         add("lower", "() -> str");
         add("upper", "() -> str");
         add("contains", "(text: str) -> bool");
         add("startsWith", "(prefix: str) -> bool");
         add("endsWith", "(suffix: str) -> bool");
-        add("slice", "(begin: i64, end: i64) -> str");
-        add("byteAt", "(index: i64) -> i64");
-        add("find", "(text: str) -> i64?");
+        add("slice", "(begin: int, end: int) -> str");
+        add("byteAt", "(index: int) -> int");
+        add("find", "(text: str) -> int?");
     } else if (info.kind == ir::TypeKind::List) {
         std::string elem = a.typeName(info.elem);
-        add("len", "() -> i64");
+        add("len", "() -> int");
         add("push", std::format("(value: {})", elem));
         add("pop", std::format("() -> {}?", elem));
         add("clear", "()");
@@ -64,17 +65,17 @@ std::vector<BuiltinMethod> builtinMethods(const Analysis& a, std::uint32_t recv)
     } else if (info.kind == ir::TypeKind::Map) {
         std::string key = a.typeName(info.key);
         std::string value = a.typeName(info.elem);
-        add("len", "() -> i64");
+        add("len", "() -> int");
         add("get", std::format("(key: {}) -> {}?", key, value));
         add("set", std::format("(key: {}, value: {})", key, value));
         add("has", std::format("(key: {}) -> bool", key));
         add("remove", std::format("(key: {}) -> bool", key));
     } else if (recv == ir::kF64) {
         for (std::string_view n : {"sqrt", "floor", "ceil", "abs", "sin", "cos"}) {
-            add(n, "() -> f64");
+            add(n, "() -> float");
         }
     } else if (recv == ir::kI64) {
-        add("abs", "() -> i64");
+        add("abs", "() -> int");
     } else if (p->types.isResult(recv) && !info.variants.empty() && !info.variants[0].payload.empty()) {
         std::string inner = a.typeName(info.variants[0].payload[0]);
         add("isOk", "() -> bool");

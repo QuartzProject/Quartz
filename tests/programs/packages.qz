@@ -7,7 +7,7 @@ import geo.{distance}
 import text.*
 import geo.Origin as Zero
 
-fn main() -> i64 {
+fn main() -> int {
     let p = Point(3, 4)
     print("{distance(Zero, p)} {shout("alice")} {count()} {helper()}")
     let q = geo.Point(6, 1)
@@ -23,17 +23,17 @@ fn helper() -> str {
 package geo
 
 pub struct Point {
-    x: i64
-    y: i64
+    x: int
+    y: int
 }
 
 pub const Origin = Point(0, 0)
 
-pub fn distance(a: Point, b: Point) -> i64 {
+pub fn distance(a: Point, b: Point) -> int {
     return max(abs(b.x - a.x), abs(b.y - a.y)) - 1
 }
 
-fn secret() -> i64 {
+fn secret() -> int {
     return 1
 }
 
@@ -44,7 +44,7 @@ pub fn shout(s: str) -> str {
     return s.lower()
 }
 
-pub fn count() -> i64 {
+pub fn count() -> int {
     return calls + 2
 }
 
@@ -53,6 +53,6 @@ const calls = 0
 // file: app2.qz
 package app
 
-fn other() -> i64 {
+fn other() -> int {
     return 7
 }

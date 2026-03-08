@@ -9,7 +9,7 @@ import std.bytes.*
 import std.compress.*
 import std.zip.*
 
-fn main() -> i64 {
+fn main() -> int {
     let b = "héllo".toBytes()
     print("{b.len() - 1} {b.get(0)} {"hello".toBytes().slice(1, 4).toStr() ?? "?"} {b.toStr() ?? "?"}")
     var parts: [str] = []
@@ -23,7 +23,7 @@ fn main() -> i64 {
     print("roundtrip {raw.hex() == text.hex()} {z.len() == text.len()} {g.toStr() == text.toStr()}")
     let zs = zstdCompress(text, 5)
     print("zstd {zstdDecompress(zs).unwrap().hex() == text.hex()} {zs.len() < text.len() / 5} {zstdDecompress(text).isErr()}")
-    var big: [i64] = []
+    var big: [int] = []
     for i in 0..2000 {
         big.push(i % 251)
     }

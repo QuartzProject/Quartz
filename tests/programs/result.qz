@@ -15,7 +15,7 @@ fn describe(e: ParseError) -> str {
     }
 }
 
-fn digit(s: str, i: i64) -> Result<i64, ParseError> {
+fn digit(s: str, i: int) -> Result<int, ParseError> {
     let b = s.byteAt(i)
     if b < 48 || b > 57 {
         return Err(ParseError.BadDigit(s.slice(i, i + 1)))
@@ -23,7 +23,7 @@ fn digit(s: str, i: i64) -> Result<i64, ParseError> {
     return Ok(b - 48)
 }
 
-fn parse(s: str) -> Result<i64, ParseError> {
+fn parse(s: str) -> Result<int, ParseError> {
     if s.len() == 0 {
         return Err(ParseError.Empty)
     }
@@ -34,7 +34,7 @@ fn parse(s: str) -> Result<i64, ParseError> {
     return Ok(n)
 }
 
-fn main() -> i64 {
+fn main() -> int {
     match parse("21") {
         Ok(v) => print("{v} ok")
         Err(e) => print("error: {describe(e)}")
@@ -43,11 +43,11 @@ fn main() -> i64 {
         Ok(v) => print("{v} ok")
         Err(e) => print("error: {describe(e)}")
     }
-    let r: Result<i64, ParseError> = Ok(7)
+    let r: Result<int, ParseError> = Ok(7)
     let bad = parse("")
     print("{r.unwrap()} {bad.unwrapOr(0)} {r.isOk()} {bad.isOk()}")
-    let some: i64? = 5
-    let none: i64? = null
+    let some: int? = 5
+    let none: int? = null
     print("{some.unwrap()} {none.unwrapOr(9)}")
     return 0
 }

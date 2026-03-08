@@ -1,10 +1,10 @@
 @handle
 struct Player {
-    id: i64
-    level: i64
+    id: int
+    level: int
     name: str
 }
 
-fn trusted(p: Player, region: i64) -> bool
+fn trusted(p: Player, region: int) -> bool
 fn send(p: Player, msg: str)
 fn setScore(p: Player, text: str)

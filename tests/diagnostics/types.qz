@@ -1,9 +1,10 @@
+// error: 'float' has no fixed C width; write f64 or f32 in a @repr(C) field
 // error: match is not exhaustive; missing: Green
-// error: expected 'str', found 'i64'
-// error: mismatched types 'i64' and 'f64'
+// error: expected 'str', found 'int'
+// error: mismatched types 'int' and 'float'
 // error: cannot assign to an immutable binding
 // error: 'P' has no field 'y'
-// error: expected 'bool', found 'i64'
+// error: expected 'bool', found 'int'
 // error: unknown name 'unknown'
 // error: function 'g' may end without returning a 'str'
 // error: this default value depends on itself
@@ -12,12 +13,12 @@
 enum Color {
     Red
     Green
-    Blue(i64)
+    Blue(int)
 }
 struct P {
-    x: i64
+    x: int
 }
-fn f(a: i64) -> i64 {
+fn f(a: int) -> int {
     let c = Color.Red
     match c {
         Red => return 1
@@ -34,9 +35,14 @@ fn f(a: i64) -> i64 {
 fn g() -> str {}
 
 struct Loop {
-    next: i64 = Loop().next
+    next: int = Loop().next
 }
 
-fn loose(self) -> i64 {
+fn loose(self) -> int {
     return 1
+}
+
+@repr(C)
+struct Pixel {
+    x: float
 }

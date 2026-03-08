@@ -36,7 +36,7 @@ constexpr std::string_view kStd = R"(fn print(text: str)
 @handle
 @awaitable
 struct Delay {}
-impl i64 {
+impl int {
     @property
     fn ticks(self) -> Delay
 }
@@ -89,7 +89,7 @@ void checkRun(const std::shared_ptr<const quartz::vm::Program>& program, const s
     std::string printed;
     quartz::vm::Sandbox sb(program);
     sb.bind("print", capturePrint, &printed);
-    sb.bind("i64.ticks", hostTicks);
+    sb.bind("int.ticks", hostTicks);
     REQUIRE(sb.start().has_value());
     auto t = sb.spawn(program->findFunction("main"), {});
     while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
@@ -144,7 +144,7 @@ TEST_CASE("binary modules decode to the same bytes and run the same") {
         checkRun(*loaded, text);
     }
     quartz::SourceInput versioned[] = {
-        {"v.qz", "@version(3)\nstate Hub {\n    @renamed(\"count\")\n    total: i64\n}\n"}};
+        {"v.qz", "@version(3)\nstate Hub {\n    @renamed(\"count\")\n    total: int\n}\n"}};
     quartz::CompileOutput out = quartz::compile(versioned, {.emitBinary = true, .manifest = {}});
     REQUIRE_MESSAGE(out.program, out.diagnostics);
     auto mod = quartz::ir::deserialize(out.binary);
