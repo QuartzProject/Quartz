@@ -23,6 +23,7 @@
 // expect: 4 é true false 233 A
 // expect: true 1.5
 // expect: false 2.5
+import org.quartzlang.math.*
 
 struct V {
     a: i32

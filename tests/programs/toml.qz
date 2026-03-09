@@ -2,7 +2,7 @@
 // expect: hex 255 big 1000000 lit C:\Users
 // expect: error toml line 2: key 'a' is defined twice
 
-import std.data.*
+import org.quartzlang.data.*
 
 fn main() -> int {
     let doc = """

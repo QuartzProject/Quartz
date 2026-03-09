@@ -1,17 +1,22 @@
 // expect: 3 alice 2 shared
 // expect: qualified 5 7
+// expect: whole 3 1 4
 package app
 
 import geo.Point
 import geo.{distance}
 import text.*
 import geo.Origin as Zero
+import org.quartzlang.data as d
+import org.quartzlang.math
 
 fn main() -> int {
     let p = Point(3, 4)
     print("{distance(Zero, p)} {shout("alice")} {count()} {helper()}")
     let q = geo.Point(6, 1)
     print("qualified {geo.distance(geo.Origin, q)} {text.count() + 5}")
+    let v: d.Value = d.parseJson("[1, 2, 3]").unwrapOr(d.Value.Null)
+    print("whole {v.len()} {v.item(0)?.asInt() ?? 0} {math.max(4, -9)}")
     return 0
 }
 
@@ -21,6 +26,8 @@ fn helper() -> str {
 
 // file: geo.qz
 package geo
+
+import org.quartzlang.math.{abs, max}
 
 pub struct Point {
     x: int

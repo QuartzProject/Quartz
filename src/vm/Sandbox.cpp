@@ -27,7 +27,7 @@ void Sandbox::bindNatives() {
     const ir::Module& m = *program_->module;
     dataTypes_ = std::make_unique<stdlib::DataTypes>();
     for (const ir::HostImport& imp : m.imports) {
-        if (imp.name == "std.data.parseJson" && m.types.isResult(imp.result)) {
+        if (imp.name == "org.quartzlang.data.parseJson" && m.types.isResult(imp.result)) {
             ir::TypeId value = m.types.info(imp.result).variants[0].payload[0];
             const ir::TypeInfo& vi = m.types.info(value);
             if (vi.variants.size() == 7) {

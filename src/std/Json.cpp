@@ -439,10 +439,10 @@ void addBinaryNatives(std::vector<Native>& out);
 const std::vector<Native>& natives() {
     static const std::vector<Native> kNatives = [] {
         std::vector<Native> v = {
-            {"std.data.parseJson", parseJson},
-            {"std.data.toJson", toJson},
-            {"std.data.parseToml", parseToml},
-            {"std.data.parseYaml", parseYaml},
+            {"org.quartzlang.data.parseJson", parseJson},
+            {"org.quartzlang.data.toJson", toJson},
+            {"org.quartzlang.data.parseToml", parseToml},
+            {"org.quartzlang.data.parseYaml", parseYaml},
         };
         addBinaryNatives(v);
         return v;

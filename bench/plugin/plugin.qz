@@ -1,5 +1,7 @@
 package bench.plugin
 
+import org.quartzlang.math.{floor, sqrt}
+
 const N = 10000
 
 struct Region {

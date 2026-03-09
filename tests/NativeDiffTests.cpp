@@ -303,7 +303,7 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
 }
 
 TEST_CASE("fuel charged by host functions inside a counted loop matches the interpreter") {
-    std::string text = "import std.data.*\n"
+    std::string text = "import org.quartzlang.data.*\n"
                        "fn main() -> int {\n"
                        "    var n = 0\n"
                        "    for i in 0..300 {\n"

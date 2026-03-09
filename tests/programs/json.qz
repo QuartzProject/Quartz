@@ -4,7 +4,7 @@
 // expect: error json 1:9: expected ',' or '}'
 // expect: unicode é 😀
 
-import std.data.*
+import org.quartzlang.data.*
 
 fn main() -> int {
     let text = """\{"name": "Steve", "level": 7, "ratio": 0.5, "tags": ["pvp", "build", "chat"]}"""

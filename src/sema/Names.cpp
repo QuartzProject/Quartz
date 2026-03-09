@@ -1,5 +1,6 @@
 #include "sema/SemaImpl.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace quartz::sema {
@@ -46,17 +47,17 @@ void Checker::indexFiles() {
                 }
                 continue;
             }
+            if (packages_.contains(path)) {
+                fs.packageImports[imp.alias.valid() ? imp.alias : imp.path[imp.path.size() - 1]] = path;
+                continue;
+            }
             if (imp.path.size() < 2) {
-                diags_.error(imp.span, "an import names a package and a symbol, or uses '.*' or '.{...}'");
+                diags_.error(imp.span, std::format("unknown package '{}'", path));
                 continue;
             }
             std::string pkg = joinPath(names_, imp.path.subspan(0, imp.path.size() - 1));
             if (!packages_.contains(pkg)) {
-                if (packages_.contains(path)) {
-                    fs.starImports.push_back(path); // `import a.b` of a whole package
-                } else {
-                    diags_.error(imp.span, std::format("unknown package '{}'", pkg));
-                }
+                diags_.error(imp.span, std::format("unknown package '{}'", pkg));
                 continue;
             }
             Symbol last = imp.path[imp.path.size() - 1];
@@ -166,11 +167,54 @@ bool Checker::packagePath(const Expr* e, std::string& out) {
     if (findLocal(root) != nullptr || findGlobal(root) != nullptr || findType(root) != nullptr) {
         return false;
     }
-    out = std::string(str(root));
-    for (auto it = parts.rbegin(); it != parts.rend(); ++it) {
-        out += "." + std::string(str(*it));
+    parts.push_back(root);
+    std::reverse(parts.begin(), parts.end());
+    return qualifier(parts, out);
+}
+
+// `package.Type` used as an expression, for `data.Value.Null`; kError when it is not one.
+TypeId Checker::qualifiedType(const Expr* e) {
+    if (e->kind != ExprKind::Member || static_cast<const MemberExpr*>(e)->safe) {
+        return ir::kError;
+    }
+    const auto* m = static_cast<const MemberExpr*>(e);
+    std::string pkg;
+    if (!packagePath(m->object, pkg)) {
+        return ir::kError;
+    }
+    auto* te = static_cast<TypeEntry*>(findIn(pkg, m->name, NameKind::Type));
+    return te != nullptr ? te->type : ir::kError;
+}
+
+// The package a qualifier names: one imported whole (`import org.quartzlang.data` makes `data` one) or a full path.
+bool Checker::qualifier(std::span<const Symbol> path, std::string& out) const {
+    if (path.empty()) {
+        return false;
+    }
+    if (currentFile_ < files_.size()) {
+        auto alias = files_[currentFile_].packageImports.find(path[0]);
+        out = alias != files_[currentFile_].packageImports.end() ? alias->second : std::string(names_.name(path[0]));
+    } else {
+        out = std::string(names_.name(path[0]));
+    }
+    for (std::size_t i = 1; i < path.size(); ++i) {
+        out += "." + std::string(names_.name(path[i]));
     }
     return packages_.contains(out);
+}
+
+// The free functions of org.quartzlang.math need that package imported, whole with `.*` or by name.
+bool Checker::mathImported(Symbol name, std::string_view& original) const {
+    if (currentFile_ >= files_.size()) {
+        return false;
+    }
+    const FileScope& fs = files_[currentFile_];
+    if (auto it = fs.symbolImports.find(name); it != fs.symbolImports.end()) {
+        original = names_.name(it->second.second);
+        return it->second.first == kMathPackage;
+    }
+    original = names_.name(name);
+    return std::find(fs.starImports.begin(), fs.starImports.end(), kMathPackage) != fs.starImports.end();
 }
 
 bool Checker::imported(const NameEntry& e, Symbol alias, std::uint32_t file) const {

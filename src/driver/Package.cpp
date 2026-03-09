@@ -52,6 +52,24 @@ std::expected<std::vector<std::string>, std::string> stringList(std::string_view
     return out;
 }
 
+// A package name is a reverse domain the author controls: `org.example.economy`, two or more lower case segments.
+bool isPackageName(std::string_view name) {
+    std::size_t segments = 0;
+    while (true) {
+        std::size_t dot = name.find('.');
+        std::string_view part = name.substr(0, dot);
+        if (part.empty() || part.front() < 'a' || part.front() > 'z' ||
+            part.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_") != std::string_view::npos) {
+            return false;
+        }
+        ++segments;
+        if (dot == std::string_view::npos) {
+            return segments >= 2;
+        }
+        name.remove_prefix(dot + 1);
+    }
+}
+
 } // namespace
 
 std::expected<Version, std::string> parseVersion(std::string_view text) {
@@ -160,11 +178,19 @@ std::expected<Manifest, std::string> parseManifest(std::string_view text) {
             return fail("expected key = value");
         }
         std::string key(trim(line.substr(0, eq)));
-        if (key.size() >= 2 && key.front() == '"' && key.back() == '"') {
+        bool quoted = key.size() >= 2 && key.front() == '"' && key.back() == '"';
+        if (quoted) {
             key = key.substr(1, key.size() - 2);
         }
         std::string_view value = trim(line.substr(eq + 1));
         if (table == "dependencies") {
+            if (!quoted) {
+                return fail(
+                    std::format("quote the package name: \"{}\" = ... (a bare dotted key is a nested table)", key));
+            }
+            if (!isPackageName(key)) {
+                return fail(std::format("'{}' is not a package name like org.example.economy", key));
+            }
             auto range = unquote(value);
             if (!range) {
                 return fail(range.error());
@@ -198,6 +224,12 @@ std::expected<Manifest, std::string> parseManifest(std::string_view text) {
     }
     if (m.name.empty() || m.version.empty()) {
         return std::unexpected("package.toml needs a name and a version");
+    }
+    if (!isPackageName(m.name)) {
+        return std::unexpected(
+            std::format("package.toml: '{}' is not a package name; use a reverse domain you control, "
+                        "like org.example.{}",
+                        m.name, m.name));
     }
     if (auto v = parseVersion(m.version); !v) {
         return std::unexpected("package.toml: " + v.error());

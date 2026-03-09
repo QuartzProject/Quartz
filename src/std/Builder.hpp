@@ -4,10 +4,10 @@
 
 namespace quartz::stdlib {
 
-// Variant order of `std.data.Value`.
+// Variant order of `org.quartzlang.data.Value`.
 enum class Tag : std::uint64_t { Null, Bool, Int, Float, Str, List, Table };
 
-/// Builds `std.data.Value` trees in the running sandbox's arena.
+/// Builds `org.quartzlang.data.Value` trees in the running sandbox's arena.
 class Builder {
 public:
     Builder(vm::Sandbox& sb, const DataTypes& types) : sb_(sb), t_(types) {}

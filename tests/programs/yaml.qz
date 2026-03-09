@@ -1,7 +1,7 @@
 // expect: {"empty": null, "items": [{"count": 2, "name": "sword"}, {"count": 64, "name": "dirt"}], "motd": "Welcome to\nthe server\n", "name": "Hub", "ports": [25565, 25566], "settings": {"pvp": false, "ratio": 1.5, "tags": ["a", "b c"]}, "words": "one two"}
 // expect: error yaml line 2: duplicate key 'a'
 
-import std.data.*
+import org.quartzlang.data.*
 
 fn main() -> int {
     let doc = """

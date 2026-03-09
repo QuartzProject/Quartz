@@ -5,9 +5,9 @@
 // expect: crc 1095738169
 // expect: be 258 le 513
 
-import std.bytes.*
-import std.compress.*
-import std.zip.*
+import org.quartzlang.bytes.*
+import org.quartzlang.compress.*
+import org.quartzlang.zip.*
 
 fn main() -> int {
     let b = "héllo".toBytes()

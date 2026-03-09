@@ -343,7 +343,22 @@ TypeId Checker::resolveTypeExpr(TypeExpr* t) {
             }
             return types_->map(a, v);
         }
-        TypeId found = lookupTypeName(last, t->span, true);
+        TypeId found = ir::kError;
+        if (n->path.size() > 1) {
+            std::string pkg;
+            if (!qualifier(n->path.first(n->path.size() - 1), pkg)) {
+                diags_.error(t->span, std::format("unknown package '{}'", pkg));
+                return ir::kError;
+            }
+            auto* te = static_cast<TypeEntry*>(findIn(pkg, last, NameKind::Type));
+            if (te == nullptr) {
+                diags_.error(t->span, std::format("package '{}' has no public type '{}'", pkg, text));
+                return ir::kError;
+            }
+            found = te->type;
+        } else {
+            found = lookupTypeName(last, t->span, true);
+        }
         if (found != ir::kError && types_->isGenericBase(found)) {
             const ir::TypeInfo& base = types_->info(found);
             if (n->args.size() != base.typeParams.size()) {

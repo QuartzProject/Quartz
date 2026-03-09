@@ -69,7 +69,7 @@ state Hub {
     CHECK(incompatible.error().message.find("migrateHub") != std::string::npos);
 
     auto migrated = sb.reload(build(R"(
-import std.data.*
+import org.quartzlang.data.*
 @version(2)
 state Hub {
     visits: Map<str, str>
@@ -130,7 +130,7 @@ fn join(p: Player, s: Stats) -> int {
 }
 
 TEST_CASE("packages call each other through generated interfaces and load in dependency order") {
-    quartz::SourceInput eco[] = {{"eco.qz", R"(package economy
+    quartz::SourceInput eco[] = {{"eco.qz", R"(package org.example.economy
 state Bank {
     money: Map<str, int>
 }
@@ -142,13 +142,13 @@ fn pay(bank: Bank, who: str, amount: int) -> str {
     return "{who}={bank.money[who]}"
 }
 )"}};
-    auto manifest = quartz::parseManifest("name = \"economy\"\nversion = \"1.4.2\"\nexports = [\"balance\", \"pay\"]\n");
+    auto manifest = quartz::parseManifest("name = \"org.example.economy\"\nversion = \"1.4.2\"\nexports = [\"balance\", \"pay\"]\n");
     REQUIRE(manifest.has_value());
     quartz::CompileOutput ecoOut = quartz::compile(eco);
     REQUIRE_MESSAGE(ecoOut.program, ecoOut.diagnostics);
     auto iface = quartz::interfaceOf(*ecoOut.program, *manifest);
     REQUIRE_MESSAGE(iface.has_value(), (iface ? "" : iface.error()));
-    quartz::SourceInput shop[] = {{"economy.qzi", *iface}, {"shop.qz", R"(import economy.*
+    quartz::SourceInput shop[] = {{"economy.qzi", *iface}, {"shop.qz", R"(import org.example.economy.*
 fn buy(who: str) -> str {
     let receipt = pay(who, 0 - 30)
     return "{receipt} left {balance(who)}"
@@ -158,7 +158,7 @@ fn buy(who: str) -> str {
     REQUIRE_MESSAGE(shopOut.program, shopOut.diagnostics);
     quartz::vm::Sandbox provider(ecoOut.program);
     quartz::vm::Sandbox client(shopOut.program);
-    REQUIRE(client.link("economy", provider).has_value());
+    REQUIRE(client.link("org.example.economy", provider).has_value());
     REQUIRE(provider.start().has_value());
     REQUIRE(client.start().has_value());
     quartz::vm::Slot who{};
@@ -167,24 +167,24 @@ fn buy(who: str) -> str {
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "ana=70 left 70");
 
-    auto cycle = quartz::loadOrder({*quartz::parseManifest("name = \"a\"\nversion = \"1.0.0\"\n[dependencies]\nb = \"^1\"\n"),
-                                    *quartz::parseManifest("name = \"b\"\nversion = \"1.2.0\"\n[dependencies]\na = \"*\"\n")});
+    auto cycle = quartz::loadOrder({*quartz::parseManifest("name = \"org.example.a\"\nversion = \"1.0.0\"\n[dependencies]\n\"org.example.b\" = \"^1\"\n"),
+                                    *quartz::parseManifest("name = \"org.example.b\"\nversion = \"1.2.0\"\n[dependencies]\n\"org.example.a\" = \"*\"\n")});
     REQUIRE_FALSE(cycle.has_value());
     CHECK(cycle.error().find("cycle") != std::string::npos);
-    auto order = quartz::loadOrder({*quartz::parseManifest("name = \"shop\"\nversion = \"0.1.0\"\n[dependencies]\neconomy = \">=1.2, <2\"\n"),
+    auto order = quartz::loadOrder({*quartz::parseManifest("name = \"org.example.shop\"\nversion = \"0.1.0\"\n[dependencies]\n\"org.example.economy\" = \">=1.2, <2\"\n"),
                                     *manifest});
     REQUIRE(order.has_value());
     CHECK(*order == std::vector<std::size_t>{1, 0});
-    auto tooNew = quartz::loadOrder({*quartz::parseManifest("name = \"shop\"\nversion = \"0.1.0\"\n[dependencies]\neconomy = \"^2\"\n"),
+    auto tooNew = quartz::loadOrder({*quartz::parseManifest("name = \"org.example.shop\"\nversion = \"0.1.0\"\n[dependencies]\n\"org.example.economy\" = \"^2\"\n"),
                                      *manifest});
     CHECK_FALSE(tooNew.has_value());
 }
 
 TEST_CASE("a package loads only when signed by the key trusted for its name") {
-    quartz::SourceInput src[] = {{"eco.qz", "package economy\nfn one() -> int {\n    return 1\n}\n"}};
+    quartz::SourceInput src[] = {{"eco.qz", "package org.example.economy\nfn one() -> int {\n    return 1\n}\n"}};
     quartz::CompileOptions opts;
     opts.emitBinary = true;
-    opts.manifest = "name = \"economy\"\nversion = \"1.0.0\"\n";
+    opts.manifest = "name = \"org.example.economy\"\nversion = \"1.0.0\"\n";
     quartz::CompileOutput out = quartz::compile(src, opts);
     REQUIRE_MESSAGE(out.program, out.diagnostics);
     std::array<std::uint8_t, 32> publisher{};
@@ -194,13 +194,13 @@ TEST_CASE("a package loads only when signed by the key trusted for its name") {
     std::vector<std::uint8_t> signedBytes = out.binary;
     REQUIRE(quartz::ir::sign(signedBytes, publisher).has_value());
     quartz::TrustPolicy policy;
-    policy.keys.emplace_back("economy", quartz::ir::publicKey(publisher));
+    policy.keys.emplace_back("org.example.economy", quartz::ir::publicKey(publisher));
     auto ok = quartz::loadPackage(signedBytes, policy);
     REQUIRE_MESSAGE(ok.has_value(), (ok ? "" : ok.error()));
-    CHECK(ok->manifest.name == "economy");
+    CHECK(ok->manifest.name == "org.example.economy");
     CHECK_FALSE(quartz::loadPackage(out.binary, policy).has_value());
     quartz::TrustPolicy wrong;
-    wrong.keys.emplace_back("economy", quartz::ir::publicKey(stranger));
+    wrong.keys.emplace_back("org.example.economy", quartz::ir::publicKey(stranger));
     CHECK_FALSE(quartz::loadPackage(signedBytes, wrong).has_value());
     CHECK_FALSE(quartz::loadPackage(signedBytes, quartz::TrustPolicy{}).has_value());
 }

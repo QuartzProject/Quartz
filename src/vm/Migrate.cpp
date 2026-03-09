@@ -672,7 +672,7 @@ std::expected<void, Trap> Sandbox::importOne(std::size_t i, const void* savedPtr
     if (migrate == ~0U) {
         return {};
     }
-    // migrate<State>(old: Value, data: State) sees the saved fields as a std.data value.
+    // migrate<State>(old: Value, data: State) sees the saved fields as an org.quartzlang.data value.
     std::string err;
     Slot value[2];
     if (dataTypes_->value == 0 || !stdlib::jsonToValue(*this, *dataTypes_, toText(*fields), value, err)) {
@@ -784,7 +784,7 @@ std::expected<std::unique_ptr<Sandbox>, Trap> Sandbox::reload(std::shared_ptr<co
     auto fresh = std::make_unique<Sandbox>(std::move(next), limits_);
     const auto& oldImports = program_->module->imports;
     for (std::size_t i = 0; i < oldImports.size(); ++i) {
-        if (bindings_[i].fn != nullptr && !oldImports[i].name.starts_with("std.")) {
+        if (bindings_[i].fn != nullptr && !oldImports[i].name.starts_with("org.quartzlang.")) {
             fresh->bind(oldImports[i].name, bindings_[i].fn, bindings_[i].user);
         }
     }

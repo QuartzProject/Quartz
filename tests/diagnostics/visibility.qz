@@ -1,3 +1,4 @@
+// error: 'sqrt' is in org.quartzlang.math; import it with 'import org.quartzlang.math.sqrt'
 // error: unknown function 'secret'
 // error: unknown function 'internalHelper'
 // error: unknown name 'hidden'
@@ -8,7 +9,7 @@ import lib.*
 import nowhere.Thing
 
 fn main() -> int {
-    return secret() + internalHelper() + hidden
+    return secret() + internalHelper() + hidden + (sqrt(4.0) as int)
 }
 
 // file: lib.qz

@@ -4,7 +4,7 @@ namespace quartz::stdlib {
 
 namespace {
 
-constexpr std::string_view kDataQz = R"(package std.data
+constexpr std::string_view kDataQz = R"(package org.quartzlang.data
 
 pub enum Value {
     Null
@@ -78,7 +78,7 @@ impl Value {
 }
 )";
 
-constexpr std::string_view kDataQzi = R"(package std.data
+constexpr std::string_view kDataQzi = R"(package org.quartzlang.data
 
 fn parseJson(text: str) -> Result<Value, str>
 fn toJson(value: Value, indent: int = 0) -> str
@@ -86,7 +86,7 @@ fn parseToml(text: str) -> Result<Value, str>
 fn parseYaml(text: str) -> Result<Value, str>
 )";
 
-constexpr std::string_view kBytesQzi = R"(package std.bytes
+constexpr std::string_view kBytesQzi = R"(package org.quartzlang.bytes
 
 impl Bytes {
     fn len(self) -> int
@@ -107,7 +107,7 @@ fn readUInt(data: Bytes, offset: int, size: int, bigEndian: bool = false) -> int
 fn crc32(data: Bytes) -> int
 )";
 
-constexpr std::string_view kCompressQzi = R"(package std.compress
+constexpr std::string_view kCompressQzi = R"(package org.quartzlang.compress
 
 fn deflate(data: Bytes, level: int = 6) -> Bytes
 fn inflate(data: Bytes) -> Result<Bytes, str>
@@ -119,7 +119,7 @@ fn zstdCompress(data: Bytes, level: int = 3) -> Bytes
 fn zstdDecompress(data: Bytes) -> Result<Bytes, str>
 )";
 
-constexpr std::string_view kZipQz = R"(package std.zip
+constexpr std::string_view kZipQz = R"(package org.quartzlang.zip
 
 pub struct ZipEntry {
     name: str
@@ -127,11 +127,14 @@ pub struct ZipEntry {
 }
 )";
 
-constexpr std::string_view kZipQzi = R"(package std.zip
+constexpr std::string_view kZipQzi = R"(package org.quartzlang.zip
 
 fn readZip(data: Bytes) -> Result<[ZipEntry], str>
 fn writeZip(entries: [ZipEntry], level: int = 6) -> Bytes
 )";
+
+// The free math functions are built into the compiler; this declares the package they are imported from.
+constexpr std::string_view kMathQz = "package org.quartzlang.math\n";
 
 } // namespace
 
@@ -143,6 +146,7 @@ const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
         {"<std>/compress.qzi", kCompressQzi},
         {"<std>/zip.qz", kZipQz},
         {"<std>/zip.qzi", kZipQzi},
+        {"<std>/math.qz", kMathQz},
     };
     return kSources;
 }

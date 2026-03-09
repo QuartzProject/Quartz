@@ -1,5 +1,6 @@
 #include "sema/SemaImpl.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 
@@ -213,10 +214,29 @@ TypeId Checker::checkConstruct(CallExpr* call, TypeId type) {
     return type;
 }
 
-TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found) {
+TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found, bool qualified) {
     found = true;
     std::string_view n = str(name);
-    auto* ident = static_cast<IdentExpr*>(call->callee);
+    static constexpr std::string_view kMath[] = {"sqrt", "floor", "ceil", "sin", "cos", "pow", "abs", "min", "max"};
+    bool isMath = false;
+    if (qualified) {
+        isMath = std::find(std::begin(kMath), std::end(kMath), n) != std::end(kMath);
+    } else if (std::string_view original; mathImported(name, original)) {
+        isMath = std::find(std::begin(kMath), std::end(kMath), original) != std::end(kMath);
+        n = isMath ? original : n;
+    } else if (std::find(std::begin(kMath), std::end(kMath), n) != std::end(kMath)) {
+        diags_.error(call->callee->span,
+                     std::format("'{}' is in {}; import it with 'import {}.{}'", n, kMathPackage, kMathPackage, n));
+        for (Arg& a : call->args) {
+            check(a.value, ir::kError);
+        }
+        return ir::kError;
+    }
+    if (qualified && !isMath) {
+        found = false;
+        return ir::kError;
+    }
+    auto* ident = call->callee->kind == ExprKind::Ident ? static_cast<IdentExpr*>(call->callee) : nullptr;
     auto unaryF64 = [&](Intrinsic op) {
         call->callKind = CallKind::Builtin;
         call->builtin = static_cast<std::uint16_t>(op);
@@ -340,6 +360,13 @@ TypeId Checker::checkBuiltinMethod(CallExpr* call, TypeId recvType, Symbol name,
 
 TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expected) {
     if (std::string pkg; packagePath(callee->object, pkg)) {
+        if (pkg == kMathPackage) {
+            bool found = false;
+            TypeId t = checkBuiltinFunction(call, callee->name, expected, found, true);
+            if (found) {
+                return t;
+            }
+        }
         if (auto* fn = static_cast<FnInfo*>(findIn(pkg, callee->name, NameKind::Function))) {
             return finishCall(call, fn, nullptr);
         }
@@ -353,31 +380,34 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
         }
         return ir::kError;
     }
-    // `Enum.Variant(payload)`
-    if (callee->object->kind == ExprKind::Ident && !callee->safe) {
-        auto* id = static_cast<IdentExpr*>(callee->object);
-        if (findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {
-            TypeId et = lookupTypeName(id->name, id->span, false);
-            if (et != ir::kError && types_->kind(et) == ir::TypeKind::Enum) {
-                const ir::TypeInfo& info = types_->info(et);
-                for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
-                    if (info.variants[v].name == str(callee->name)) {
-                        call->callKind = CallKind::Variant;
-                        call->variant = v;
-                        if (types_->isGenericBase(et)) {
-                            et = inferInstance(et, info.variants[v].payload, call->args, expected, call->span);
-                            if (et == ir::kError) {
-                                return et;
-                            }
+    // `Enum.Variant(payload)`, also `package.Enum.Variant(payload)`
+    if (!callee->safe) {
+        auto* id = callee->object->kind == ExprKind::Ident ? static_cast<IdentExpr*>(callee->object) : nullptr;
+        TypeId et = ir::kError;
+        if (id != nullptr && findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {
+            et = lookupTypeName(id->name, id->span, false);
+        } else if (id == nullptr) {
+            et = qualifiedType(callee->object);
+        }
+        if (et != ir::kError && types_->kind(et) == ir::TypeKind::Enum) {
+            const ir::TypeInfo& info = types_->info(et);
+            for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
+                if (info.variants[v].name == str(callee->name)) {
+                    call->callKind = CallKind::Variant;
+                    call->variant = v;
+                    if (types_->isGenericBase(et)) {
+                        et = inferInstance(et, info.variants[v].payload, call->args, expected, call->span);
+                        if (et == ir::kError) {
+                            return et;
                         }
-                        std::vector<TypeId> payload = types_->info(et).variants[v].payload;
-                        bindArgs(call, payload, {}, {}, 0);
-                        return et;
                     }
+                    std::vector<TypeId> payload = types_->info(et).variants[v].payload;
+                    bindArgs(call, payload, {}, {}, 0);
+                    return et;
                 }
-                diags_.error(callee->span, std::format("'{}' has no variant '{}'", typeName(et), str(callee->name)));
-                return ir::kError;
             }
+            diags_.error(callee->span, std::format("'{}' has no variant '{}'", typeName(et), str(callee->name)));
+            return ir::kError;
         }
     }
     TypeId recv = call->safeCall && !callee->safe ? types_->info(callee->object->type).elem
@@ -537,41 +567,46 @@ TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
         }
         return g->type;
     }
-    if (e->object->kind == ExprKind::Ident && !e->safe) {
-        auto* id = static_cast<IdentExpr*>(e->object);
-        if (findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {
-            TypeId et = lookupTypeName(id->name, id->span, false);
-            if (et != ir::kError && types_->isGenericBase(et) && types_->kind(et) == ir::TypeKind::Enum) {
-                TypeId want = expected;
-                if (want != ir::kError && types_->kind(want) == ir::TypeKind::Nullable) {
-                    want = types_->info(want).elem;
-                }
-                if (want != ir::kError && types_->info(want).genericBase == et) {
-                    et = want;
-                } else {
-                    diags_.error(e->span, std::format("cannot infer the type arguments of '{}'; annotate the type",
-                                                      types_->info(et).name));
-                    return ir::kError;
-                }
+    if (!e->safe) {
+        auto* id = e->object->kind == ExprKind::Ident ? static_cast<IdentExpr*>(e->object) : nullptr;
+        TypeId et = ir::kError;
+        if (id != nullptr && findLocal(id->name) == nullptr && findGlobal(id->name) == nullptr) {
+            et = lookupTypeName(id->name, id->span, false);
+        } else if (id == nullptr) {
+            et = qualifiedType(e->object);
+        }
+        if (et != ir::kError && types_->isGenericBase(et) && types_->kind(et) == ir::TypeKind::Enum) {
+            TypeId want = expected;
+            if (want != ir::kError && types_->kind(want) == ir::TypeKind::Nullable) {
+                want = types_->info(want).elem;
             }
-            if (et != ir::kError) {
-                const ir::TypeInfo& info = types_->info(et);
-                if (info.kind == ir::TypeKind::Enum) {
-                    for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
-                        if (info.variants[v].name == str(e->name)) {
-                            if (!info.variants[v].payload.empty()) {
-                                diags_.error(e->span, std::format("variant '{}' needs its payload", str(e->name)));
-                            }
-                            e->isVariant = true;
-                            e->fieldIndex = v;
-                            id->ref = IdentRef::Type;
-                            return et;
-                        }
-                    }
-                }
-                diags_.error(e->span, std::format("'{}' has no member '{}'", typeName(et), str(e->name)));
+            if (want != ir::kError && types_->info(want).genericBase == et) {
+                et = want;
+            } else {
+                diags_.error(e->span, std::format("cannot infer the type arguments of '{}'; annotate the type",
+                                                  types_->info(et).name));
                 return ir::kError;
             }
+        }
+        if (et != ir::kError) {
+            const ir::TypeInfo& info = types_->info(et);
+            if (info.kind == ir::TypeKind::Enum) {
+                for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
+                    if (info.variants[v].name == str(e->name)) {
+                        if (!info.variants[v].payload.empty()) {
+                            diags_.error(e->span, std::format("variant '{}' needs its payload", str(e->name)));
+                        }
+                        e->isVariant = true;
+                        e->fieldIndex = v;
+                        if (id != nullptr) {
+                            id->ref = IdentRef::Type;
+                        }
+                        return et;
+                    }
+                }
+            }
+            diags_.error(e->span, std::format("'{}' has no member '{}'", typeName(et), str(e->name)));
+            return ir::kError;
         }
     }
     TypeId ot = checkValue(e->object, ir::kError);

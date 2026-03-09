@@ -22,13 +22,13 @@ struct NativeCtx {
     const DataTypes* data = nullptr;
 };
 
-/// Parses JSON into a `std.data.Value` in the running sandbox's arena; false with `error` set on bad input.
+/// Parses JSON into a `org.quartzlang.data.Value` in the running sandbox's arena; false with `error` set on bad input.
 bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text, vm::Slot* out, std::string& error);
 
-/// Native implementations of the `std.*` interface functions.
+/// Native implementations of the `org.quartzlang.*` interface functions.
 const std::vector<Native>& natives();
 
-/// Type ids the data natives need, found from the program's own `std.data` declarations.
+/// Type ids the data natives need, found from the program's own `org.quartzlang.data` declarations.
 struct DataTypes {
     ir::TypeId value = 0;
     ir::TypeId list = 0;

@@ -9,6 +9,8 @@
 
 namespace quartz::sema {
 
+inline constexpr std::string_view kMathPackage = "org.quartzlang.math";
+
 using namespace syntax;
 
 struct TypeEntry {
@@ -84,7 +86,7 @@ public:
     TypeId checkMember(MemberExpr* e, TypeId expected);
     TypeId checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expected);
     TypeId checkBuiltinMethod(CallExpr* call, TypeId recvType, Symbol name, TypeId expected);
-    TypeId checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found);
+    TypeId checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found, bool qualified = false);
     TypeId checkConstruct(CallExpr* call, TypeId type);
     TypeId finishCall(CallExpr* call, FnInfo* fn, Expr* receiver);
     bool bindArgs(CallExpr* call, const std::vector<TypeId>& params, const std::vector<Symbol>& names,
@@ -138,6 +140,7 @@ public:
         Module* module = nullptr;
         std::vector<std::string> starImports;
         std::unordered_map<Symbol, std::pair<std::string, Symbol>> symbolImports; // local name -> (package, name)
+        std::unordered_map<Symbol, std::string> packageImports;                   // `import a.b.c` -> c names a.b.c
     };
     void indexFiles();
     void addName(Symbol name, NameKind kind, void* target, const Decl* decl, std::uint32_t file);
@@ -145,6 +148,9 @@ public:
     bool imported(const NameEntry& e, Symbol alias, std::uint32_t file) const;
     void* findName(Symbol name, NameKind kind, Span span = {});
     void* findIn(const std::string& package, Symbol name, NameKind kind);
+    bool qualifier(std::span<const Symbol> path, std::string& out) const;
+    TypeId qualifiedType(const Expr* e);
+    bool mathImported(Symbol name, std::string_view& original) const;
     bool packagePath(const Expr* e, std::string& out);
     TypeEntry* findType(Symbol n) { return static_cast<TypeEntry*>(findName(n, NameKind::Type)); }
     FnInfo* findFunction(Symbol n) { return static_cast<FnInfo*>(findName(n, NameKind::Function)); }
