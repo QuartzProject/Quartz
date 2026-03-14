@@ -17,3 +17,19 @@ target_link_libraries(quartz_vm PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
 quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp DEPS quartz_vm)
 # Duplicate the dispatch jump into every handler; without it clang shares one indirect jump (D29).
 set_source_files_properties(vm/Interp.cpp PROPERTIES COMPILE_OPTIONS "-mllvm;-tail-dup-indirect-size=200;-mllvm;-tail-dup-size=200")
+# The C interface (include/quartz/quartz.h), static; QUARTZ_SHARED also builds libquartz exporting only qz_*.
+quartz_module(quartz_c SOURCES capi/CApi.cpp DEPS quartz)
+if(QUARTZ_SHARED)
+    add_library(quartz_shared SHARED capi/CApi.cpp)
+    set_target_properties(quartz_shared PROPERTIES OUTPUT_NAME quartz CXX_VISIBILITY_PRESET hidden
+        VERSION ${PROJECT_VERSION} SOVERSION 0)
+    target_compile_definitions(quartz_shared PRIVATE QZ_BUILDING_SHARED)
+    target_link_libraries(quartz_shared PRIVATE quartz)
+    target_include_directories(quartz_shared PUBLIC ${PROJECT_SOURCE_DIR}/include)
+    if(APPLE)
+        target_link_options(quartz_shared PRIVATE -Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/capi/exports.darwin)
+    elseif(NOT WIN32)
+        target_link_options(quartz_shared PRIVATE -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/capi/exports.map
+            -Wl,--exclude-libs,ALL)
+    endif()
+endif()

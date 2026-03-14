@@ -17,3 +17,8 @@ target_include_directories(quartz_lsp_tests PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(quartz_lsp_tests PRIVATE QUARTZ_LSP_PATH="$<TARGET_FILE:quartz-lsp>"
     QUARTZ_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}")
 add_dependencies(quartz_lsp_tests quartz-lsp)
+# The C interface, used from C: the header must compile as C11 and the library link into a C program.
+add_executable(quartz_capi_tests CApiTests.c)
+set_target_properties(quartz_capi_tests PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON LINKER_LANGUAGE CXX)
+target_link_libraries(quartz_capi_tests PRIVATE quartz_c)
+add_test(NAME quartz_capi_tests COMMAND quartz_capi_tests WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
