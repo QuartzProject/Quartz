@@ -342,6 +342,7 @@ struct AssignStmt : Stmt {
     AssignOp op;
     Expr* target;
     Expr* value;
+    std::uint32_t setter = ~0U; // host import of `setX` when the target is the host property `x`
 };
 
 struct WhileStmt : Stmt {

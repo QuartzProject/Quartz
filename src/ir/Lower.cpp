@@ -456,8 +456,40 @@ void Lowerer::assignPlace(Expr* target, Reg value) {
     }
 }
 
+namespace {
+
+BinaryOp compoundOp(AssignOp op) {
+    static const BinaryOp kOps[] = {BinaryOp::Add,    BinaryOp::Add, BinaryOp::Sub,    BinaryOp::Mul,
+                                    BinaryOp::Div,    BinaryOp::Rem, BinaryOp::BitAnd, BinaryOp::BitOr,
+                                    BinaryOp::BitXor, BinaryOp::Shl, BinaryOp::Shr};
+    return kOps[static_cast<std::size_t>(op)];
+}
+
+} // namespace
+
 void Lowerer::lowerAssign(AssignStmt* s) {
     TypeId tt = T(s->target->type);
+    if (s->setter != ~0U) {
+        auto* m = static_cast<MemberExpr*>(s->target);
+        Reg obj = lowerExpr(m->object);
+        Reg v = kNoReg;
+        if (s->op == AssignOp::Set) {
+            v = lowerExpr(s->value, tt);
+        } else {
+            Reg cur = newReg(tt);
+            emitArgs(Op::CallHost, cur, m->getter, {obj});
+            BinaryOp bop = compoundOp(s->op);
+            Reg rhs = lowerExpr(s->value, bop == BinaryOp::Shl || bop == BinaryOp::Shr ? kError : tt);
+            v = newReg(tt);
+            if (tt == kStr && bop == BinaryOp::Add) {
+                emitArgs(Op::Intrinsic, v, static_cast<std::uint32_t>(Intrinsic::StrConcat), {cur, rhs});
+            } else {
+                emit(binaryOp(bop), v, cur, rhs);
+            }
+        }
+        emitArgs(Op::CallHost, kNoReg, s->setter, {obj, v});
+        return;
+    }
     if (s->op == AssignOp::Set) {
         Reg v = lowerExpr(s->value, tt);
         if (sema::Local* root = rootLocal(s->target)) {
@@ -466,10 +498,7 @@ void Lowerer::lowerAssign(AssignStmt* s) {
         assignPlace(s->target, v);
         return;
     }
-    static const BinaryOp kOps[] = {BinaryOp::Add,    BinaryOp::Add,   BinaryOp::Sub,    BinaryOp::Mul,
-                                    BinaryOp::Div,    BinaryOp::Rem,   BinaryOp::BitAnd, BinaryOp::BitOr,
-                                    BinaryOp::BitXor, BinaryOp::Shl,   BinaryOp::Shr};
-    BinaryOp bop = kOps[static_cast<std::size_t>(s->op)];
+    BinaryOp bop = compoundOp(s->op);
     // Evaluate the container and index once for `xs[i] op= v`.
     if (s->target->kind == ExprKind::Index) {
         auto* ix = static_cast<IndexExpr*>(s->target);

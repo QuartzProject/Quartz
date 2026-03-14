@@ -353,3 +353,52 @@ TEST_CASE("typed host bindings convert arguments and reject a signature that dif
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "ababab! true false");
 }
+
+TEST_CASE("a host property with a setter in the interface can be assigned") {
+    quartz::SourceInput in[] = {{"host.qzi", R"(@handle
+struct Player {}
+impl Player {
+    @property
+    fn health(self) -> int
+    fn setHealth(self, value: int)
+}
+fn player() -> Player
+)"},
+                                {"plugin.qz", R"(fn heal() -> int {
+    let p = player()
+    p.health = 10
+    p.health += 5
+    return p.health
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    std::int64_t health = 1;
+    quartz::vm::Sandbox sb(out.program);
+    sb.bind("player", [](quartz::vm::HostCall& c, void*) {
+        c.result.u = 42;
+        return true;
+    });
+    sb.bind(
+        "Player.health",
+        [](quartz::vm::HostCall& c, void* user) {
+            c.result.i = c.args[0].u == 42 ? *static_cast<std::int64_t*>(user) : -1;
+            return true;
+        },
+        &health);
+    sb.bind(
+        "Player.setHealth",
+        [](quartz::vm::HostCall& c, void* user) {
+            *static_cast<std::int64_t*>(user) = c.args[1].i;
+            return c.args[0].u == 42;
+        },
+        &health);
+    REQUIRE(sb.start().has_value());
+    CHECK(callInt(sb, "heal") == 15);
+    CHECK(health == 15);
+    std::string iface = in[0].text + "impl Player {\n    @property\n    fn speed(self) -> int\n}\n";
+    quartz::SourceInput readOnly[] = {{"host.qzi", iface}, {"plugin.qz", "fn f() {\n    player().speed = 2\n}\n"}};
+    quartz::CompileOutput bad = quartz::compile(readOnly);
+    CHECK(bad.diagnostics.find("host property 'speed' is read-only; the interface needs 'fn setSpeed(self, value: "
+                               "int)'") != std::string::npos);
+}

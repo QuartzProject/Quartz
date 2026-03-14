@@ -86,6 +86,7 @@ public:
     TypeId checkMember(MemberExpr* e, TypeId expected);
     TypeId checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expected);
     TypeId checkBuiltinMethod(CallExpr* call, TypeId recvType, Symbol name, TypeId expected);
+    bool checkSetter(AssignStmt* s, TypeId type);
     TypeId checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found, bool qualified = false);
     TypeId checkConstruct(CallExpr* call, TypeId type);
     TypeId finishCall(CallExpr* call, FnInfo* fn, Expr* receiver);

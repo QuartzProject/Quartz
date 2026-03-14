@@ -413,12 +413,30 @@ bool Checker::isPlace(Expr* e, bool& mutableOut) {
     }
 }
 
+// `p.health = v` on a host property calls the interface's `fn setHealth(self, value: T)`, as Kotlin does with Java.
+bool Checker::checkSetter(AssignStmt* s, TypeId type) {
+    auto* m = static_cast<MemberExpr*>(s->target);
+    std::string name(str(m->name));
+    std::string setter = "set" + name;
+    setter[3] = static_cast<char>(setter[3] >= 'a' && setter[3] <= 'z' ? setter[3] - 'a' + 'A' : setter[3]);
+    auto it = methods_.find({m->object->type, names_.intern(setter).id});
+    if (m->safe || it == methods_.end() || !it->second->isHost || it->second->params.size() != 2 ||
+        it->second->params[1] != type || it->second->result != ir::kVoid) {
+        diags_.error(s->target->span, std::format("host property '{}' is read-only; the interface needs "
+                                                  "'fn {}(self, value: {})' to assign it",
+                                                  name, setter, typeName(type)));
+        return false;
+    }
+    s->setter = it->second->index;
+    return true;
+}
+
 void Checker::checkAssign(AssignStmt* s) {
     TypeId tt = checkValue(s->target, ir::kError);
     bool mut = false;
     if (!isPlace(s->target, mut)) {
         if (s->target->kind == ExprKind::Member && static_cast<MemberExpr*>(s->target)->isProperty) {
-            diags_.error(s->target->span, "host properties are read-only for now");
+            checkSetter(s, tt);
         } else {
             diags_.error(s->target->span, "cannot assign to this expression");
         }
