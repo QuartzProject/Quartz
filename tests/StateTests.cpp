@@ -1,10 +1,14 @@
+#include "quartz/Bind.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <doctest/doctest.h>
+
 #include <array>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -273,4 +277,79 @@ suspend fn task(e: Event) -> int {
     REQUIRE(t.has_value());
     CHECK(t->value.i == 15);
     CHECK_FALSE(sb.call(out.program->findFunction("total"), std::span<const quartz::vm::Slot>(args, 3)).has_value());
+}
+
+TEST_CASE("sandboxes of one program run on separate threads at once") {
+    auto program = build(R"(import org.quartzlang.data.*
+state Tally {
+    seen: Map<str, int>
+}
+fn work(t: Tally, n: int) -> int {
+    var total = 0
+    for i in 0..n {
+        let key = "k{i % 7}"
+        t.seen[key] = (t.seen.get(key) ?? 0) + i
+        total = total + (parseJson("[{i}]").unwrap().item(0)?.asInt() ?? 0)
+    }
+    return total + t.seen.len()
+}
+)");
+    std::vector<std::int64_t> results(8, 0);
+    std::vector<std::thread> threads;
+    for (std::size_t t = 0; t < results.size(); ++t) {
+        threads.emplace_back([&, t] {
+            quartz::SourceInput in[] = {{"again.qz", "fn twice(x: int) -> int {\n    return x * 2\n}\n"}};
+            bool compiled = quartz::compile(in).program != nullptr;
+            quartz::vm::Sandbox sb(program);
+            if (!compiled || !sb.start()) {
+                return;
+            }
+            quartz::vm::Slot n{};
+            n.i = 300;
+            for (int round = 0; round < 20; ++round) {
+                auto r = sb.call(program->findFunction("work"), std::span<const quartz::vm::Slot>(&n, 1));
+                results[t] = r ? r->i : -1;
+            }
+        });
+    }
+    for (std::thread& t : threads) {
+        t.join();
+    }
+    for (std::int64_t r : results) {
+        CHECK(r == 44850 + 7);
+    }
+}
+
+namespace {
+
+std::string shout(std::string_view text, std::int32_t times) {
+    std::string out;
+    for (std::int32_t i = 0; i < times; ++i) {
+        out += text;
+    }
+    return out + "!";
+}
+
+bool cheap(quartz::vm::HostCall& call, double x) { return call.charge(1) && x > 0.5; }
+
+} // namespace
+
+TEST_CASE("typed host bindings convert arguments and reject a signature that differs from the interface") {
+    quartz::SourceInput in[] = {{"host.qzi", "fn shout(text: str, times: i32) -> str\nfn cheap(x: float) -> bool\n"},
+                                {"plugin.qz", R"(fn run() -> str {
+    return "{shout("ab", 3)} {cheap(0.75)} {cheap(0.25)}"
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    quartz::vm::Sandbox sb(out.program);
+    auto wrong = quartz::bind<&cheap>(sb, "shout");
+    REQUIRE_FALSE(wrong.has_value());
+    CHECK(wrong.error() == "host import 'shout' is (str, i32) -> str, the C++ function is (float) -> bool");
+    REQUIRE(quartz::bind<&shout>(sb, "shout").has_value());
+    REQUIRE(quartz::bind<&cheap>(sb, "cheap").has_value());
+    REQUIRE(sb.start().has_value());
+    auto r = sb.call(out.program->findFunction("run"), {});
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "ababab! true false");
 }
