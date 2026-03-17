@@ -111,6 +111,13 @@ public:
     [[nodiscard]] std::int64_t fuelLeft() const { return fuel_; }
     /// Outside a call: a string for the next call's arguments, valid until the call after it starts.
     Str* newStr(std::string_view text);
+    /// An empty list of `listType` the host fills with `hostListPush`: an argument, a `resume` value or, inside a
+    /// host function, its result. It lives as long as `newStr`'s strings.
+    List* hostList(ir::TypeId listType);
+    /// Appends one element (its slots, as many as the element type takes); false when the quota is exhausted.
+    bool hostListPush(List* list, std::span<const Slot> element);
+    /// The type a suspended task's `wait` produces, so the host can build a list of it.
+    [[nodiscard]] ir::TypeId waitType(std::uint32_t task) const;
 
     // Runtime.cpp (used by the interpreter)
     Str* allocStr(std::size_t len);

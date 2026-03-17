@@ -402,3 +402,36 @@ fn player() -> Player
     CHECK(bad.diagnostics.find("host property 'speed' is read-only; the interface needs 'fn setSpeed(self, value: "
                                "int)'") != std::string::npos);
 }
+
+TEST_CASE("a wait can produce a list the host builds") {
+    quartz::SourceInput in[] = {{"host.qzi", "@handle\n@awaitable([str])\nstruct Names {}\nfn names() -> Names\n"},
+                                {"plugin.qz", R"(suspend fn greet() -> str {
+    let got = wait names()
+    return "{got.len()} {got.join("+")}"
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    quartz::vm::Sandbox sb(out.program);
+    sb.bind("names", [](quartz::vm::HostCall& c, void*) {
+        c.result.u = 1;
+        return true;
+    });
+    REQUIRE(sb.start().has_value());
+    auto t = sb.spawn(out.program->findFunction("greet"), {});
+    REQUIRE(t.has_value());
+    REQUIRE(t->kind == quartz::vm::TaskOutcome::Kind::Wait);
+    quartz::vm::List* list = sb.hostList(sb.waitType(t->task));
+    REQUIRE(list != nullptr);
+    for (const char* name : {"ana", "bo"}) {
+        quartz::vm::Slot s{};
+        s.p = sb.newStr(name);
+        REQUIRE(sb.hostListPush(list, std::span<const quartz::vm::Slot>(&s, 1)));
+    }
+    quartz::vm::Slot value{};
+    value.p = list;
+    auto done = sb.resume(t->task, value);
+    REQUIRE_MESSAGE(done.has_value(), (done ? "" : done.error().describe()));
+    REQUIRE(done->kind == quartz::vm::TaskOutcome::Kind::Done);
+    CHECK(static_cast<const quartz::vm::Str*>(done->value.p)->view() == "2 ana+bo");
+}

@@ -696,8 +696,9 @@ private:
                     return fail("register out of range");
                 }
                 TypeId d = ty(in.dst);
-                if (!t_.isScalar(d) && d != kStr && t_.kind(d) != TypeKind::Handle) {
-                    return fail("wait can only produce a scalar, a str or a handle");
+                // One slot each: the host hands a single value to `resume`, deep-copied into the task's arena.
+                if (!t_.isScalar(d) && d != kStr && t_.kind(d) != TypeKind::Handle && t_.kind(d) != TypeKind::List) {
+                    return fail("wait can only produce a scalar, a str, a handle or a list");
                 }
                 return def(in.dst);
             }

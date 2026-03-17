@@ -158,15 +158,22 @@ void Checker::completeTypes() {
             }
             TypeId produced = ir::kVoid;
             if (!a.args.empty()) {
-                if (a.args[0].value->kind == ExprKind::Ident) {
-                    produced = lookupTypeName(static_cast<IdentExpr*>(a.args[0].value)->name, a.args[0].value->span, true);
+                Expr* v = a.args[0].value;
+                auto* list = v->kind == ExprKind::ListLit ? static_cast<ListLitExpr*>(v) : nullptr;
+                if (v->kind == ExprKind::Ident) {
+                    produced = lookupTypeName(static_cast<IdentExpr*>(v)->name, v->span, true);
+                } else if (list != nullptr && list->elems.size() == 1 && list->elems[0]->kind == ExprKind::Ident) {
+                    // `@awaitable([str])`: the element type in brackets, as in a type position.
+                    TypeId elem = lookupTypeName(static_cast<IdentExpr*>(list->elems[0])->name, v->span, true);
+                    produced = elem == ir::kError ? elem : types_->list(elem);
                 } else {
                     diags_.error(a.span, "@awaitable takes the type that 'wait' produces");
                 }
             }
             if (produced != ir::kVoid && produced != ir::kError && !types_->isScalar(produced) &&
-                produced != ir::kStr && types_->kind(produced) != ir::TypeKind::Handle) {
-                diags_.error(a.span, "an awaitable can only produce a scalar, a str or a handle");
+                produced != ir::kStr && types_->kind(produced) != ir::TypeKind::Handle &&
+                types_->kind(produced) != ir::TypeKind::List) {
+                diags_.error(a.span, "an awaitable can only produce a scalar, a str, a handle or a list");
             }
             awaitable_[entry.type] = produced;
         }
