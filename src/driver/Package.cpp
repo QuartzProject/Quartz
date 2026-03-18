@@ -6,6 +6,7 @@
 #include <charconv>
 #include <format>
 #include <map>
+#include <set>
 
 namespace quartz {
 
@@ -324,36 +325,120 @@ std::expected<LoadedPackage, std::string> loadPackage(std::span<const std::uint8
     return LoadedPackage{std::move(*manifest), std::move(*program)};
 }
 
+namespace {
+
+// Collects the structs and enums an exported signature needs, dependencies first; false for a type that cannot cross.
+class InterfaceTypes {
+public:
+    explicit InterfaceTypes(const ir::TypeTable& types) : types_(types) {}
+
+    bool visit(ir::TypeId t) {
+        if (t <= ir::kBytes) {
+            return t != ir::kError && t != ir::kNull && t != ir::kNever;
+        }
+        const ir::TypeInfo& info = types_.info(t);
+        switch (info.kind) {
+        case ir::TypeKind::List:
+        case ir::TypeKind::Nullable:
+            return visit(info.elem);
+        case ir::TypeKind::Tuple:
+            for (ir::TypeId e : info.elems) {
+                if (!visit(e)) {
+                    return false;
+                }
+            }
+            return true;
+        case ir::TypeKind::Struct:
+        case ir::TypeKind::Enum: {
+            if (info.genericBase != 0 || !info.typeParams.empty()) {
+                return false;
+            }
+            if (std::find(order_.begin(), order_.end(), t) != order_.end() || !visiting_.insert(t).second) {
+                return true;
+            }
+            for (const ir::Field& f : info.fields) {
+                if (!visit(f.type)) {
+                    return false;
+                }
+            }
+            for (const ir::VariantInfo& v : info.variants) {
+                for (ir::TypeId p : v.payload) {
+                    if (!visit(p)) {
+                        return false;
+                    }
+                }
+            }
+            order_.push_back(t);
+            return true;
+        }
+        default:
+            return false;
+        }
+    }
+
+    [[nodiscard]] std::string declarations() const {
+        std::string out;
+        for (ir::TypeId t : order_) {
+            const ir::TypeInfo& info = types_.info(t);
+            out += info.reprC ? "\n@repr(C)\n" : "\n";
+            if (info.kind == ir::TypeKind::Struct) {
+                out += std::format("struct {} {{\n", info.name);
+                for (const ir::Field& f : info.fields) {
+                    out += std::format("    {}: {}\n", f.name, types_.name(f.type));
+                }
+            } else {
+                out += std::format("enum {} {{\n", info.name);
+                for (const ir::VariantInfo& v : info.variants) {
+                    out += "    " + v.name;
+                    for (std::size_t k = 0; k < v.payload.size(); ++k) {
+                        out += (k ? ", " : "(") + types_.name(v.payload[k]);
+                    }
+                    out += v.payload.empty() ? "\n" : ")\n";
+                }
+            }
+            out += "}\n";
+        }
+        return out;
+    }
+
+private:
+    const ir::TypeTable& types_;
+    std::vector<ir::TypeId> order_;
+    std::set<ir::TypeId> visiting_;
+};
+
+} // namespace
+
 std::expected<std::string, std::string> interfaceOf(const vm::Program& program, const Manifest& manifest) {
     const ir::TypeTable& types = program.module->types;
-    std::string out = std::format("package {}\n", manifest.name);
+    InterfaceTypes needed(types);
+    std::string fns;
     for (const std::string& name : manifest.exports) {
         std::uint32_t f = program.findFunction(name);
         if (f == ~0U || !program.functions[f].exported || program.functions[f].isSuspend) {
             return std::unexpected(std::format("export '{}' is not an exported non-suspend function", name));
         }
         const vm::CompiledFunction& fn = program.functions[f];
-        auto simple = [&](ir::TypeId t) { return types.isScalar(t) || t == ir::kStr || t == ir::kVoid; };
-        out += std::format("\nfn {}(", name);
+        constexpr std::string_view kCross = "only scalars, str, Bytes, lists, tuples and non-generic structs and enums "
+                                            "cross packages";
+        fns += std::format("\nfn {}(", name);
         std::size_t n = 0;
         for (ir::TypeId p : fn.params) {
             if (types.kind(p) == ir::TypeKind::State) {
                 continue; // the provider supplies its own state
             }
-            if (!simple(p)) {
-                return std::unexpected(std::format("export '{}' takes a '{}': only scalars and str cross packages", name,
-                                                   types.name(p)));
+            if (!needed.visit(p)) {
+                return std::unexpected(std::format("export '{}' takes a '{}': {}", name, types.name(p), kCross));
             }
-            out += std::format("{}a{}: {}", n ? ", " : "", n, types.name(p));
+            fns += std::format("{}a{}: {}", n ? ", " : "", n, types.name(p));
             ++n;
         }
-        if (!simple(fn.result)) {
-            return std::unexpected(std::format("export '{}' returns a '{}': only scalars and str cross packages", name,
-                                               types.name(fn.result)));
+        if (fn.result != ir::kVoid && !needed.visit(fn.result)) {
+            return std::unexpected(std::format("export '{}' returns a '{}': {}", name, types.name(fn.result), kCross));
         }
-        out += fn.result == ir::kVoid ? ")\n" : std::format(") -> {}\n", types.name(fn.result));
+        fns += fn.result == ir::kVoid ? ")\n" : std::format(") -> {}\n", types.name(fn.result));
     }
-    return out;
+    return std::format("package {}\n", manifest.name) + needed.declarations() + fns;
 }
 
 } // namespace quartz

@@ -252,9 +252,12 @@ private:
         Sandbox* provider;
         std::uint32_t function;
         const ir::HostImport* import;
+        std::vector<ir::TypeId> providerParams; // the provider's own type ids, matched by shape at link time
+        ir::TypeId providerResult;
     };
     std::vector<std::unique_ptr<LinkTarget>> links_;
     static bool linkedCall(HostCall& call, void* user);
+    bool copyAcross(const Sandbox& from, ir::TypeId fromType, const Slot* src, ir::TypeId toType, Slot* dst);
     struct ImportCtx;
     bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
     void exportValue(std::string& out, ir::TypeId type, const Slot* v);

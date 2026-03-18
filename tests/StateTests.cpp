@@ -435,3 +435,62 @@ TEST_CASE("a wait can produce a list the host builds") {
     REQUIRE(done->kind == quartz::vm::TaskOutcome::Kind::Done);
     CHECK(static_cast<const quartz::vm::Str*>(done->value.p)->view() == "2 ana+bo");
 }
+
+TEST_CASE("structs, lists and enums cross linked packages as deep copies") {
+    quartz::SourceInput shopSrc[] = {{"shop.qz", R"(package org.example.shop
+pub struct Order {
+    item: str
+    qty: int
+}
+pub enum Grade {
+    Small
+    Big(int)
+}
+pub struct Summary {
+    total: int
+    items: [str]
+    largest: Order?
+    grade: Grade
+}
+pub fn summarize(orders: [Order]) -> Summary {
+    var total = 0
+    var items: [str] = []
+    var largest: Order? = null
+    for o in orders {
+        total = total + o.qty
+        items.push(o.item)
+        if o.qty > (largest?.qty ?? 0) {
+            largest = o
+        }
+    }
+    return Summary(total, items, largest, if total > 5 { Grade.Big(total) } else { Grade.Small })
+}
+)"}};
+    auto manifest =
+        quartz::parseManifest("name = \"org.example.shop\"\nversion = \"1.0.0\"\nexports = [\"summarize\"]\n");
+    REQUIRE(manifest.has_value());
+    quartz::CompileOutput shop = quartz::compile(shopSrc);
+    REQUIRE_MESSAGE(shop.program, shop.diagnostics);
+    auto iface = quartz::interfaceOf(*shop.program, *manifest);
+    REQUIRE_MESSAGE(iface.has_value(), (iface ? "" : iface.error()));
+    quartz::SourceInput clientSrc[] = {{"shop.qzi", *iface}, {"client.qz", R"(import org.example.shop.*
+fn run() -> str {
+    let s = summarize([Order("pear", 2), Order("fig", 5)])
+    let g = match s.grade {
+        Big(n) => "big {n}"
+        Small => "small"
+    }
+    return "{s.total} {s.items.join(",")} {s.largest?.item ?? "-"} {g}"
+}
+)"}};
+    quartz::CompileOutput client = quartz::compile(clientSrc);
+    REQUIRE_MESSAGE(client.program, client.diagnostics, *iface);
+    quartz::vm::Sandbox provider(shop.program);
+    quartz::vm::Sandbox user(client.program);
+    REQUIRE(user.link("org.example.shop", provider).has_value());
+    REQUIRE(provider.start().has_value());
+    REQUIRE(user.start().has_value());
+    auto r = user.call(client.program->findFunction("run"), {});
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "7 pear,fig fig big 7");
+}
