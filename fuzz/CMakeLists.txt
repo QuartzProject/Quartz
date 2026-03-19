@@ -1,1 +1,4 @@
 quartz_fuzzer(quartz_fuzz_ir_loader SOURCES IrLoaderFuzz.cpp DEPS quartz)
+quartz_fuzzer(quartz_fuzz_frontend SOURCES FrontendFuzz.cpp DEPS quartz)
+quartz_fuzzer(quartz_fuzz_data SOURCES DataFuzz.cpp DEPS quartz)
+quartz_fuzzer(quartz_fuzz_binary SOURCES BinaryFuzz.cpp DEPS quartz)
