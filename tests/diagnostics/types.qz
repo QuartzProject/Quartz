@@ -1,3 +1,4 @@
+// error: a '@test' function takes no arguments (states are allowed) and returns nothing
 // error: 'float' has no fixed C width; write f64 or f32 in a @repr(C) field
 // error: match is not exhaustive; missing: Green
 // error: expected 'str', found 'int'
@@ -46,3 +47,6 @@ fn loose(self) -> int {
 struct Pixel {
     x: float
 }
+
+@test
+fn needsInput(x: int) {}

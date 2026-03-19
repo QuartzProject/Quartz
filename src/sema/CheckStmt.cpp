@@ -49,8 +49,8 @@ bool Checker::annotationArg(Expr* e, ir::AnnotationArg& out) {
 
 void Checker::checkAttributes(FnInfo* fn) {
     static const std::pair<std::string_view, bool> known[] = {
-        {"on", true},        {"command", true}, {"requires", true}, {"inline", false},
-        {"noinline", false}, {"property", false},
+        {"on", true},        {"command", true},   {"requires", true}, {"inline", false},
+        {"noinline", false}, {"property", false}, {"test", true},
     };
     for (Attribute& a : fn->decl->attrs) {
         std::string_view name = str(a.name);
@@ -109,6 +109,15 @@ void Checker::checkAttributes(FnInfo* fn) {
         }
         if (name == "command" && !info.args.empty() && info.args[0].kind != ir::AnnotationArg::Kind::Str) {
             diags_.error(a.span, "the command name must be a string");
+        }
+        if (name == "test") {
+            bool runnable = !fn->isSuspend && !fn->generic() && fn->result == ir::kVoid;
+            for (TypeId p : fn->params) {
+                runnable = runnable && types_->kind(p) == ir::TypeKind::State;
+            }
+            if (!runnable) {
+                diags_.error(a.span, "a '@test' function takes no arguments (states are allowed) and returns nothing");
+            }
         }
         if (fn->owner != ir::kError) {
             diags_.error(a.span, std::format("'@{}' can only be used on top-level functions", name));

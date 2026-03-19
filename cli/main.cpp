@@ -1,3 +1,4 @@
+#include "Commands.hpp"
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
 #include "quartz/Package.hpp"
@@ -28,12 +29,16 @@ bool hostPrint(quartz::vm::HostCall& call, void*) {
 }
 
 int usage() {
-    std::fprintf(stderr, "usage: quartz check|ir|run|dis <file.qz|file.qzi>... | <file.qzb> [--entry name]\n"
-                         "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
-                         "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] [--strip-lines] [--host-only]\n"
-                         "       quartz interface <package.qzb>\n"
-                         "       quartz keygen <seed file>\n"
-                         "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
+    std::fprintf(stderr,
+                 "usage: quartz check|ir|run|dis|test <file.qz|file.qzi|package dir>... | <file.qzb> [--entry name]\n"
+                 "                [--filter text] (test)\n"
+                 "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
+                 "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
+                 "[--strip-lines] [--host-only]\n"
+                 "       quartz interface <package.qzb>\n"
+                 "       quartz keygen <seed file>\n"
+                 "       quartz new <package name, like org.example.hello>\n"
+                 "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
     return 2;
 }
 
@@ -161,6 +166,7 @@ struct Args {
     bool lines = true;
     bool hostOnly = false;
     std::string manifest;
+    std::string filter;
 };
 
 std::optional<Args> parseArgs(int argc, char** argv) {
@@ -183,6 +189,8 @@ std::optional<Args> parseArgs(int argc, char** argv) {
                 return std::nullopt;
             }
             a.trusted.push_back(*key);
+        } else if (arg == "--filter" && hasValue) {
+            a.filter = argv[++i];
         } else if (arg == "--require-signature") {
             a.requireSignature = true;
         } else if (arg == "--strip-lines") {
@@ -275,6 +283,9 @@ int main(int argc, char** argv) {
     if (cmd == "keygen") {
         return keygen(argv[2]);
     }
+    if (cmd == "new") {
+        return newProject(argv[2]);
+    }
     auto args = parseArgs(argc, argv);
     if (!args) {
         return 2;
@@ -325,6 +336,9 @@ int main(int argc, char** argv) {
     }
     if (cmd == "check") {
         return 0;
+    }
+    if (cmd == "test") {
+        return runTests(program, args->filter);
     }
     if (cmd == "interface") {
         auto m = quartz::parseManifest(program->module->manifest);
