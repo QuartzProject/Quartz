@@ -1,5 +1,6 @@
 // expect: joined 7
 // expect: 12 5
+// warning: 'half' is deprecated: divide by 2 instead
 
 struct JoinEvent {
     level: int
@@ -11,7 +12,7 @@ fn onJoin(event: JoinEvent) {
     print("joined {event.level}")
 }
 
-@command("heal", perm = "basalt.heal")
+@command("heal", perm = "example.heal")
 fn heal(amount: int) -> bool {
     return amount > 0
 }
@@ -22,6 +23,7 @@ fn twice(x: int) -> int {
 }
 
 @noinline
+@deprecated("divide by 2 instead")
 fn half(x: int) -> int {
     return x / 2
 }

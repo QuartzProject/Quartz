@@ -51,6 +51,8 @@ struct FnInfo {
     bool isSuspend = false;
     ir::Inlining inlining = ir::Inlining::Default;
     bool isProperty = false; // `@property` host method read without parentheses
+    bool deprecated = false; // `@deprecated("why")`: callers get a warning with `deprecation`
+    std::string deprecation;
     std::vector<TypeId> params;  // includes the receiver first when hasSelf
     std::vector<Symbol> paramNames;
     std::vector<syntax::Expr*> defaults;

@@ -125,6 +125,9 @@ TEST_CASE("programs print what their expect lines say") {
         std::string text = readFile(path);
         quartz::CompileOutput out = compileProgram(path, text);
         REQUIRE_MESSAGE(out.program, out.diagnostics);
+        for (const std::string& want : directives(text, "warning")) {
+            CHECK_MESSAGE(out.diagnostics.find(want) != std::string::npos, want, "\n", out.diagnostics);
+        }
         checkRun(out.program, text);
     }
 }

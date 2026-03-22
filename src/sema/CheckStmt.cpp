@@ -50,7 +50,7 @@ bool Checker::annotationArg(Expr* e, ir::AnnotationArg& out) {
 void Checker::checkAttributes(FnInfo* fn) {
     static const std::pair<std::string_view, bool> known[] = {
         {"on", true},        {"command", true},   {"requires", true}, {"inline", false},
-        {"noinline", false}, {"property", false}, {"test", true},
+        {"noinline", false}, {"property", false}, {"test", true},     {"deprecated", false},
     };
     for (Attribute& a : fn->decl->attrs) {
         std::string_view name = str(a.name);

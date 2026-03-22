@@ -171,7 +171,7 @@ struct HostImport {
     TypeId result = kVoid;
 };
 
-/// One argument of a declaration attribute, kept for the host (`@command("heal", perm = "basalt.heal")`).
+/// One argument of a declaration attribute, kept for the host (`@command("heal", perm = "example.heal")`).
 struct AnnotationArg {
     enum class Kind : std::uint8_t { Int, Float, Bool, Str, Name };
     std::string key; // empty for positional arguments

@@ -466,6 +466,17 @@ FnInfo* Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface, const Imp
     }
     info->result = fn->result != nullptr ? resolveType(fn->result) : ir::kVoid;
     selfType_ = savedSelf;
+    for (const Attribute& a : fn->attrs) {
+        if (str(a.name) != "deprecated") {
+            continue;
+        }
+        info->deprecated = true;
+        if (a.args.size() == 1 && a.args[0].value->kind == ExprKind::StringLit) {
+            info->deprecation = static_cast<StringLitExpr*>(a.args[0].value)->value;
+        } else if (!a.args.empty()) {
+            diags_.error(a.span, "@deprecated takes one string: what to use instead");
+        }
+    }
     if (hasAttr(fn->attrs, "property")) {
         if (!info->isHost || !fn->hasSelf || fn->params.size() != 0 || info->result == ir::kVoid) {
             diags_.error(fn->span, "@property needs a host method with only 'self' that returns a value");

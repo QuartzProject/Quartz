@@ -155,6 +155,11 @@ bool Checker::bindArgs(CallExpr* call, const std::vector<TypeId>& params, const 
 }
 
 TypeId Checker::finishCall(CallExpr* call, FnInfo* fn, Expr* receiver) {
+    if (fn->deprecated && fn != currentFn_) {
+        diags_.warning(call->callee->span, fn->deprecation.empty()
+                                               ? std::format("'{}' is deprecated", fn->name)
+                                               : std::format("'{}' is deprecated: {}", fn->name, fn->deprecation));
+    }
     if (fn->isSuspend && (currentFn_ == nullptr || !currentFn_->isSuspend)) {
         diags_.error(call->span, std::format("suspend function '{}' can only be called from a suspend function",
                                              fn->name));
