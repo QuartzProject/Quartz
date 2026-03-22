@@ -60,7 +60,27 @@ TypeId Checker::unify(TypeId a, TypeId b, Span span) {
 TypeId Checker::check(Expr* e, TypeId expected) {
     TypeId t = checkInner(e, expected);
     e->type = t;
+    if (!loopWatch_.empty()) {
+        noteAllocation(e, t);
+    }
     return t;
+}
+
+void Checker::noteAllocation(const Expr* e, TypeId t) {
+    bool refResult =
+        t == ir::kStr || t == ir::kBytes ||
+        (t < types_->size() && (types_->kind(t) == ir::TypeKind::List || types_->kind(t) == ir::TypeKind::Map));
+    bool allocates = e->kind == ExprKind::Interp || e->kind == ExprKind::ListLit || e->kind == ExprKind::ListRepeat ||
+                     (e->kind == ExprKind::Binary && t == ir::kStr) || (e->kind == ExprKind::Call && refResult);
+    if (!allocates) {
+        return;
+    }
+    for (LoopWatch& w : loopWatch_) {
+        if (w.scopeLevel == scopeLevel_ && !w.allocates) {
+            w.allocates = true;
+            w.firstAlloc = e->span;
+        }
+    }
 }
 
 TypeId Checker::checkValue(Expr* e, TypeId expected) {
@@ -512,6 +532,9 @@ TypeId Checker::checkInterp(InterpExpr* e) {
 }
 
 TypeId Checker::checkWait(Expr* operand, Span span) {
+    for (LoopWatch& w : loopWatch_) {
+        w.waits = true;
+    }
     if (currentFn_ == nullptr || !currentFn_->isSuspend) {
         diags_.error(span, "'wait' can only be used in a suspend function");
     }

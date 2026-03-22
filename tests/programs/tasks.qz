@@ -3,6 +3,7 @@
 // expect: tick 2 count 2 name Steve
 // expect: tick 3 count 3 name Steve
 // expect: done 3 visits 3
+// warning: this loop waits and allocates outside a 'scope'
 
 state Hub {
     visits: Map<str, int>
@@ -32,3 +33,16 @@ suspend fn main(hub: Hub) -> int {
     print("done {n} visits {hub.visits["Steve"]}")
     return 0
 }
+
+suspend fn chatty(hub: Hub) {
+    var i = 0
+    while i < 3 {
+        wait 1.ticks
+        print("round {i}")
+        scope {
+            print("quiet {i}")
+        }
+        i += 1
+    }
+}
+

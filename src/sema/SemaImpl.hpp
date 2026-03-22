@@ -173,6 +173,19 @@ public:
     TypeId selfType_ = ir::kError;
     int loopDepth_ = 0;
     std::set<const Expr*> defaultsInProgress_;
+
+    // Loops of a suspend function that `wait` and allocate outside a `scope` grow the task's arena (spec 5, D36).
+    struct LoopWatch {
+        int scopeLevel;
+        bool waits = false;
+        Span firstAlloc{};
+        bool allocates = false;
+    };
+
+    std::vector<LoopWatch> loopWatch_;
+    int scopeLevel_ = 0;
+    void noteAllocation(const Expr* e, TypeId t);
+    void watchLoop(BlockExpr* body);
 };
 
 } // namespace quartz::sema

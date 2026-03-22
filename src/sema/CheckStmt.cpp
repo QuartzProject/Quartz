@@ -234,7 +234,7 @@ void Checker::checkStmt(Stmt* s) {
         auto* w = static_cast<WhileStmt*>(s);
         expectAssignable(checkValue(w->cond, ir::kBool), ir::kBool, w->cond->span);
         ++loopDepth_;
-        checkBlock(w->body, ir::kError, false);
+        watchLoop(w->body);
         --loopDepth_;
         return;
     }
@@ -270,7 +270,9 @@ void Checker::checkStmt(Stmt* s) {
         TypeId produced = checkWait(ev->interval, s->span);
         (void)produced;
         ++loopDepth_;
+        ++scopeLevel_; // each round of `every` runs in its own scope
         checkBlock(ev->body, ir::kError, false);
+        --scopeLevel_;
         --loopDepth_;
         return;
     }
@@ -294,7 +296,11 @@ void Checker::checkStmt(Stmt* s) {
         loopDepth_ = savedLoops;
         return;
     }
-    case StmtKind::Scope: checkBlock(static_cast<ScopeStmt*>(s)->body, ir::kError, false); return;
+    case StmtKind::Scope:
+        ++scopeLevel_;
+        checkBlock(static_cast<ScopeStmt*>(s)->body, ir::kError, false);
+        --scopeLevel_;
+        return;
     }
 }
 
@@ -523,9 +529,27 @@ void Checker::checkFor(ForStmt* s) {
         }
     }
     ++loopDepth_;
-    checkBlock(s->body, ir::kError, false);
+    watchLoop(s->body);
     --loopDepth_;
     popScope();
+}
+
+void Checker::watchLoop(BlockExpr* body) {
+    loopWatch_.push_back({scopeLevel_});
+    checkBlock(body, ir::kError, false);
+    LoopWatch w = loopWatch_.back();
+    loopWatch_.pop_back();
+    bool warn = w.waits && w.allocates && currentFn_ != nullptr && currentFn_->isSuspend;
+    if (warn) {
+        diags_.warning(w.firstAlloc, "this loop waits and allocates outside a 'scope': the task's memory grows every "
+                                     "round until it ends; wrap the body in 'scope { }' or use 'every'");
+    }
+    for (LoopWatch& outer : loopWatch_) {
+        outer.waits = outer.waits || w.waits;
+        if (warn && outer.allocates && outer.firstAlloc.begin == w.firstAlloc.begin) {
+            outer.allocates = false; // already reported by the inner loop
+        }
+    }
 }
 
 void Checker::checkPattern(Pattern* p, TypeId subject) {
