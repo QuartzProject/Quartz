@@ -1,0 +1,49 @@
+// Keeps scores in a state that survives between calls, and ranks the top players.
+package org.quartzlang.examples.leaderboard
+
+state Board {
+    scores: Map<str, int>
+    names: [str]
+}
+
+fn record(board: Board, player: str, points: int) {
+    if !board.scores.has(player) {
+        board.names.push(player)
+    }
+    board.scores[player] = (board.scores.get(player) ?? 0) + points
+}
+
+fn top(board: Board, n: int) -> str {
+    var order: [str] = []
+    for name in board.names {
+        order.push(name)
+    }
+    // Selection sort: fine for a handful of players, and deterministic on ties (first recorded wins).
+    var lines: [str] = []
+    var i = 0
+    while i < order.len() && i < n {
+        var best = i
+        var j = i + 1
+        while j < order.len() {
+            if (board.scores.get(order[j]) ?? 0) > (board.scores.get(order[best]) ?? 0) {
+                best = j
+            }
+            j += 1
+        }
+        let chosen = order[best]
+        order[best] = order[i]
+        order[i] = chosen
+        lines.push("{i + 1}. {chosen} {board.scores.get(chosen) ?? 0}")
+        i += 1
+    }
+    return lines.join("\n")
+}
+
+fn main(board: Board) -> int {
+    record(board, "ada", 30)
+    record(board, "bo", 45)
+    record(board, "cy", 10)
+    record(board, "ada", 20)
+    print(top(board, 2))
+    return 0
+}

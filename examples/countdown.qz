@@ -1,0 +1,21 @@
+// Tasks pause with `wait` and `every` without blocking the host; `quartz run` resumes them tick by tick.
+package org.quartzlang.examples.countdown
+
+suspend fn countdown(label: str, from: int) -> int {
+    var left = from
+    every 10.ticks {
+        print("{label}: {left}")
+        left -= 1
+        if left == 0 {
+            break
+        }
+    }
+    return from
+}
+
+suspend fn main() -> int {
+    wait 5.ticks
+    let done = countdown("launch", 3)
+    print("lift off after {done} rounds")
+    return 0
+}

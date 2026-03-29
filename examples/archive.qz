@@ -1,0 +1,18 @@
+// Builds a ZIP archive in memory, compresses it with zstd and reads it back.
+package org.quartzlang.examples.archive
+
+import org.quartzlang.bytes.*
+import org.quartzlang.compress.*
+import org.quartzlang.zip.*
+
+fn main() -> int {
+    let entries = [ZipEntry("readme.txt", "Hello from Quartz\n".toBytes()), ZipEntry("data.csv", "a,b\n1,2\n".toBytes())]
+    let archive = writeZip(entries)
+    let packed = zstdCompress(archive, 19)
+    print("zip {archive.len()} bytes, zstd {packed.len()} bytes, crc32 {crc32(archive)}")
+    let back = readZip(zstdDecompress(packed).unwrap()).unwrap()
+    for e in back {
+        print("{e.name}: {e.data.toStr() ?? "<binary>"}")
+    }
+    return 0
+}

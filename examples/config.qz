@@ -1,0 +1,43 @@
+// Reads a TOML configuration into a typed struct, with defaults and a readable error for each bad field.
+package org.quartzlang.examples.config
+
+import org.quartzlang.data.*
+
+struct Config {
+    name: str
+    maxPlayers: int
+    motd: str
+    whitelist: [str]
+}
+
+fn field(v: Value, key: str) -> Value {
+    return v.get(key) ?? Value.Null
+}
+
+fn load(text: str) -> Result<Config, str> {
+    let root = parseToml(text)?
+    let name = field(root, "name").asStr() ?? "server"
+    let maxPlayers = field(root, "max-players").asInt() ?? 20
+    if maxPlayers < 1 || maxPlayers > 1000 {
+        return Err("max-players must be between 1 and 1000, found {maxPlayers}")
+    }
+    var whitelist: [str] = []
+    let list = field(root, "whitelist")
+    for i in 0..list.len() {
+        whitelist.push(list.item(i)?.asStr() ?? "")
+    }
+    return Ok(Config(name, maxPlayers, field(root, "motd").asStr() ?? "Welcome!", whitelist))
+}
+
+fn main() -> int {
+    let text = "name = \"lobby\"\nmax-players = 64\nwhitelist = [\"ada\", \"bo\"]\n"
+    match load(text) {
+        Ok(c) => print("{c.name}: {c.maxPlayers} players, motd '{c.motd}', whitelist {c.whitelist.join(", ")}")
+        Err(e) => print("bad config: {e}")
+    }
+    match load("max-players = 5000\n") {
+        Ok(c) => print("loaded {c.name}")
+        Err(e) => print("bad config: {e}")
+    }
+    return 0
+}
