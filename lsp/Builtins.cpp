@@ -8,21 +8,23 @@ namespace quartz::lsp {
 
 namespace {
 
+constexpr std::string_view kMath = "org.quartzlang.math";
+
 constexpr BuiltinFunction kFunctions[] = {
-    {"sqrt", "sqrt(x: float) -> float"},
-    {"floor", "floor(x: float) -> float"},
-    {"ceil", "ceil(x: float) -> float"},
-    {"sin", "sin(x: float) -> float"},
-    {"cos", "cos(x: float) -> float"},
-    {"pow", "pow(x: float, y: float) -> float"},
-    {"abs", "abs<T>(x: T) -> T"},
-    {"min", "min<T>(a: T, b: T) -> T"},
-    {"max", "max<T>(a: T, b: T) -> T"},
-    {"panic", "panic(message: str) -> !"},
-    {"Ok", "Ok<T, E>(value: T) -> Result<T, E>"},
-    {"Err", "Err<T, E>(error: E) -> Result<T, E>"},
-    {"List", "List<T>() -> [T]"},
-    {"Map", "Map<K, V>() -> Map<K, V>"},
+    {"sqrt", "sqrt(x: float) -> float", kMath},
+    {"floor", "floor(x: float) -> float", kMath},
+    {"ceil", "ceil(x: float) -> float", kMath},
+    {"sin", "sin(x: float) -> float", kMath},
+    {"cos", "cos(x: float) -> float", kMath},
+    {"pow", "pow(x: float, y: float) -> float", kMath},
+    {"abs", "abs<T>(x: T) -> T", kMath},
+    {"min", "min<T>(a: T, b: T) -> T", kMath},
+    {"max", "max<T>(a: T, b: T) -> T", kMath},
+    {"panic", "panic(message: str) -> !", {}},
+    {"Ok", "Ok<T, E>(value: T) -> Result<T, E>", {}},
+    {"Err", "Err<T, E>(error: E) -> Result<T, E>", {}},
+    {"List", "List<T>() -> [T]", {}},
+    {"Map", "Map<K, V>() -> Map<K, V>", {}},
 };
 
 constexpr std::string_view kTypes[] = {"void",  "bool", "int", "float",  "byte", "char", "str",

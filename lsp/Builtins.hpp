@@ -18,6 +18,7 @@ struct BuiltinMethod {
 struct BuiltinFunction {
     std::string_view name;
     std::string_view signature;
+    std::string_view package; // empty when global, otherwise it must be imported
 };
 
 /// Methods the compiler provides on `recv` (strings, lists, maps, numbers, nullables, results); mirrors sema.

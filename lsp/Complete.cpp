@@ -17,6 +17,7 @@ enum ItemKind : int {
     kField = 5,
     kVariable = 6,
     kInterface = 8,
+    kModule = 9,
     kProperty = 10,
     kEnum = 13,
     kKeyword = 14,
@@ -32,14 +33,6 @@ bool isIdentChar(char c) {
 
 std::string name(const Analysis& a, Symbol s) { return s.valid() ? std::string(a.names().name(s)) : std::string{}; }
 
-std::string joinPath(const Analysis& a, std::span<const Symbol> path) {
-    std::string out;
-    for (std::size_t i = 0; i < path.size(); ++i) {
-        out += (i ? "." : "") + name(a, path[i]);
-    }
-    return out;
-}
-
 class Collector {
 public:
     explicit Collector(const Analysis& a) : a_(a) {}
@@ -48,7 +41,15 @@ public:
         if (label.empty() || !seen_.insert(label).second) {
             return;
         }
-        items_.push_back({std::move(label), kind, std::move(detail)});
+        items_.push_back({std::move(label), kind, std::move(detail), {}, {}, {}});
+    }
+
+    // A symbol of another package; a visible name with the same label wins over it.
+    void addFrom(Completion item) {
+        if (seen_.contains(item.label) || !seenImports_.insert(item.package + "." + item.label).second) {
+            return;
+        }
+        items_.push_back(std::move(item));
     }
 
     void local(const sema::Local* l, Symbol fallback) {
@@ -76,6 +77,7 @@ public:
 private:
     const Analysis& a_;
     std::set<std::string> seen_;
+    std::set<std::string> seenImports_;
     std::vector<Completion> items_;
 };
 
@@ -125,14 +127,21 @@ void scopeNames(const Analysis& a, const std::vector<Node>& path, std::uint32_t 
     }
 }
 
-void declItems(const Analysis& a, const Module& m, bool qualifiedOnly, std::set<std::string>* only, Collector& out) {
+// `only` maps the names to list to the labels they are visible under; null lists them all.
+void declItems(const Analysis& a, const Module& m, bool qualifiedOnly, const std::map<std::string, std::string>* only,
+               Collector& out) {
+    bool iface = m.file != nullptr && m.file->isInterface();
     for (const Decl* d : m.decls) {
-        if (d == nullptr || !d->name.valid() || (qualifiedOnly && d->visibility != Visibility::Pub)) {
+        if (d == nullptr || !d->name.valid() || (qualifiedOnly && !iface && d->visibility != Visibility::Pub)) {
             continue;
         }
         std::string n = name(a, d->name);
-        if (only != nullptr && !only->contains(n)) {
-            continue;
+        if (only != nullptr) {
+            auto it = only->find(n);
+            if (it == only->end()) {
+                continue;
+            }
+            n = it->second;
         }
         switch (d->kind) {
         case DeclKind::Fn: {
@@ -161,22 +170,10 @@ void declItems(const Analysis& a, const Module& m, bool qualifiedOnly, std::set<
     }
 }
 
-void topLevelNames(const Analysis& a, const Module& current, Collector& out) {
-    std::string package = joinPath(a, current.package);
-    std::set<std::string> starPackages;
-    std::map<std::string, std::set<std::string>> named;
-    for (const Import& imp : current.imports) {
-        std::string path = joinPath(a, imp.path);
-        if (imp.star) {
-            starPackages.insert(path);
-        }
-        for (Symbol s : imp.names) {
-            named[path].insert(name(a, s));
-        }
-        if (!imp.star && imp.names.empty() && imp.path.size() >= 2) {
-            starPackages.insert(path);
-            named[joinPath(a, imp.path.subspan(0, imp.path.size() - 1))].insert(name(a, imp.path.back()));
-        }
+void topLevelNames(const Analysis& a, const Module& current, const ImportScope& scope, Collector& out) {
+    std::map<std::string, std::map<std::string, std::string>> named; // package -> name -> local label
+    for (const auto& [local, target] : scope.names) {
+        named[target.first][target.second] = local;
     }
     for (const Module* m : a.modules()) {
         if (m == nullptr) {
@@ -184,12 +181,83 @@ void topLevelNames(const Analysis& a, const Module& current, Collector& out) {
         }
         std::string pkg = joinPath(a, m->package);
         bool iface = m->file != nullptr && m->file->isInterface();
-        if (m == &current || pkg == package || (iface && pkg.empty()) || starPackages.contains(pkg)) {
-            declItems(a, *m, m != &current && pkg != package && !(iface && pkg.empty()), nullptr, out);
+        bool own = m == &current || pkg == scope.package || (iface && pkg.empty());
+        if (own || scope.star.contains(pkg)) {
+            declItems(a, *m, !own, nullptr, out);
         } else if (auto it = named.find(pkg); it != named.end()) {
             declItems(a, *m, true, &it->second, out);
         }
     }
+}
+
+int exportItemKind(ExportKind k) {
+    switch (k) {
+    case ExportKind::Function:
+        return kFunction;
+    case ExportKind::Struct:
+        return kStruct;
+    case ExportKind::Enum:
+        return kEnum;
+    case ExportKind::Trait:
+        return kInterface;
+    case ExportKind::Const:
+        return kConstant;
+    }
+    return kFunction;
+}
+
+// Public symbols of other packages: qualified when their package is imported whole, else with an import edit.
+void importableNames(const Analysis& a, std::uint32_t file, const ImportScope& scope, Collector& out) {
+    for (Export& e : exports(a)) {
+        if (scope.imports(e.package, e.name)) {
+            continue;
+        }
+        Completion item{e.name, exportItemKind(e.kind), std::move(e.detail), e.package, {}, {}};
+        if (std::string q = scope.qualifierOf(e.package); !q.empty()) {
+            item.insertText = q + "." + e.name;
+        } else {
+            item.edits.push_back(importEdit(a, file, e.package, e.name));
+        }
+        out.addFrom(std::move(item));
+    }
+}
+
+// The package a dotted qualifier such as `math` or `org.quartzlang.math` names, or empty.
+std::string qualifiedPackage(const Analysis& a, const ImportScope& scope, std::string_view path) {
+    std::string_view head = path.substr(0, path.find('.'));
+    std::string full(path);
+    if (auto it = scope.qualifiers.find(std::string(head)); it != scope.qualifiers.end()) {
+        full = it->second + std::string(path.substr(head.size()));
+    }
+    for (const Module* m : a.modules()) {
+        if (m != nullptr && !m->package.empty() && joinPath(a, m->package) == full) {
+            return full;
+        }
+    }
+    return {};
+}
+
+// A struct or enum named `n` declared in package `pkg`, or 0.
+std::uint32_t typeIn(const Analysis& a, std::string_view pkg, std::string_view n) {
+    const sema::Program* p = a.program();
+    if (p == nullptr) {
+        return 0;
+    }
+    auto matches = [&](const Decl* d) {
+        const Module* m = d != nullptr ? a.module(d->span.file) : nullptr;
+        return m != nullptr && d->name.valid() && a.names().name(d->name) == n && joinPath(a, m->package) == pkg;
+    };
+    for (const auto& [t, d] : p->enumDecls) {
+        if (matches(d)) {
+            return t;
+        }
+    }
+    for (const auto& [t, d] : p->structDecls) {
+        if (matches(d)) {
+            return t;
+        }
+    }
+    return 0;
 }
 
 void memberItems(const Analysis& a, std::uint32_t t, bool staticOnly, Collector& out) {
@@ -221,6 +289,53 @@ void memberItems(const Analysis& a, std::uint32_t t, bool staticOnly, Collector&
     if (!staticOnly) {
         for (const BuiltinMethod& m : builtinMethods(a, t)) {
             out.add(m.name, kMethod, m.signature);
+        }
+    }
+}
+
+// After `pkg.` or `pkg.Type.`: the package's public symbols, or the type's variants and static methods.
+bool qualifiedItems(const Analysis& a, const ImportScope& scope, std::string_view path, Collector& out) {
+    if (path.empty()) {
+        return false;
+    }
+    if (std::string pkg = qualifiedPackage(a, scope, path); !pkg.empty()) {
+        for (Export& e : exports(a)) {
+            if (e.package == pkg) {
+                out.add(e.name, exportItemKind(e.kind), std::move(e.detail));
+            }
+        }
+        return true;
+    }
+    std::size_t dot = path.rfind('.');
+    std::string pkg = dot == std::string_view::npos ? std::string{} : qualifiedPackage(a, scope, path.substr(0, dot));
+    if (pkg.empty()) {
+        return false;
+    }
+    if (std::uint32_t t = typeIn(a, pkg, path.substr(dot + 1))) {
+        memberItems(a, t, true, out);
+        return true;
+    }
+    return false;
+}
+
+// In an `import` or `package` line: the next segment of the known package names, then the package's symbols.
+void importPathItems(const Analysis& a, std::string_view typed, Collector& out) {
+    std::size_t dot = typed.rfind('.');
+    std::string prefix(dot == std::string_view::npos ? std::string_view{} : typed.substr(0, dot + 1));
+    for (const Module* m : a.modules()) {
+        std::string pkg = m != nullptr ? joinPath(a, m->package) : std::string{};
+        if (!pkg.empty() && pkg.starts_with(prefix) && pkg.size() > prefix.size()) {
+            std::string rest = pkg.substr(prefix.size());
+            out.add(rest.substr(0, rest.find('.')), kModule);
+        }
+    }
+    if (prefix.empty()) {
+        return;
+    }
+    prefix.pop_back();
+    for (Export& e : exports(a)) {
+        if (e.package == prefix) {
+            out.add(e.name, exportItemKind(e.kind), std::move(e.detail));
         }
     }
 }
@@ -257,6 +372,22 @@ std::vector<Completion> completeAt(const Analysis& a, std::uint32_t file, std::u
     while (start > 0 && isIdentChar(text[start - 1])) {
         --start;
     }
+    std::uint32_t pathStart = start;
+    while (pathStart > 0 && (isIdentChar(text[pathStart - 1]) || text[pathStart - 1] == '.')) {
+        --pathStart;
+    }
+    std::uint32_t line = pathStart;
+    while (line > 0 && text[line - 1] != '\n') {
+        --line;
+    }
+    std::string_view before = text.substr(line, pathStart - line);
+    std::size_t lead = before.find_first_not_of(" \t");
+    before = lead == std::string_view::npos ? std::string_view{} : before.substr(lead);
+    if (before == "import " || before == "package ") {
+        importPathItems(a, text.substr(pathStart, start - pathStart), out);
+        return out.take();
+    }
+    ImportScope scope = importScope(a, *m);
     if (start > 0 && text[start - 1] == '.' && !(start > 1 && text[start - 2] == '.')) {
         std::uint32_t dot = start - 1;
         bool safe = dot > 0 && text[dot - 1] == '?';
@@ -267,6 +398,12 @@ std::vector<Completion> completeAt(const Analysis& a, std::uint32_t file, std::u
         const Expr* recv = receiverAt(locate(*m, offset, true), objEnd);
         if (recv == nullptr) {
             recv = receiverAt(locate(*m, objEnd > 0 ? objEnd - 1 : 0, true), objEnd);
+        }
+        bool value = recv != nullptr && recv->kind == ExprKind::Ident &&
+                     static_cast<const IdentExpr*>(recv)->ref != IdentRef::Unresolved &&
+                     static_cast<const IdentExpr*>(recv)->ref != IdentRef::Type;
+        if (!safe && !value && qualifiedItems(a, scope, text.substr(pathStart, dot - pathStart), out)) {
+            return out.take();
         }
         if (recv == nullptr) {
             return {};
@@ -287,9 +424,19 @@ std::vector<Completion> completeAt(const Analysis& a, std::uint32_t file, std::u
         return out.take();
     }
     scopeNames(a, locate(*m, offset, true), offset, out);
-    topLevelNames(a, *m, out);
+    topLevelNames(a, *m, scope, out);
     for (const BuiltinFunction& f : builtinFunctions()) {
-        out.add(std::string(f.name), kFunction, std::string(f.signature));
+        if (f.package.empty()) {
+            out.add(std::string(f.name), kFunction, std::string(f.signature));
+        }
+        for (const auto& [local, target] : scope.names) {
+            if (target.first == f.package && target.second == f.name) {
+                out.add(local, kFunction, std::string(f.signature));
+            }
+        }
+        if (scope.star.contains(std::string(f.package))) {
+            out.add(std::string(f.name), kFunction, std::string(f.signature));
+        }
     }
     for (std::string_view t : builtinTypes()) {
         out.add(std::string(t), kStruct);
@@ -297,6 +444,7 @@ std::vector<Completion> completeAt(const Analysis& a, std::uint32_t file, std::u
     for (std::string_view k : keywords()) {
         out.add(std::string(k), kKeyword);
     }
+    importableNames(a, file, scope, out);
     return out.take();
 }
 

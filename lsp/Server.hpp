@@ -11,6 +11,12 @@
 
 namespace quartz::lsp {
 
+class LineIndex;
+struct TextEdit;
+
+/// An LSP `TextEdit` for byte offsets of the text behind `index`.
+Json textEdit(const LineIndex& index, const TextEdit& e);
+
 class Server {
 public:
     /// Serves until `exit` or end of input; returns the process exit code.

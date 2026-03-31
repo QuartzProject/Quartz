@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Imports.hpp"
 #include "Workspace.hpp"
 
 #include <optional>
@@ -21,6 +22,9 @@ struct Completion {
     std::string label;
     int kind = 0; // LSP CompletionItemKind
     std::string detail;
+    std::string package;    // set on symbols that are not in scope yet
+    std::string insertText; // when it differs from the label
+    std::vector<TextEdit> edits;
 };
 
 std::vector<Completion> completeAt(const Analysis& a, std::uint32_t file, std::uint32_t offset);

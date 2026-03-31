@@ -28,6 +28,8 @@ std::string_view slice(std::string_view text, Span s) {
     return text.substr(s.begin, s.end - s.begin);
 }
 
+Json lspPosition(Position p) { return Json::object().set("line", p.line).set("character", p.character); }
+
 bool inside(Span inner, Span outer) { return inner.begin >= outer.begin && inner.end <= outer.end; }
 
 class SymbolBuilder {
@@ -125,6 +127,13 @@ private:
 
 } // namespace
 
+Json textEdit(const LineIndex& index, const TextEdit& e) {
+    Json r = Json::object()
+                 .set("start", lspPosition(index.position(e.begin)))
+                 .set("end", lspPosition(index.position(e.end)));
+    return Json::object().set("range", std::move(r)).set("newText", e.text);
+}
+
 std::optional<Server::Cursor> Server::cursor(const Json& params) {
     std::string uri(params["textDocument"]["uri"].str());
     Analysis* a = analysis(uri);
@@ -164,10 +173,26 @@ Json Server::completion(const Json& params) {
     if (!c) {
         return items;
     }
+    LineIndex index(c->analysis->input(c->file).text);
     for (Completion& item : completeAt(*c->analysis, c->file, c->offset)) {
-        Json j = Json::object().set("label", std::move(item.label)).set("kind", item.kind);
+        bool imported = !item.package.empty();
+        Json j = Json::object().set("label", item.label).set("kind", item.kind);
         if (!item.detail.empty()) {
             j.set("detail", std::move(item.detail));
+        }
+        if (imported) {
+            j.set("labelDetails", Json::object().set("description", item.package));
+        }
+        j.set("sortText", (imported ? "1" : "0") + item.label);
+        if (!item.insertText.empty()) {
+            j.set("insertText", std::move(item.insertText));
+        }
+        if (!item.edits.empty()) {
+            Json edits = Json::array();
+            for (const TextEdit& e : item.edits) {
+                edits.push(textEdit(index, e));
+            }
+            j.set("additionalTextEdits", std::move(edits));
         }
         items.push(std::move(j));
     }

@@ -155,6 +155,10 @@ std::optional<Resolved> resolveMember(const Analysis& a, const MemberExpr* m, co
                 }
             }
         }
+        if (const BuiltinFunction* b = findBuiltinFunction(member);
+            b != nullptr && !b->package.empty() && call->callKind == CallKind::Builtin && recv == 0) {
+            return Resolved{std::format("fn {}", b->signature), range, std::nullopt};
+        }
         if (auto b = findBuiltinMethod(a, recv, member)) {
             return Resolved{std::format("fn {}.{}", a.typeName(recv), b->signature), range, std::nullopt};
         }

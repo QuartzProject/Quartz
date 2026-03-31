@@ -62,6 +62,30 @@ std::vector<Json> readFrames(const std::string& out) {
     return msgs;
 }
 
+std::vector<Json> runSession(std::string_view name, const std::string& input) {
+    fs::path dir = fs::path(QUARTZ_TEST_DIR) / name;
+    fs::create_directories(dir);
+    std::ofstream(dir / "in", std::ios::binary) << input;
+    std::string cmd = std::string("\"") + QUARTZ_LSP_PATH + "\" < \"" + (dir / "in").string() + "\" > \"" +
+                      (dir / "out").string() + "\" 2> \"" + (dir / "err").string() + "\"";
+    REQUIRE(std::system(cmd.c_str()) == 0);
+    std::stringstream ss;
+    ss << std::ifstream(dir / "out", std::ios::binary).rdbuf();
+    return readFrames(ss.str());
+}
+
+Json openDocument(std::string_view uri, std::string_view text) {
+    Json doc = Json::object().set("uri", uri).set("languageId", "quartz").set("version", 1).set("text", text);
+    return Json::object()
+        .set("jsonrpc", "2.0")
+        .set("method", "textDocument/didOpen")
+        .set("params", Json::object().set("textDocument", doc));
+}
+
+Json at(std::string_view uri, int line, int character) {
+    return Json::object().set("textDocument", Json::object().set("uri", uri)).set("position", at(line, character));
+}
+
 const Json* response(const std::vector<Json>& msgs, int id) {
     for (const Json& m : msgs) {
         if (m["id"].integer(-1) == id) {
@@ -89,15 +113,7 @@ TEST_CASE("scripted session: diagnostics, hover, definition and formatting") {
     input += frame(request(6, "shutdown", nullptr));
     input += frame(notification("exit", nullptr));
 
-    fs::path dir = fs::path(QUARTZ_TEST_DIR) / "lsp-session";
-    fs::create_directories(dir);
-    std::ofstream(dir / "in", std::ios::binary) << input;
-    std::string cmd = std::string("\"") + QUARTZ_LSP_PATH + "\" < \"" + (dir / "in").string() + "\" > \"" +
-                      (dir / "out").string() + "\" 2> \"" + (dir / "err").string() + "\"";
-    REQUIRE(std::system(cmd.c_str()) == 0);
-    std::stringstream ss;
-    ss << std::ifstream(dir / "out", std::ios::binary).rdbuf();
-    std::vector<Json> msgs = readFrames(ss.str());
+    std::vector<Json> msgs = runSession("lsp-session", input);
 
     const Json* init = response(msgs, 1);
     REQUIRE(init != nullptr);
@@ -139,4 +155,39 @@ TEST_CASE("scripted session: diagnostics, hover, definition and formatting") {
     REQUIRE(unknown != nullptr);
     CHECK((*unknown)["error"]["code"].integer() == -32601);
     CHECK(response(msgs, 6) != nullptr);
+}
+
+constexpr std::string_view kToolsUri = "untitled:tools";
+
+constexpr std::string_view kTools = "package org.example.tools\n"
+                                    "\n"
+                                    "import org.quartzlang.data\n"
+                                    "\n"
+                                    "fn root(x: float) -> float {\n"
+                                    "    return sqr\n"
+                                    "}\n";
+
+TEST_CASE("scripted session: imports and navigation") {
+    std::string input;
+    input += frame(request(1, "initialize", Json::object().set("capabilities", Json::object())));
+    input += frame(openDocument(kToolsUri, kTools));
+    input += frame(request(2, "textDocument/completion", at(kToolsUri, 5, 14)));
+    input += frame(request(9, "shutdown", nullptr));
+    input += frame(notification("exit", nullptr));
+    std::vector<Json> msgs = runSession("lsp-tools", input);
+
+    const Json* completion = response(msgs, 2);
+    REQUIRE(completion != nullptr);
+    const Json* sqrt = nullptr;
+    const Json* parse = nullptr;
+    for (const Json& item : (*completion)["result"].items()) {
+        sqrt = item["label"].str() == "sqrt" ? &item : sqrt;
+        parse = item["label"].str() == "parseJson" ? &item : parse;
+    }
+    REQUIRE(sqrt != nullptr);
+    CHECK((*sqrt)["additionalTextEdits"][0]["newText"].str() == "\nimport org.quartzlang.math.sqrt");
+    CHECK((*sqrt)["additionalTextEdits"][0]["range"]["start"]["line"].integer() == 2);
+    REQUIRE(parse != nullptr);
+    CHECK((*parse)["insertText"].str() == "data.parseJson");
+    CHECK(!(*parse).has("additionalTextEdits"));
 }
