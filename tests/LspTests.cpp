@@ -181,6 +181,10 @@ TEST_CASE("scripted session: imports and navigation") {
                                .set("textDocument", Json::object().set("uri", kToolsUri))
                                .set("range", Json::object().set("start", at(5, 11)).set("end", at(5, 15)))
                                .set("context", Json::object().set("diagnostics", Json::array().push(missing)))));
+    input += frame(request(4, "textDocument/references", at(kToolsUri, 4, 8)));
+    Json rename = at(kToolsUri, 5, 16);
+    rename.set("newName", "value");
+    input += frame(request(5, "textDocument/rename", rename));
     input += frame(request(9, "shutdown", nullptr));
     input += frame(notification("exit", nullptr));
     std::vector<Json> msgs = runSession("lsp-tools", input);
@@ -204,4 +208,14 @@ TEST_CASE("scripted session: imports and navigation") {
     REQUIRE(actions != nullptr);
     REQUIRE((*actions)["result"].size() == 1);
     CHECK((*actions)["result"][0]["title"].str() == "Import 'sqrt' from org.quartzlang.math");
+
+    const Json* refs = response(msgs, 4);
+    REQUIRE(refs != nullptr);
+    CHECK((*refs)["result"].size() == 2);
+    const Json* renamed = response(msgs, 5);
+    REQUIRE(renamed != nullptr);
+    const Json& edits = (*renamed)["result"]["changes"][kToolsUri];
+    REQUIRE(edits.size() == 2);
+    CHECK(edits[0]["range"]["start"]["character"].integer() == 8);
+    CHECK(edits[1]["newText"].str() == "value");
 }

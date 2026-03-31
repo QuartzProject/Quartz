@@ -17,6 +17,13 @@ struct TextEdit;
 /// An LSP `TextEdit` for byte offsets of the text behind `index`.
 Json textEdit(const LineIndex& index, const TextEdit& e);
 
+struct Occurrence;
+
+/// Thrown by a handler to answer its request with a RequestFailed error and this message.
+struct RequestFailed {
+    std::string message;
+};
+
 class Server {
 public:
     /// Serves until `exit` or end of input; returns the process exit code.
@@ -52,6 +59,10 @@ private:
     Json documentSymbols(const Json& params);
     Json formatting(const Json& params);
     Json codeAction(const Json& params);
+    const Occurrence* renameTarget(const Cursor& c);
+    Json references(const Json& params);
+    Json prepareRename(const Json& params);
+    Json rename(const Json& params);
 
     Transport transport_;
     Workspace workspace_;

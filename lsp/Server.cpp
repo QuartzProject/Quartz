@@ -18,6 +18,7 @@ constexpr int kParseError = -32700;
 constexpr int kInvalidRequest = -32600;
 constexpr int kMethodNotFound = -32601;
 constexpr int kInternalError = -32603;
+constexpr int kRequestFailed = -32803;
 constexpr int kDebounceMillis = 150;
 
 struct MethodNotFound {};
@@ -80,6 +81,8 @@ void Server::dispatch(const std::string& body) {
             return;
         }
         reply(id, request(method, (*msg)["params"]));
+    } catch (const RequestFailed& e) {
+        replyError(id, kRequestFailed, e.message);
     } catch (const MethodNotFound&) {
         replyError(id, kMethodNotFound, "unsupported method " + method);
     } catch (const std::exception& e) {
@@ -104,6 +107,8 @@ Json Server::request(const std::string& method, const Json& params) {
         caps.set("documentSymbolProvider", true);
         caps.set("documentFormattingProvider", true);
         caps.set("completionProvider", Json::object().set("triggerCharacters", Json::array().push(".")));
+        caps.set("referencesProvider", true);
+        caps.set("renameProvider", Json::object().set("prepareProvider", true));
         caps.set("codeActionProvider", Json::object().set("codeActionKinds", Json::array().push("quickfix")));
         return Json::object()
             .set("capabilities", std::move(caps))
@@ -130,6 +135,15 @@ Json Server::request(const std::string& method, const Json& params) {
     }
     if (method == "textDocument/codeAction") {
         return codeAction(params);
+    }
+    if (method == "textDocument/references") {
+        return references(params);
+    }
+    if (method == "textDocument/prepareRename") {
+        return prepareRename(params);
+    }
+    if (method == "textDocument/rename") {
+        return rename(params);
     }
     throw MethodNotFound{};
 }

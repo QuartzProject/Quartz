@@ -1,6 +1,7 @@
 #include "Workspace.hpp"
 
 #include "HostInterface.hpp"
+#include "Index.hpp"
 #include "Text.hpp"
 #include "ir/Lower.hpp"
 #include "std/Std.hpp"
@@ -81,6 +82,13 @@ Analysis::Analysis(std::vector<Input> inputs) : inputs_(std::move(inputs)) {
 }
 
 Analysis::~Analysis() = default;
+
+const Index& Analysis::index() const {
+    if (!index_) {
+        index_ = std::make_unique<Index>(*this);
+    }
+    return *index_;
+}
 
 std::optional<std::uint32_t> Analysis::fileOf(std::string_view uri) const {
     for (std::uint32_t i = 0; i < inputs_.size(); ++i) {

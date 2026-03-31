@@ -15,6 +15,8 @@
 
 namespace quartz::lsp {
 
+class Index;
+
 struct Document {
     std::string uri;
     std::string path; // empty for non-file URIs
@@ -58,6 +60,9 @@ public:
 
     [[nodiscard]] double millis() const { return millis_; }
 
+    /// Resolved names of the user files, built on first use.
+    [[nodiscard]] const Index& index() const;
+
 private:
     std::vector<Input> inputs_;
     SourceManager sources_;
@@ -67,6 +72,7 @@ private:
     std::vector<syntax::Module*> modules_;
     std::unique_ptr<sema::Program> program_;
     double millis_ = 0;
+    mutable std::unique_ptr<Index> index_;
 };
 
 /// Open documents grouped by folder; each folder is analyzed as one program.
