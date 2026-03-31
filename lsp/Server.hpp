@@ -51,6 +51,7 @@ private:
     Json completion(const Json& params);
     Json documentSymbols(const Json& params);
     Json formatting(const Json& params);
+    Json codeAction(const Json& params);
 
     Transport transport_;
     Workspace workspace_;

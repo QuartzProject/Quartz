@@ -104,6 +104,7 @@ Json Server::request(const std::string& method, const Json& params) {
         caps.set("documentSymbolProvider", true);
         caps.set("documentFormattingProvider", true);
         caps.set("completionProvider", Json::object().set("triggerCharacters", Json::array().push(".")));
+        caps.set("codeActionProvider", Json::object().set("codeActionKinds", Json::array().push("quickfix")));
         return Json::object()
             .set("capabilities", std::move(caps))
             .set("serverInfo", Json::object().set("name", "quartz-lsp").set("version", "0.1.0"));
@@ -126,6 +127,9 @@ Json Server::request(const std::string& method, const Json& params) {
     }
     if (method == "textDocument/formatting") {
         return formatting(params);
+    }
+    if (method == "textDocument/codeAction") {
+        return codeAction(params);
     }
     throw MethodNotFound{};
 }

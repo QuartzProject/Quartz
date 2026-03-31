@@ -164,7 +164,7 @@ constexpr std::string_view kTools = "package org.example.tools\n"
                                     "import org.quartzlang.data\n"
                                     "\n"
                                     "fn root(x: float) -> float {\n"
-                                    "    return sqr\n"
+                                    "    return sqrt(x)\n"
                                     "}\n";
 
 TEST_CASE("scripted session: imports and navigation") {
@@ -172,6 +172,15 @@ TEST_CASE("scripted session: imports and navigation") {
     input += frame(request(1, "initialize", Json::object().set("capabilities", Json::object())));
     input += frame(openDocument(kToolsUri, kTools));
     input += frame(request(2, "textDocument/completion", at(kToolsUri, 5, 14)));
+    Json missing =
+        Json::object()
+            .set("range", Json::object().set("start", at(5, 11)).set("end", at(5, 15)))
+            .set("message", "'sqrt' is in org.quartzlang.math; import it with 'import org.quartzlang.math.sqrt'");
+    input += frame(request(3, "textDocument/codeAction",
+                           Json::object()
+                               .set("textDocument", Json::object().set("uri", kToolsUri))
+                               .set("range", Json::object().set("start", at(5, 11)).set("end", at(5, 15)))
+                               .set("context", Json::object().set("diagnostics", Json::array().push(missing)))));
     input += frame(request(9, "shutdown", nullptr));
     input += frame(notification("exit", nullptr));
     std::vector<Json> msgs = runSession("lsp-tools", input);
@@ -190,4 +199,9 @@ TEST_CASE("scripted session: imports and navigation") {
     REQUIRE(parse != nullptr);
     CHECK((*parse)["insertText"].str() == "data.parseJson");
     CHECK(!(*parse).has("additionalTextEdits"));
+
+    const Json* actions = response(msgs, 3);
+    REQUIRE(actions != nullptr);
+    REQUIRE((*actions)["result"].size() == 1);
+    CHECK((*actions)["result"][0]["title"].str() == "Import 'sqrt' from org.quartzlang.math");
 }
