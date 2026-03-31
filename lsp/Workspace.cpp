@@ -192,7 +192,8 @@ std::vector<Analysis::Input> Workspace::inputsFor(const std::string& folder) con
         for (const fs::path& p : disk) {
             std::string text = readFile(p);
             bool iface = p.extension() == ".qzi";
-            if (iface || (!packages.empty() && packages.contains(packageOf(text)))) {
+            // With a package open, the folder's other packages come too so that their imports resolve.
+            if (iface || (!packages.empty() && !packageOf(text).empty())) {
                 inputs.push_back({pathToUri(p.string()), p.string(), std::move(text)});
             }
         }
