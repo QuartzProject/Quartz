@@ -195,6 +195,10 @@ TEST_CASE("scripted session: imports and navigation") {
     rename.set("newName", "value");
     input += frame(request(5, "textDocument/rename", rename));
     input += frame(request(6, "textDocument/signatureHelp", at(kToolsUri, 14, 22)));
+    Json whole = Json::object().set("start", at(0, 0)).set("end", at(16, 0));
+    input += frame(request(
+        7, "textDocument/inlayHint",
+        Json::object().set("textDocument", Json::object().set("uri", kToolsUri)).set("range", std::move(whole))));
     input += frame(request(9, "shutdown", nullptr));
     input += frame(notification("exit", nullptr));
     std::vector<Json> msgs = runSession("lsp-tools", input);
@@ -233,4 +237,10 @@ TEST_CASE("scripted session: imports and navigation") {
     REQUIRE(help != nullptr);
     CHECK((*help)["result"]["signatures"][0]["label"].str() == "fn scale(value: float, factor: float = 2.0) -> float");
     CHECK((*help)["result"]["activeParameter"].integer() == 1);
+
+    const Json* hints = response(msgs, 7);
+    REQUIRE(hints != nullptr);
+    REQUIRE((*hints)["result"].size() == 3);
+    CHECK((*hints)["result"][0]["label"].str() == ": float");
+    CHECK((*hints)["result"][2]["label"].str() == "factor:");
 }
