@@ -63,6 +63,7 @@ private:
     Json references(const Json& params);
     Json prepareRename(const Json& params);
     Json rename(const Json& params);
+    Json signatureHelp(const Json& params);
 
     Transport transport_;
     Workspace workspace_;

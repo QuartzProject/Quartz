@@ -107,6 +107,9 @@ Json Server::request(const std::string& method, const Json& params) {
         caps.set("documentSymbolProvider", true);
         caps.set("documentFormattingProvider", true);
         caps.set("completionProvider", Json::object().set("triggerCharacters", Json::array().push(".")));
+        caps.set("signatureHelpProvider", Json::object()
+                                              .set("triggerCharacters", Json::array().push("(").push(","))
+                                              .set("retriggerCharacters", Json::array().push("=")));
         caps.set("referencesProvider", true);
         caps.set("renameProvider", Json::object().set("prepareProvider", true));
         caps.set("codeActionProvider", Json::object().set("codeActionKinds", Json::array().push("quickfix")));
@@ -135,6 +138,9 @@ Json Server::request(const std::string& method, const Json& params) {
     }
     if (method == "textDocument/codeAction") {
         return codeAction(params);
+    }
+    if (method == "textDocument/signatureHelp") {
+        return signatureHelp(params);
     }
     if (method == "textDocument/references") {
         return references(params);

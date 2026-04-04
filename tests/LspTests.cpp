@@ -165,6 +165,15 @@ constexpr std::string_view kTools = "package org.example.tools\n"
                                     "\n"
                                     "fn root(x: float) -> float {\n"
                                     "    return sqrt(x)\n"
+                                    "}\n"
+                                    "\n"
+                                    "fn scale(value: float, factor: float = 2.0) -> float {\n"
+                                    "    let twice = root(value) * factor\n"
+                                    "    return twice\n"
+                                    "}\n"
+                                    "\n"
+                                    "fn main() -> float {\n"
+                                    "    return scale(1.0, 3.0)\n"
                                     "}\n";
 
 TEST_CASE("scripted session: imports and navigation") {
@@ -185,6 +194,7 @@ TEST_CASE("scripted session: imports and navigation") {
     Json rename = at(kToolsUri, 5, 16);
     rename.set("newName", "value");
     input += frame(request(5, "textDocument/rename", rename));
+    input += frame(request(6, "textDocument/signatureHelp", at(kToolsUri, 14, 22)));
     input += frame(request(9, "shutdown", nullptr));
     input += frame(notification("exit", nullptr));
     std::vector<Json> msgs = runSession("lsp-tools", input);
@@ -218,4 +228,9 @@ TEST_CASE("scripted session: imports and navigation") {
     REQUIRE(edits.size() == 2);
     CHECK(edits[0]["range"]["start"]["character"].integer() == 8);
     CHECK(edits[1]["newText"].str() == "value");
+
+    const Json* help = response(msgs, 6);
+    REQUIRE(help != nullptr);
+    CHECK((*help)["result"]["signatures"][0]["label"].str() == "fn scale(value: float, factor: float = 2.0) -> float");
+    CHECK((*help)["result"]["activeParameter"].integer() == 1);
 }
