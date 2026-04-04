@@ -14,6 +14,9 @@ namespace quartz::lsp {
 class LineIndex;
 struct TextEdit;
 
+/// The token types and modifiers `semanticTokens` encodes with.
+Json semanticTokensLegend();
+
 /// An LSP `TextEdit` for byte offsets of the text behind `index`.
 Json textEdit(const LineIndex& index, const TextEdit& e);
 
@@ -65,6 +68,8 @@ private:
     Json rename(const Json& params);
     Json signatureHelp(const Json& params);
     Json inlayHints(const Json& params);
+    Json semanticTokens(const Json& params);
+    Json workspaceSymbols(const Json& params);
 
     Transport transport_;
     Workspace workspace_;

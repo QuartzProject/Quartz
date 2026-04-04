@@ -88,6 +88,7 @@ public:
     /// Folders whose documents changed since their last analysis.
     [[nodiscard]] std::vector<std::string> dirtyFolders() const;
     [[nodiscard]] bool isDirty(const std::string& folder) const;
+    [[nodiscard]] std::vector<std::string> folders() const;
     Analysis* analyzeFolder(const std::string& folder);
     [[nodiscard]] std::vector<std::string> documentsIn(const std::string& folder) const;
     [[nodiscard]] std::string folderOf(const std::string& uri) const;

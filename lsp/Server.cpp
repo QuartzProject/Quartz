@@ -112,6 +112,8 @@ Json Server::request(const std::string& method, const Json& params) {
                                               .set("retriggerCharacters", Json::array().push("=")));
         caps.set("inlayHintProvider", true);
         caps.set("referencesProvider", true);
+        caps.set("semanticTokensProvider", Json::object().set("legend", semanticTokensLegend()).set("full", true));
+        caps.set("workspaceSymbolProvider", true);
         caps.set("renameProvider", Json::object().set("prepareProvider", true));
         caps.set("codeActionProvider", Json::object().set("codeActionKinds", Json::array().push("quickfix")));
         return Json::object()
@@ -145,6 +147,12 @@ Json Server::request(const std::string& method, const Json& params) {
     }
     if (method == "textDocument/inlayHint") {
         return inlayHints(params);
+    }
+    if (method == "textDocument/semanticTokens/full") {
+        return semanticTokens(params);
+    }
+    if (method == "workspace/symbol") {
+        return workspaceSymbols(params);
     }
     if (method == "textDocument/references") {
         return references(params);

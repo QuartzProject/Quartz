@@ -199,6 +199,9 @@ TEST_CASE("scripted session: imports and navigation") {
     input += frame(request(
         7, "textDocument/inlayHint",
         Json::object().set("textDocument", Json::object().set("uri", kToolsUri)).set("range", std::move(whole))));
+    input += frame(request(8, "textDocument/semanticTokens/full",
+                           Json::object().set("textDocument", Json::object().set("uri", kToolsUri))));
+    input += frame(request(10, "workspace/symbol", Json::object().set("query", "sca")));
     input += frame(request(9, "shutdown", nullptr));
     input += frame(notification("exit", nullptr));
     std::vector<Json> msgs = runSession("lsp-tools", input);
@@ -243,4 +246,16 @@ TEST_CASE("scripted session: imports and navigation") {
     REQUIRE((*hints)["result"].size() == 3);
     CHECK((*hints)["result"][0]["label"].str() == ": float");
     CHECK((*hints)["result"][2]["label"].str() == "factor:");
+
+    const Json* tokens = response(msgs, 8);
+    REQUIRE(tokens != nullptr);
+    const Json& data = (*tokens)["result"]["data"];
+    REQUIRE(data.size() >= 5);
+    CHECK(data[0].integer() == 4);
+    CHECK(data[1].integer() == 3);
+    CHECK(data[2].integer() == 4);
+    const Json* symbols = response(msgs, 10);
+    REQUIRE(symbols != nullptr);
+    REQUIRE((*symbols)["result"].size() == 1);
+    CHECK((*symbols)["result"][0]["name"].str() == "scale");
 }

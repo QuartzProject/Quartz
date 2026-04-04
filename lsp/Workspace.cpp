@@ -169,6 +169,14 @@ std::vector<std::string> Workspace::dirtyFolders() const {
     return out;
 }
 
+std::vector<std::string> Workspace::folders() const {
+    std::vector<std::string> out;
+    for (const auto& [name, f] : folders_) {
+        out.push_back(name);
+    }
+    return out;
+}
+
 bool Workspace::isDirty(const std::string& folder) const {
     auto it = folders_.find(folder);
     return it != folders_.end() && (it->second.dirty || !it->second.analysis);
