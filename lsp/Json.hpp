@@ -12,7 +12,7 @@ namespace quartz::lsp {
 /// A JSON value; objects keep insertion order and lookups are linear (LSP messages are small).
 class Json {
 public:
-    enum class Kind : std::uint8_t { Null, Bool, Int, Float, String, Array, Object };
+    enum class Kind : std::uint8_t { Null, Bool, Int, Float, String, Array, Object, Raw };
 
     Json() = default;
 
@@ -37,6 +37,13 @@ public:
     static Json array() { return withKind(Kind::Array); }
 
     static Json object() { return withKind(Kind::Object); }
+
+    /// Text that is already JSON, written as is by `dump`; for large generated arrays.
+    static Json raw(std::string text) {
+        Json j = withKind(Kind::Raw);
+        j.str_ = std::move(text);
+        return j;
+    }
 
     [[nodiscard]] Kind kind() const { return kind_; }
 

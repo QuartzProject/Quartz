@@ -308,7 +308,7 @@ Json Server::range(const Analysis& a, Span span) {
     if (span.file >= a.fileCount()) {
         return Json::object().set("start", position({})).set("end", position({}));
     }
-    LineIndex index(a.input(span.file).text);
+    const LineIndex& index = a.lines(span.file);
     std::uint32_t end = span.end > span.begin ? span.end : span.begin;
     return Json::object().set("start", position(index.position(span.begin))).set("end", position(index.position(end)));
 }

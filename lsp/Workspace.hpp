@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Text.hpp"
 #include "ir/Ir.hpp"
 #include "sema/Sema.hpp"
 #include "support/Diagnostics.hpp"
@@ -62,6 +63,8 @@ public:
 
     /// Resolved names of the user files, built on first use.
     [[nodiscard]] const Index& index() const;
+    /// Line starts of an input, built on first use.
+    [[nodiscard]] const LineIndex& lines(std::uint32_t file) const;
 
 private:
     std::vector<Input> inputs_;
@@ -73,6 +76,7 @@ private:
     std::unique_ptr<sema::Program> program_;
     double millis_ = 0;
     mutable std::unique_ptr<Index> index_;
+    mutable std::vector<std::unique_ptr<LineIndex>> lines_;
 };
 
 /// Open documents grouped by folder; each folder is analyzed as one program.

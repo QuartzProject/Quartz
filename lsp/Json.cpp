@@ -409,6 +409,9 @@ void Json::dumpTo(std::string& out) const {
     case Kind::String:
         appendJsonString(out, str_);
         break;
+    case Kind::Raw:
+        out += str_;
+        break;
     case Kind::Array:
         out += '[';
         for (std::size_t i = 0; i < items_.size(); ++i) {

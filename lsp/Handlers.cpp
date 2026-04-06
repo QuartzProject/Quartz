@@ -34,7 +34,7 @@ bool inside(Span inner, Span outer) { return inner.begin >= outer.begin && inner
 
 class SymbolBuilder {
 public:
-    SymbolBuilder(const Analysis& a, std::uint32_t file) : a_(a), text_(a.input(file).text), index_(text_) {}
+    SymbolBuilder(const Analysis& a, std::uint32_t file) : a_(a), text_(a.input(file).text), index_(a.lines(file)) {}
 
     Json symbol(std::string name, int kind, Span range, Span selection, std::string detail = {}) {
         if (!inside(selection, range)) {
@@ -122,7 +122,7 @@ private:
 
     const Analysis& a_;
     std::string_view text_;
-    LineIndex index_;
+    const LineIndex& index_;
 };
 
 } // namespace
@@ -142,7 +142,7 @@ std::optional<Server::Cursor> Server::cursor(const Json& params) {
         return std::nullopt;
     }
     const Json& p = params["position"];
-    LineIndex index(a->input(*file).text);
+    const LineIndex& index = a->lines(*file);
     std::uint32_t offset = index.offset(
         {static_cast<std::uint32_t>(p["line"].integer()), static_cast<std::uint32_t>(p["character"].integer())});
     return Cursor{a, *file, offset};
@@ -173,7 +173,7 @@ Json Server::completion(const Json& params) {
     if (!c) {
         return items;
     }
-    LineIndex index(c->analysis->input(c->file).text);
+    const LineIndex& index = c->analysis->lines(c->file);
     for (Completion& item : completeAt(*c->analysis, c->file, c->offset)) {
         bool imported = !item.package.empty();
         Json j = Json::object().set("label", item.label).set("kind", item.kind);

@@ -135,7 +135,7 @@ Json Server::inlayHints(const Json& params) {
     if (m == nullptr) {
         return out;
     }
-    LineIndex index(a->input(*file).text);
+    const LineIndex& index = a->lines(*file);
     auto offset = [&](const Json& p, std::uint32_t fallback) {
         if (!p.isObject()) {
             return fallback;

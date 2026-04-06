@@ -50,7 +50,7 @@ Json Server::codeAction(const Json& params) {
     }
     ImportScope scope = importScope(*a, *m);
     std::vector<Export> all;
-    LineIndex index(a->input(*file).text);
+    const LineIndex& index = a->lines(*file);
     for (const Json& d : params["context"]["diagnostics"].items()) {
         std::optional<MissingName> missing = missingName(d["message"].str());
         if (!missing || !d["range"].isObject()) {

@@ -90,6 +90,14 @@ const Index& Analysis::index() const {
     return *index_;
 }
 
+const LineIndex& Analysis::lines(std::uint32_t file) const {
+    lines_.resize(inputs_.size());
+    if (!lines_[file]) {
+        lines_[file] = std::make_unique<LineIndex>(inputs_[file].text);
+    }
+    return *lines_[file];
+}
+
 std::optional<std::uint32_t> Analysis::fileOf(std::string_view uri) const {
     for (std::uint32_t i = 0; i < inputs_.size(); ++i) {
         if (!uri.empty() && inputs_[i].uri == uri) {
