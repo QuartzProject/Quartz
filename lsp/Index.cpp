@@ -281,6 +281,9 @@ private:
     }
 
     void namedArg(const Arg& arg, const Decl& target) {
+        if (arg.value->span.file != file_ || arg.value->span.begin > text_.size()) {
+            return;
+        }
         std::uint32_t at = arg.value->span.begin;
         while (at > 0 && (text_[at - 1] == ' ' || text_[at - 1] == '\t' || text_[at - 1] == '\n')) {
             --at;
