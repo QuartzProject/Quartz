@@ -1,0 +1,369 @@
+================================================================================
+Bindings
+================================================================================
+
+fn f() {
+    let a = 1
+    let b: int = 2
+    var c
+    var d: str = "x"
+    const e = 3
+    ref s = hub.data
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (identifier)
+        (integer_literal))
+      (let_declaration
+        (identifier)
+        (type_identifier)
+        (integer_literal))
+      (let_declaration
+        (identifier))
+      (let_declaration
+        (identifier)
+        (type_identifier)
+        (string
+          (string_content)))
+      (let_declaration
+        (identifier)
+        (integer_literal))
+      (let_declaration
+        (identifier)
+        (field_expression
+          (identifier)
+          (identifier))))))
+
+================================================================================
+Assignments
+================================================================================
+
+fn f() {
+    x = 1
+    m["a"] += 5
+    p.x -= 1; y *= 2; z /= 3
+    a %= 4
+    b &= 1
+    c |= 2
+    d ^= 3
+    e <<= 1
+    g >>= 1
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (index_expression
+          (identifier)
+          (string
+            (string_content)))
+        (integer_literal))
+      (assignment_statement
+        (field_expression
+          (identifier)
+          (identifier))
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal))
+      (assignment_statement
+        (identifier)
+        (integer_literal)))))
+
+================================================================================
+If and if let
+================================================================================
+
+fn f() {
+    if a && b {
+        x()
+    } else if let v = opt {
+        y(v)
+    }
+    else {
+        z()
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (if_expression
+          (binary_expression
+            (identifier)
+            (identifier))
+          (block
+            (expression_statement
+              (call_expression
+                (identifier)
+                (arguments))))
+          (if_expression
+            (let_condition
+              (identifier)
+              (identifier))
+            (block
+              (expression_statement
+                (call_expression
+                  (identifier)
+                  (arguments
+                    (identifier)))))
+            (block
+              (expression_statement
+                (call_expression
+                  (identifier)
+                  (arguments))))))))))
+
+================================================================================
+Loops
+================================================================================
+
+fn f() {
+    while i < 3 {
+        i += 1
+        continue
+    }
+    for x in xs {
+        break
+    }
+    for i, x in 0..10 {}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (while_statement
+        (binary_expression
+          (identifier)
+          (integer_literal))
+        (block
+          (assignment_statement
+            (identifier)
+            (integer_literal))
+          (continue_statement)))
+      (for_statement
+        (identifier)
+        (identifier)
+        (block
+          (break_statement)))
+      (for_statement
+        (identifier)
+        (identifier)
+        (range_expression
+          (integer_literal)
+          (integer_literal))
+        (block)))))
+
+================================================================================
+Coroutine statements
+================================================================================
+
+suspend fn f() {
+    wait 20.ticks
+    at io() {
+        load()
+    }
+    every 5.ticks {
+        scope {
+            print("tick")
+        }
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (wait_expression
+          (field_expression
+            (integer_literal)
+            (identifier))))
+      (at_statement
+        (call_expression
+          (identifier)
+          (arguments))
+        (block
+          (expression_statement
+            (call_expression
+              (identifier)
+              (arguments)))))
+      (every_statement
+        (field_expression
+          (integer_literal)
+          (identifier))
+        (block
+          (scope_statement
+            (block
+              (expression_statement
+                (call_expression
+                  (identifier)
+                  (arguments
+                    (string
+                      (string_content))))))))))))
+
+================================================================================
+Return
+================================================================================
+
+fn f() -> int {
+    if a {
+        return
+    }
+    return 1 + 2
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (type_identifier)
+    (block
+      (expression_statement
+        (if_expression
+          (identifier)
+          (block
+            (return_statement))))
+      (return_statement
+        (binary_expression
+          (integer_literal)
+          (integer_literal))))))
+
+================================================================================
+Match
+================================================================================
+
+fn f(s: Shape) -> float {
+    return match s {
+        Circle(r) => r * r * 3.0
+        Shape.Rect(w, h) if w > 0.0 => w * h,
+        Estado.Fin => 0.0
+        1..5 => y = 3
+        -1..=9 => { 1.0 }
+        'a' => return 2.0
+        "s" => break
+        null => continue
+        _ => 0.0
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (block
+      (return_statement
+        (match_expression
+          (identifier)
+          (match_block
+            (match_arm
+              (variant_pattern
+                (identifier)
+                (pattern_arguments
+                  (identifier)))
+              (binary_expression
+                (binary_expression
+                  (identifier)
+                  (identifier))
+                (float_literal)))
+            (match_arm
+              (variant_pattern
+                (scoped_identifier
+                  (identifier)
+                  (identifier))
+                (pattern_arguments
+                  (identifier)
+                  (identifier)))
+              (binary_expression
+                (identifier)
+                (float_literal))
+              (binary_expression
+                (identifier)
+                (identifier)))
+            (match_arm
+              (variant_pattern
+                (scoped_identifier
+                  (identifier)
+                  (identifier)))
+              (float_literal))
+            (match_arm
+              (range_pattern
+                (integer_literal)
+                (integer_literal))
+              (assignment_statement
+                (identifier)
+                (integer_literal)))
+            (match_arm
+              (range_pattern
+                (negative_literal
+                  (integer_literal))
+                (integer_literal))
+              (block
+                (expression_statement
+                  (float_literal))))
+            (match_arm
+              (char_literal)
+              (return_statement
+                (float_literal)))
+            (match_arm
+              (string
+                (string_content))
+              (break_statement))
+            (match_arm
+              (null_literal)
+              (continue_statement))
+            (match_arm
+              (wildcard_pattern)
+              (float_literal))))))))

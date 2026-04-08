@@ -1,0 +1,439 @@
+================================================================================
+Precedence
+================================================================================
+
+fn f() {
+    a || b && c == d
+    a ?? b ?? c
+    a ?? b..c
+    a | b..c
+    a + b * c - d / e % g
+    a << b >> c & d ^ e | g
+    -x as float
+    a + b as int
+    !a.b
+    ~x
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (binary_expression
+          (identifier)
+          (binary_expression
+            (identifier)
+            (binary_expression
+              (identifier)
+              (identifier)))))
+      (expression_statement
+        (binary_expression
+          (identifier)
+          (binary_expression
+            (identifier)
+            (identifier))))
+      (expression_statement
+        (binary_expression
+          (identifier)
+          (range_expression
+            (identifier)
+            (identifier))))
+      (expression_statement
+        (range_expression
+          (binary_expression
+            (identifier)
+            (identifier))
+          (identifier)))
+      (expression_statement
+        (binary_expression
+          (binary_expression
+            (identifier)
+            (binary_expression
+              (identifier)
+              (identifier)))
+          (binary_expression
+            (binary_expression
+              (identifier)
+              (identifier))
+            (identifier))))
+      (expression_statement
+        (binary_expression
+          (binary_expression
+            (binary_expression
+              (binary_expression
+                (binary_expression
+                  (identifier)
+                  (identifier))
+                (identifier))
+              (identifier))
+            (identifier))
+          (identifier)))
+      (expression_statement
+        (cast_expression
+          (unary_expression
+            (identifier))
+          (type_identifier)))
+      (expression_statement
+        (binary_expression
+          (identifier)
+          (cast_expression
+            (identifier)
+            (type_identifier))))
+      (expression_statement
+        (unary_expression
+          (field_expression
+            (identifier)
+            (identifier))))
+      (expression_statement
+        (unary_expression
+          (identifier))))))
+
+================================================================================
+Wait precedence
+================================================================================
+
+suspend fn f() {
+    wait a + b
+    wait a ?? b
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (wait_expression
+          (binary_expression
+            (identifier)
+            (identifier))))
+      (expression_statement
+        (binary_expression
+          (wait_expression
+            (identifier))
+          (identifier))))))
+
+================================================================================
+Null safety
+================================================================================
+
+fn f() {
+    let name = target?.name ?? "unknown"
+    let v = parse(s)?
+    let w = x?.y?.z()
+    let t = pair?.0
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (identifier)
+        (binary_expression
+          (field_expression
+            (identifier)
+            (safe_navigation)
+            (identifier))
+          (string
+            (string_content))))
+      (let_declaration
+        (identifier)
+        (try_expression
+          (call_expression
+            (identifier)
+            (arguments
+              (identifier)))))
+      (let_declaration
+        (identifier)
+        (call_expression
+          (field_expression
+            (field_expression
+              (identifier)
+              (safe_navigation)
+              (identifier))
+            (safe_navigation)
+            (identifier))
+          (arguments)))
+      (let_declaration
+        (identifier)
+        (field_expression
+          (identifier)
+          (safe_navigation)
+          (tuple_index))))))
+
+================================================================================
+Casts and type tests
+================================================================================
+
+fn f() {
+    let a = x as int?
+    let b = x is Box<int>
+    let c = (x as int) < y
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (identifier)
+        (cast_expression
+          (identifier)
+          (nullable_type
+            (type_identifier))))
+      (let_declaration
+        (identifier)
+        (is_expression
+          (identifier)
+          (generic_type
+            (type_identifier)
+            (type_arguments
+              (type_identifier)))))
+      (let_declaration
+        (identifier)
+        (binary_expression
+          (parenthesized_expression
+            (cast_expression
+              (identifier)
+              (type_identifier)))
+          (identifier))))))
+
+================================================================================
+Calls, indexing and members
+================================================================================
+
+fn f() {
+    print("x")
+    P(x = 1, y = 2)
+    parse::<i32>(text)
+    xs[0].len()
+    t.0
+    hub.visits.get(who)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (arguments
+            (string
+              (string_content)))))
+      (expression_statement
+        (call_expression
+          (identifier)
+          (arguments
+            (named_argument
+              (identifier)
+              (integer_literal))
+            (named_argument
+              (identifier)
+              (integer_literal)))))
+      (expression_statement
+        (call_expression
+          (generic_function
+            (identifier)
+            (type_arguments
+              (type_identifier)))
+          (arguments
+            (identifier))))
+      (expression_statement
+        (call_expression
+          (field_expression
+            (index_expression
+              (identifier)
+              (integer_literal))
+            (identifier))
+          (arguments)))
+      (expression_statement
+        (field_expression
+          (identifier)
+          (tuple_index)))
+      (expression_statement
+        (call_expression
+          (field_expression
+            (field_expression
+              (identifier)
+              (identifier))
+            (identifier))
+          (arguments
+            (identifier)))))))
+
+================================================================================
+Lambdas
+================================================================================
+
+fn f() {
+    let a = (x) => x * 2
+    let b = (a: int, b: int) => a + b
+    let c = () => {
+        return 1
+    }
+    xs.map((v) => v + 1)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (identifier)
+        (lambda_expression
+          (lambda_parameters
+            (lambda_parameter
+              (identifier)))
+          (binary_expression
+            (identifier)
+            (integer_literal))))
+      (let_declaration
+        (identifier)
+        (lambda_expression
+          (lambda_parameters
+            (lambda_parameter
+              (identifier)
+              (type_identifier))
+            (lambda_parameter
+              (identifier)
+              (type_identifier)))
+          (binary_expression
+            (identifier)
+            (identifier))))
+      (let_declaration
+        (identifier)
+        (lambda_expression
+          (lambda_parameters)
+          (block
+            (return_statement
+              (integer_literal)))))
+      (expression_statement
+        (call_expression
+          (field_expression
+            (identifier)
+            (identifier))
+          (arguments
+            (lambda_expression
+              (lambda_parameters
+                (lambda_parameter
+                  (identifier)))
+              (binary_expression
+                (identifier)
+                (integer_literal)))))))))
+
+================================================================================
+Collections and tuples
+================================================================================
+
+fn f() {
+    let a = []
+    let b = [1, 2, 3,]
+    let c = [0; 16]
+    let d = ()
+    let e = (1,)
+    let g = (1, "a")
+    let h = (1)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (identifier)
+        (list_expression))
+      (let_declaration
+        (identifier)
+        (list_expression
+          (integer_literal)
+          (integer_literal)
+          (integer_literal)))
+      (let_declaration
+        (identifier)
+        (list_repeat_expression
+          (integer_literal)
+          (integer_literal)))
+      (let_declaration
+        (identifier)
+        (unit_expression))
+      (let_declaration
+        (identifier)
+        (tuple_expression
+          (integer_literal)))
+      (let_declaration
+        (identifier)
+        (tuple_expression
+          (integer_literal)
+          (string
+            (string_content))))
+      (let_declaration
+        (identifier)
+        (parenthesized_expression
+          (integer_literal))))))
+
+================================================================================
+Block-like expressions
+================================================================================
+
+fn f() {
+    let a = if x { 1 } else { 2 }
+    let b = match x { _ => 1 }.len()
+    let c = { 1 }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (let_declaration
+        (identifier)
+        (if_expression
+          (identifier)
+          (block
+            (expression_statement
+              (integer_literal)))
+          (block
+            (expression_statement
+              (integer_literal)))))
+      (let_declaration
+        (identifier)
+        (call_expression
+          (field_expression
+            (match_expression
+              (identifier)
+              (match_block
+                (match_arm
+                  (wildcard_pattern)
+                  (integer_literal))))
+            (identifier))
+          (arguments)))
+      (let_declaration
+        (identifier)
+        (block
+          (expression_statement
+            (integer_literal)))))))

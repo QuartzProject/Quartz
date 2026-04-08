@@ -1,0 +1,32 @@
+{
+  "name": "tree-sitter-quartz",
+  "version": "0.1.0",
+  "description": "Quartz grammar for tree-sitter",
+  "license": "MIT",
+  "homepage": "https://quartzlang.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BasaltProject/Quartz.git",
+    "directory": "editors/tree-sitter-quartz"
+  },
+  "keywords": ["incremental", "parsing", "tree-sitter", "quartz"],
+  "files": ["grammar.js", "tree-sitter.json", "queries/*", "src/**"],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.27.2"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate --abi 14",
+    "test": "tree-sitter test",
+    "build": "tree-sitter build"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.quartz",
+      "file-types": ["qz", "qzi"],
+      "injection-regex": "^(quartz|qz)$",
+      "highlights": "queries/highlights.scm",
+      "locals": "queries/locals.scm",
+      "injections": "queries/injections.scm"
+    }
+  ]
+}

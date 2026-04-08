@@ -1,0 +1,375 @@
+================================================================================
+Package and imports
+================================================================================
+
+package org.example.app
+
+import a.b.C
+import a.b.{x, y}
+import org.quartzlang.*
+import geo.Origin as Zero
+import org.quartzlang.math.{abs, max,} as m
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_declaration
+    (path
+      (identifier)
+      (identifier)
+      (identifier)))
+  (import_declaration
+    (import_path
+      (identifier)
+      (identifier)
+      (identifier)))
+  (import_declaration
+    (import_path
+      (identifier)
+      (identifier)
+      (import_list
+        (identifier)
+        (identifier))))
+  (import_declaration
+    (import_path
+      (identifier)
+      (identifier)
+      (import_wildcard)))
+  (import_declaration
+    (import_path
+      (identifier)
+      (identifier))
+    (identifier))
+  (import_declaration
+    (import_path
+      (identifier)
+      (identifier)
+      (identifier)
+      (import_list
+        (identifier)
+        (identifier)))
+    (identifier)))
+
+================================================================================
+Functions
+================================================================================
+
+fn add(a: int, b: int = 2) -> int {
+    return a + b
+}
+
+pub suspend fn tick(self, n: int) {}
+
+internal fn find<T: Show + Eq, U>(items: [T]) -> T?
+
+private fn host(p: Player)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier))
+      (parameter
+        (identifier)
+        (type_identifier)
+        (integer_literal)))
+    (type_identifier)
+    (block
+      (return_statement
+        (binary_expression
+          (identifier)
+          (identifier)))))
+  (function_declaration
+    (visibility_modifier)
+    (identifier)
+    (parameters
+      (self_parameter)
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (block))
+  (function_declaration
+    (visibility_modifier)
+    (identifier)
+    (type_parameters
+      (type_parameter
+        (type_identifier)
+        (trait_bounds
+          (type_identifier)
+          (type_identifier)))
+      (type_parameter
+        (type_identifier)))
+    (parameters
+      (parameter
+        (identifier)
+        (list_type
+          (type_identifier))))
+    (nullable_type
+      (type_identifier)))
+  (function_declaration
+    (visibility_modifier)
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier)))))
+
+================================================================================
+Attributes
+================================================================================
+
+@on(PlayerJoin, priority = High, where = event.level > 3)
+fn onJoin(event: JoinEvent) {}
+
+@noinline
+@deprecated("divide by 2 instead")
+@at @in(1)
+fn half(x: int) -> int {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (attribute
+      (identifier)
+      (attribute_arguments
+        (identifier)
+        (named_argument
+          (identifier)
+          (identifier))
+        (named_argument
+          (identifier)
+          (binary_expression
+            (field_expression
+              (identifier)
+              (identifier))
+            (integer_literal)))))
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (block))
+  (function_declaration
+    (attribute
+      (identifier))
+    (attribute
+      (identifier)
+      (attribute_arguments
+        (string
+          (string_content))))
+    (attribute
+      (identifier))
+    (attribute
+      (identifier)
+      (attribute_arguments
+        (integer_literal)))
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (block)))
+
+================================================================================
+Structs and states
+================================================================================
+
+@handle
+struct Player
+
+struct P { x: int, y: int; z: int = 0 }
+
+pub state Hub<T> {
+    visits: Map<str, int>
+    @persist names: [str] = []
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (struct_declaration
+    (attribute
+      (identifier))
+    (type_identifier))
+  (struct_declaration
+    (type_identifier)
+    (field_declaration_list
+      (field_declaration
+        (identifier)
+        (type_identifier))
+      (field_declaration
+        (identifier)
+        (type_identifier))
+      (field_declaration
+        (identifier)
+        (type_identifier)
+        (integer_literal))))
+  (struct_declaration
+    (visibility_modifier)
+    (type_identifier)
+    (type_parameters
+      (type_parameter
+        (type_identifier)))
+    (field_declaration_list
+      (field_declaration
+        (identifier)
+        (generic_type
+          (type_identifier)
+          (type_arguments
+            (type_identifier)
+            (type_identifier))))
+      (field_declaration
+        (attribute
+          (identifier))
+        (identifier)
+        (list_type
+          (type_identifier))
+        (list_expression)))))
+
+================================================================================
+Enums
+================================================================================
+
+enum Shape {
+    Circle(float)
+    Rect(float, float)
+    Empty
+}
+
+pub enum Maybe<T> { Just(T), Nothing }
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (enum_declaration
+    (type_identifier)
+    (enum_variant_list
+      (enum_variant
+        (identifier)
+        (variant_payload
+          (type_identifier)))
+      (enum_variant
+        (identifier)
+        (variant_payload
+          (type_identifier)
+          (type_identifier)))
+      (enum_variant
+        (identifier))))
+  (enum_declaration
+    (visibility_modifier)
+    (type_identifier)
+    (type_parameters
+      (type_parameter
+        (type_identifier)))
+    (enum_variant_list
+      (enum_variant
+        (identifier)
+        (variant_payload
+          (type_identifier)))
+      (enum_variant
+        (identifier)))))
+
+================================================================================
+Traits and impls
+================================================================================
+
+trait Show {
+    fn show(self) -> str
+    @inline suspend fn later(self)
+}
+
+impl<T> Box<T> {
+    pub fn get(self) -> T {
+        return self.value
+    }
+}
+
+impl<T: Show> Show for Box<T> {
+    internal suspend fn show(self) -> str {}
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_declaration
+    (type_identifier)
+    (declaration_list
+      (function_declaration
+        (identifier)
+        (parameters
+          (self_parameter))
+        (type_identifier))
+      (function_declaration
+        (attribute
+          (identifier))
+        (identifier)
+        (parameters
+          (self_parameter)))))
+  (impl_declaration
+    (type_parameters
+      (type_parameter
+        (type_identifier)))
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)))
+    (declaration_list
+      (function_declaration
+        (visibility_modifier)
+        (identifier)
+        (parameters
+          (self_parameter))
+        (type_identifier)
+        (block
+          (return_statement
+            (field_expression
+              (self)
+              (identifier)))))))
+  (impl_declaration
+    (type_parameters
+      (type_parameter
+        (type_identifier)
+        (trait_bounds
+          (type_identifier))))
+    (type_identifier)
+    (generic_type
+      (type_identifier)
+      (type_arguments
+        (type_identifier)))
+    (declaration_list
+      (function_declaration
+        (visibility_modifier)
+        (identifier)
+        (parameters
+          (self_parameter))
+        (type_identifier)
+        (block)))))
+
+================================================================================
+Constants
+================================================================================
+
+const MAX_PLAYERS = 100
+pub const ORIGIN: Point = Point(0, 0)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (integer_literal))
+  (const_declaration
+    (visibility_modifier)
+    (identifier)
+    (type_identifier)
+    (call_expression
+      (identifier)
+      (arguments
+        (integer_literal)
+        (integer_literal)))))

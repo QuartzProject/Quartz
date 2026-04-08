@@ -1,0 +1,181 @@
+================================================================================
+Numbers
+================================================================================
+
+const A = [42, 1_000_000, 0xFF, 0b1010_0101, 0o17, 3.14, 1.5e-3, 1e5]
+const B = 20.ticks
+const C = 1..10
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (list_expression
+      (integer_literal)
+      (integer_literal)
+      (integer_literal)
+      (integer_literal)
+      (integer_literal)
+      (float_literal)
+      (float_literal)
+      (float_literal)))
+  (const_declaration
+    (identifier)
+    (field_expression
+      (integer_literal)
+      (identifier)))
+  (const_declaration
+    (identifier)
+    (range_expression
+      (integer_literal)
+      (integer_literal))))
+
+================================================================================
+Characters
+================================================================================
+
+const A = ['a', '\n', '\'', '\u{1F600}', 'é']
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (list_expression
+      (char_literal)
+      (char_literal)
+      (char_literal)
+      (char_literal)
+      (char_literal))))
+
+================================================================================
+Strings
+================================================================================
+
+const A = "plain \"quoted\" \\ \u{41}"
+const B = ""
+const C = "a } b \{ c"
+const D = "// not a comment /* nor this */"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (string
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence)
+      (string_content)
+      (escape_sequence)))
+  (const_declaration
+    (identifier)
+    (string))
+  (const_declaration
+    (identifier)
+    (string
+      (string_content)
+      (escape_sequence)
+      (string_content)))
+  (const_declaration
+    (identifier)
+    (string
+      (string_content))))
+
+================================================================================
+Interpolation
+================================================================================
+
+const A = "Hello, {player.name}! Bonus: {bonus * 2}"
+const B = "{f("a{b}c")}"
+const C = "{m["a"]} {{ 1 }}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (string
+      (string_content)
+      (interpolation
+        (field_expression
+          (identifier)
+          (identifier)))
+      (string_content)
+      (interpolation
+        (binary_expression
+          (identifier)
+          (integer_literal)))))
+  (const_declaration
+    (identifier)
+    (string
+      (interpolation
+        (call_expression
+          (identifier)
+          (arguments
+            (string
+              (string_content)
+              (interpolation
+                (identifier))
+              (string_content)))))))
+  (const_declaration
+    (identifier)
+    (string
+      (interpolation
+        (index_expression
+          (identifier)
+          (string
+            (string_content))))
+      (string_content)
+      (interpolation
+        (block
+          (expression_statement
+            (integer_literal)))))))
+
+================================================================================
+Multiline strings
+================================================================================
+
+const A = """first
+  "second" ""
+third {x} end"""
+const B = """"""
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (string
+      (string_content)
+      (interpolation
+        (identifier))
+      (string_content)))
+  (const_declaration
+    (identifier)
+    (string)))
+
+================================================================================
+Comments
+================================================================================
+
+// line
+/// doc
+/* block /* nested */ still a comment */
+fn f() {} // trailing
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (line_comment)
+  (line_comment)
+  (block_comment)
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block))
+  (line_comment))

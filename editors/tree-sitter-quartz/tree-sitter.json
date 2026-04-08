@@ -1,0 +1,36 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "quartz",
+      "camelcase": "Quartz",
+      "title": "Quartz",
+      "scope": "source.quartz",
+      "file-types": ["qz", "qzi"],
+      "injection-regex": "^(quartz|qz)$",
+      "highlights": "queries/highlights.scm",
+      "locals": "queries/locals.scm",
+      "injections": "queries/injections.scm",
+      "class-name": "TreeSitterQuartz"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Quartz grammar for tree-sitter",
+    "authors": [{ "name": "Basalt Project" }],
+    "links": {
+      "repository": "https://github.com/BasaltProject/Quartz",
+      "homepage": "https://quartzlang.org"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

@@ -1,0 +1,86 @@
+================================================================================
+Types
+================================================================================
+
+fn f(
+    a: int,
+    b: [str],
+    c: [f32; 3],
+    d: Map<str, List<i32>>,
+    e: (int, str),
+    g: (int, str) -> bool,
+    h: () -> void,
+    i: Player?,
+    j: org.quartzlang.data.Value,
+    k: Result<int, str>,
+    l: self,
+) {}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier))
+      (parameter
+        (identifier)
+        (list_type
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (array_type
+          (type_identifier)
+          (integer_literal)))
+      (parameter
+        (identifier)
+        (generic_type
+          (type_identifier)
+          (type_arguments
+            (type_identifier)
+            (generic_type
+              (type_identifier)
+              (type_arguments
+                (type_identifier))))))
+      (parameter
+        (identifier)
+        (tuple_type
+          (type_identifier)
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (function_type
+          (parameter_types
+            (type_identifier)
+            (type_identifier))
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (function_type
+          (parameter_types)
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (nullable_type
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (scoped_type_identifier
+          (path
+            (identifier)
+            (identifier)
+            (identifier))
+          (type_identifier)))
+      (parameter
+        (identifier)
+        (generic_type
+          (type_identifier)
+          (type_arguments
+            (type_identifier)
+            (type_identifier))))
+      (parameter
+        (identifier)
+        (self_type)))
+    (block)))

@@ -1,0 +1,191 @@
+================================================================================
+Newline ends a statement
+================================================================================
+
+fn f() {
+    a
+    (b)
+    c
+    [d]
+    e
+    - g
+    h
+    ?? i
+    j
+    && k
+    || l
+    m
+        .n()
+        ?.o
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (identifier))
+      (expression_statement
+        (parenthesized_expression
+          (identifier)))
+      (expression_statement
+        (identifier))
+      (expression_statement
+        (list_expression
+          (identifier)))
+      (expression_statement
+        (identifier))
+      (expression_statement
+        (unary_expression
+          (identifier)))
+      (expression_statement
+        (binary_expression
+          (identifier)
+          (identifier)))
+      (expression_statement
+        (binary_expression
+          (binary_expression
+            (identifier)
+            (identifier))
+          (identifier)))
+      (expression_statement
+        (field_expression
+          (call_expression
+            (field_expression
+              (identifier)
+              (identifier))
+            (arguments))
+          (safe_navigation)
+          (identifier))))))
+
+================================================================================
+Newlines inside brackets
+================================================================================
+
+fn f() {
+    g(a
+      , b)
+    let v = (a
+      + b)
+    let w = [
+        1,
+        2
+    ]
+    let x = a +
+        b
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (call_expression
+          (identifier)
+          (arguments
+            (identifier)
+            (identifier))))
+      (let_declaration
+        (identifier)
+        (parenthesized_expression
+          (binary_expression
+            (identifier)
+            (identifier))))
+      (let_declaration
+        (identifier)
+        (list_expression
+          (integer_literal)
+          (integer_literal)))
+      (let_declaration
+        (identifier)
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+================================================================================
+Comments between continued lines
+================================================================================
+
+fn f() {
+    obj // first
+        .call()
+    obj
+        // second
+        .call()
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (expression_statement
+        (call_expression
+          (field_expression
+            (identifier)
+            (line_comment)
+            (identifier))
+          (arguments)))
+      (expression_statement
+        (call_expression
+          (field_expression
+            (identifier)
+            (line_comment)
+            (identifier))
+          (arguments))))))
+
+================================================================================
+Return without value before a newline
+================================================================================
+
+fn f() {
+    return
+    x
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters)
+    (block
+      (return_statement)
+      (expression_statement
+        (identifier)))))
+
+================================================================================
+Assignment target on its own line
+:error
+================================================================================
+
+fn f() {
+    x
+    = 1
+}
+
+--------------------------------------------------------------------------------
+
+
+
+================================================================================
+Range operator on its own line
+:error
+================================================================================
+
+fn f() {
+    p
+    ..q
+}
+
+--------------------------------------------------------------------------------
+
+
