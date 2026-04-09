@@ -38,6 +38,7 @@ int usage() {
                  "       quartz interface <package.qzb>\n"
                  "       quartz keygen <seed file>\n"
                  "       quartz new <package name, like org.example.hello>\n"
+                 "       quartz doc <file.qz|file.qzi|package dir>... [-o out.md]\n"
                  "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
     return 2;
 }
@@ -292,6 +293,9 @@ int main(int argc, char** argv) {
     }
     if (cmd == "build") {
         return build(*args);
+    }
+    if (cmd == "doc") {
+        return runDoc(args->inputs, args->output);
     }
     std::shared_ptr<const quartz::vm::Program> program;
     std::string irText;

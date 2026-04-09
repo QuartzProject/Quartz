@@ -2,6 +2,7 @@
 #include "Server.hpp"
 #include "Text.hpp"
 #include "format/Format.hpp"
+#include "syntax/DocComment.hpp"
 
 namespace quartz::lsp {
 
@@ -154,7 +155,12 @@ Json Server::hover(const Json& params) {
     if (!r || r->hover.empty()) {
         return nullptr;
     }
-    Json contents = Json::object().set("kind", "markdown").set("value", "```quartz\n" + r->hover + "\n```");
+    std::string text = "```quartz\n" + r->hover + "\n```";
+    if (r->declaration && r->declaration->file < c->analysis->fileCount()) {
+        std::string doc = syntax::docComment(c->analysis->input(r->declaration->file).text, r->declaration->begin);
+        text += doc.empty() ? "" : "\n\n" + doc;
+    }
+    Json contents = Json::object().set("kind", "markdown").set("value", std::move(text));
     return Json::object().set("contents", std::move(contents)).set("range", range(*c->analysis, r->range));
 }
 
