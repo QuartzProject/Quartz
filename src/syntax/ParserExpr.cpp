@@ -630,18 +630,33 @@ TypeExpr* Parser::parseType() {
             }
         }
         expect(Tok::RParen, "to close the tuple type");
-        if (accept(Tok::Arrow)) {
-            auto* f = node<FnTypeExpr>(begin);
-            f->kind = TypeExprKind::Fn;
-            f->params = list(elems);
-            f->result = parseType();
-            result = f;
-        } else {
-            auto* t = node<TupleTypeExpr>(begin);
-            t->kind = TypeExprKind::Tuple;
-            t->elems = list(elems);
-            result = t;
+        if (at(Tok::Arrow)) {
+            error(cur().span, "function types are written 'fn(A, B) -> R'");
+            advance();
+            parseType();
         }
+        auto* t = node<TupleTypeExpr>(begin);
+        t->kind = TypeExprKind::Tuple;
+        t->elems = list(elems);
+        result = t;
+    } else if (accept(Tok::KwFn)) {
+        expect(Tok::LParen, "after 'fn' in a function type");
+        std::vector<TypeExpr*> params;
+        {
+            NewlineGuard g(*this, true);
+            while (!at(Tok::RParen) && !at(Tok::Eof)) {
+                params.push_back(parseType());
+                if (!accept(Tok::Comma)) {
+                    break;
+                }
+            }
+            expect(Tok::RParen, "to close the function type");
+        }
+        auto* f = node<FnTypeExpr>(begin);
+        f->kind = TypeExprKind::Fn;
+        f->params = list(params);
+        f->result = accept(Tok::Arrow) ? parseType() : nullptr;
+        result = f;
     } else if (at(Tok::Ident) || at(Tok::KwSelf)) {
         auto* n = node<NamedTypeExpr>(begin);
         n->kind = TypeExprKind::Named;

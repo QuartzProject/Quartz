@@ -81,7 +81,9 @@ public:
             for (const TypeExpr* e : static_cast<const FnTypeExpr*>(t)->params) {
                 type(e);
             }
-            type(static_cast<const FnTypeExpr*>(t)->result);
+            if (static_cast<const FnTypeExpr*>(t)->result != nullptr) {
+                type(static_cast<const FnTypeExpr*>(t)->result);
+            }
             break;
         }
         close();

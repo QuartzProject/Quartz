@@ -447,13 +447,16 @@ void Printer::type(const TypeExpr* t) {
         bool isFn = t->kind == TypeExprKind::Fn;
         std::span<TypeExpr* const> elems =
             isFn ? static_cast<const FnTypeExpr*>(t)->params : static_cast<const TupleTypeExpr*>(t)->elems;
-        std::size_t open = tokenAt(t->span.begin);
+        std::size_t open = tokenAt(t->span.begin) + (isFn ? 1 : 0);
         std::size_t close = matching(open);
+        if (isFn) {
+            text("fn");
+        }
         items(
             "(", ")", toks_[open].span.end, toks_[close].span.begin, elems.size(),
             [&](std::size_t i) { return elems[i]->span.begin; }, [&](std::size_t i) { return elems[i]->span.end; },
             [&](std::size_t i) { type(elems[i]); });
-        if (isFn) {
+        if (isFn && static_cast<const FnTypeExpr*>(t)->result != nullptr) {
             space();
             text("->");
             space();

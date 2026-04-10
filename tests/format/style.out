@@ -88,7 +88,8 @@ state S<T> {
     a: [int; 3]
 
     b: (int, str)?
-    c: (int) -> bool
+    c: fn(int) -> bool
+    d: fn(str, int)
 }
 @handle
 struct Player
