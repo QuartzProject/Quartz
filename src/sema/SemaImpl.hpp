@@ -111,6 +111,34 @@ public:
     std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> genericMethods_; // (generic base, method)
     std::set<std::pair<TraitInfo*, TypeId>> traitImpls_;                // (trait, concrete type or base)
 
+    // Lambdas.cpp
+    struct LambdaScope {
+        FnInfo* info;
+        std::vector<Local*> captures;
+        bool inferResult;
+        bool sawReturn;
+    };
+
+    /// What a generic call already knows about a lambda argument; `unknown` lists the callee's unbound parameters.
+    struct LambdaHint {
+        std::vector<TypeId> params;
+        TypeId result = ir::kError;
+        std::vector<TypeId> unknown;
+    };
+
+    std::vector<LambdaScope> lambdas_;
+    std::optional<LambdaHint> lambdaHint_;
+    TypeId checkLambda(LambdaExpr* e, TypeId expected);
+    bool lambdaReturn(ReturnStmt* r);
+    TypeId checkFunctionValue(IdentExpr* e, FnInfo* fn, TypeId expected);
+    TypeId checkIndirectCall(CallExpr* call, TypeId fnType);
+    TypeId fnField(CallExpr* call, MemberExpr* callee, TypeId recv);
+    void noteCapture(Local* l);
+    Local* assignedLocal(Expr* target) const;
+    void checkCapturedAssign(Expr* target, Span span);
+    void checkFunctionTypes();
+    bool mentions(TypeId t, const std::vector<TypeId>& ids) const;
+
     // scopes
     void pushScope() { scopes_.emplace_back(); }
     void popScope() { scopes_.pop_back(); }

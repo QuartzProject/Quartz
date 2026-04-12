@@ -133,6 +133,12 @@ void FunctionCodegen::lower(const ir::Inst& in) {
     case Op::CallHost:
         callHost(in);
         return;
+    case Op::Closure:
+        makeClosure(in);
+        return;
+    case Op::CallValue:
+        callValue(in);
+        return;
     case Op::Intrinsic:
         intrinsic(in);
         return;
@@ -497,7 +503,6 @@ void FunctionCodegen::convert(const ir::Inst& in) {
 
 void FunctionCodegen::call(const ir::Inst& in) {
     std::uint32_t callee = in.imm;
-    const vm::CompiledFunction& target = U.P.functions[callee];
     bool suspends = U.IR.functions[callee].isSuspend;
     llvm::BasicBlock* retry = nullptr;
     if (live_ != nullptr) {
@@ -506,19 +511,8 @@ void FunctionCodegen::call(const ir::Inst& in) {
         B_.CreateBr(retry);
         B_.SetInsertPoint(retry);
     }
+    enterCall(callee, U.recursive(index_, callee), ir::resumeState(pc_, ir::ResumeAt::BeforeCall), retry);
     llvm::Value* nb = gep(base_, static_cast<std::uint64_t>(cf_.argBase) * 8);
-    llvm::Value* end = gep(nb, static_cast<std::uint64_t>(target.frameSlots) * 8);
-    llvm::Value* stackEnd = ctxField(offsetof(vm::NativeCtx, stackEnd), U.ptr);
-    llvm::Value* maxDepth = ctxField(offsetof(vm::NativeCtx, maxDepth), U.i32);
-    llvm::Value* over = B_.CreateOr(B_.CreateICmpUGT(B_.CreatePtrToInt(end, U.i64), B_.CreatePtrToInt(stackEnd, U.i64)),
-                                    B_.CreateICmpUGE(depth_, maxDepth));
-    trapIf(over, ir::TrapCode::StackOverflow);
-    if (U.recursive(index_, callee)) {
-        llvm::Value* fa = B_.CreateIntrinsic(llvm::Intrinsic::frameaddress, {U.ptr}, {constI32(0)});
-        llvm::Value* limit = ctxField(offsetof(vm::NativeCtx, nativeStackLimit), U.i64);
-        trapIf(B_.CreateICmpULT(B_.CreatePtrToInt(fa, U.i64), limit), ir::TrapCode::StackOverflow);
-    }
-    chargeFuel(ir::resumeState(pc_, ir::ResumeAt::BeforeCall), retry);
     llvm::BasicBlock* site = nullptr;
     if (suspends) {
         site = llvm::BasicBlock::Create(U.C, "call.site", F_);

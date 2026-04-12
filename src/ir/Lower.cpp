@@ -248,13 +248,13 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     out.result = T(fn->result);
     out.isSuspend = fn->isSuspend;
     out.inlining = fn->inlining;
-    out.exported = fn->owner == kError;
     scopes_.clear();
     for (sema::Local* l : fn->paramLocals) {
         l->reg = newReg(T(l->type));
         l->scopeDepth = 0;
     }
     out.paramCount = static_cast<std::uint32_t>(out.regs.size());
+    out.exported = fn->owner == kError && !signatureHasFn(out);
     retReg_ = fn->result != kVoid ? newReg(fn->result) : kNoReg;
     setLine(fn->decl->span);
     lowerBlockStmts(fn->decl->body);

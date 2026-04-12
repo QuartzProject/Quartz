@@ -59,6 +59,7 @@ enum class Rt : std::uint8_t {
     TaskWait,
     TaskSave,
     TaskRestore,
+    Closure,
     Count,
 };
 
@@ -100,6 +101,7 @@ public:
     llvm::MDNode* tbaaBytes;
     llvm::MDNode* tbaaFuel;
     llvm::MDNode* tbaaCtx;
+    llvm::MDNode* tbaaClosure;
     llvm::MDNode* cold;
 
     const std::vector<SlotKind>& kinds(ir::TypeId t);
@@ -107,6 +109,10 @@ public:
     llvm::FunctionCallee runtime(Rt rt);
     /// A string constant, linked by name (`qzk.<index>`) so cached objects hold no process addresses (D70).
     llvm::Constant* stringConstant(std::uint32_t index);
+    /// The closure of a function that captures nothing, linked by name (`qzc.<function>`) like string constants.
+    llvm::Constant* closureConstant(std::uint32_t function);
+    /// Functions of this unit made into values whose type matches `fnType`: what a call through it can reach.
+    [[nodiscard]] std::vector<std::uint32_t> closureTargets(ir::TypeId fnType) const;
     llvm::Function* function(std::uint32_t index);
     llvm::StructType* resultType(std::uint32_t index);
     /// True when a call from `caller` to `callee` can come back to `caller` (a recursion cycle).
@@ -124,6 +130,7 @@ private:
     std::vector<llvm::StructType*> results_;
     std::vector<llvm::FunctionCallee> runtime_;
     std::vector<std::uint32_t> reachable_;
+    std::vector<std::uint32_t> taken_; // functions the unit makes into values
     std::vector<std::vector<bool>> reaches_;
     std::uint32_t lowered_ = 0;
     std::uint32_t instructions_ = 0;
@@ -172,6 +179,11 @@ private:
     void convert(const ir::Inst& in);
     void call(const ir::Inst& in);
     void callHost(const ir::Inst& in);
+    // Closures.cpp
+    void makeClosure(const ir::Inst& in);
+    void callValue(const ir::Inst& in);
+    /// Stack and depth checks, then fuel, as before every call in the interpreter.
+    void enterCall(std::uint32_t callee, bool recursive, std::uint32_t state, llvm::BasicBlock* retry);
     void field(const ir::Inst& in);
     void nullable(const ir::Inst& in);
     void enumOp(const ir::Inst& in);

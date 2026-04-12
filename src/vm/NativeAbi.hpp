@@ -13,7 +13,7 @@ namespace quartz::vm {
 class Sandbox;
 
 /// Bumped whenever NativeCtx, the runtime symbols or the qc_* signatures change.
-inline constexpr std::uint32_t kNativeAbi = 3;
+inline constexpr std::uint32_t kNativeAbi = 4;
 
 /// Per-invocation state shared by compiled code and the runtime callbacks.
 struct NativeCtx {

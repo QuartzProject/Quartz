@@ -63,6 +63,20 @@ struct Map {
     std::uint16_t level;
 };
 
+/// A function value: the function and the values it captured, which fill its last parameters.
+struct Closure {
+    std::uint32_t fn;
+    std::uint16_t captures; // captured parameters
+    std::uint16_t slots;    // slots they span
+    Owner owner;
+    std::uint8_t level;
+    std::uint8_t pad[6];
+    Slot caps[1];
+};
+
+inline constexpr std::size_t kClosureHeader = offsetof(Closure, caps);
+static_assert(kClosureHeader == 16);
+
 struct HashKey {
     std::uint64_t k0;
     std::uint64_t k1;

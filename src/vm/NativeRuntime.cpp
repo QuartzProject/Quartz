@@ -275,6 +275,10 @@ void qzTaskSave(NativeCtx* c, const Slot* rec, std::uint32_t n, std::uint32_t st
 
 Slot* qzTaskRestore(NativeCtx* c) { return NativeRuntimeAccess::restore(sb(c), c); }
 
+Closure* qzClosure(NativeCtx* c, std::uint32_t fn, std::uint32_t shape, const Slot* values) {
+    return sb(c).newClosure(fn, shape >> 16, shape & 0xFFFF, values);
+}
+
 double qzPow(double a, double b) { return math::pow(a, b); }
 
 double qzSin(double a) { return math::sin(a); }
@@ -326,6 +330,7 @@ const NativeSymbol kSymbols[] = {
     {"qz_task_wait", addr(qzTaskWait)},
     {"qz_task_save", addr(qzTaskSave)},
     {"qz_task_restore", addr(qzTaskRestore)},
+    {"qz_closure", addr(qzClosure)},
 };
 
 } // namespace

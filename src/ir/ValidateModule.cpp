@@ -1,5 +1,7 @@
 #include "ir/Validator.hpp"
 
+#include <algorithm>
+#include <format>
 #include <vector>
 
 namespace quartz::ir {
@@ -33,6 +35,7 @@ std::uint8_t registerOperands(Op op) {
     case Op::Call:
     case Op::CallHost:
     case Op::Intrinsic:
+    case Op::Closure:
         return kDst;
     case Op::FieldSet:
     case Op::ScopeExit:
@@ -67,20 +70,55 @@ bool operandsAllowed(const Inst& in) {
            ((used & kB) || in.b == kNoReg || in.op == Op::EnumField);
 }
 
+// Every function value is made here, so a value of a function type always holds a function of that type.
+std::string closureMismatch(const Module& m, const Function& fn, const Inst& in) {
+    if (in.imm >= m.functions.size()) {
+        return "closure of an unknown function";
+    }
+    const Function& target = m.functions[in.imm];
+    if (target.isSuspend) {
+        return "a suspend function cannot be a value";
+    }
+    if (in.argCount > target.paramCount) {
+        return "closure captures more values than its function has parameters";
+    }
+    std::size_t arity = target.paramCount - in.argCount;
+    for (std::uint32_t i = 0; i < in.argCount; ++i) {
+        if (fn.regs[fn.args[in.argBegin + i]] != target.regs[arity + i]) {
+            return std::format("capture {} has the wrong type", i);
+        }
+    }
+    const TypeInfo& d = m.types.info(fn.regs[in.dst]);
+    if (d.kind != TypeKind::Fn || d.result != target.result || d.elems.size() != arity ||
+        !std::equal(d.elems.begin(), d.elems.end(), target.regs.begin())) {
+        return "closure type does not match its function";
+    }
+    return {};
+}
+
 std::expected<void, ValidationError> validateTables(const Module& m) {
     auto valueType = [&](TypeId t) { return t < m.types.size() && t != kError && t != kNull && t != kNever; };
+    // The host can neither build nor call a function value, so none crosses the boundary.
     for (const HostImport& imp : m.imports) {
-        bool ok = valueType(imp.result);
+        bool ok = valueType(imp.result) && !m.types.containsFn(imp.result);
         for (TypeId p : imp.params) {
-            ok = ok && valueType(p) && p != kVoid;
+            ok = ok && valueType(p) && p != kVoid && !m.types.containsFn(p);
         }
         if (!ok) {
             return std::unexpected(ValidationError{~0U, ~0U, "import with invalid type"});
         }
     }
     for (std::uint32_t f = 0; f < m.functions.size(); ++f) {
-        if (m.functions[f].paramCount > m.functions[f].regs.size()) {
+        const Function& fn = m.functions[f];
+        if (fn.paramCount > fn.regs.size()) {
             return std::unexpected(ValidationError{f, ~0U, "more parameters than registers"});
+        }
+        bool fnSignature = fn.result < m.types.size() && m.types.containsFn(fn.result);
+        for (std::uint32_t p = 0; p < fn.paramCount; ++p) {
+            fnSignature = fnSignature || (fn.regs[p] < m.types.size() && m.types.containsFn(fn.regs[p]));
+        }
+        if (fn.exported && fnSignature) {
+            return std::unexpected(ValidationError{f, ~0U, "exported function takes or returns a function value"});
         }
     }
     for (const Annotation& a : m.annotations) {
@@ -97,6 +135,10 @@ std::expected<void, ValidationError> validateTables(const Module& m) {
         if (s >= m.types.size() || m.types.kind(s) != TypeKind::State || init >= m.functions.size() ||
             m.functions[init].paramCount != 1 || m.functions[init].regs[0] != s) {
             return std::unexpected(ValidationError{~0U, ~0U, "bad state initializer"});
+        }
+        // A state outlives the invocation and survives reloads; a function value would point into either.
+        if (m.types.containsFn(s)) {
+            return std::unexpected(ValidationError{~0U, ~0U, "state holds a function value"});
         }
     }
     std::vector<std::uint32_t> instances(m.types.size(), 0);

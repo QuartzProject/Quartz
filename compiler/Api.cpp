@@ -63,6 +63,13 @@ llvm::Error defineConstants(NativeJit& jit, const quartz::vm::Program& prog) {
                                                            llvm::JITSymbolFlags::Exported};
         }
     }
+    for (std::size_t f = 0; f < prog.closureConst.size(); ++f) {
+        if (prog.closureConst[f] != ~0U) {
+            symbols[mangle("qzc." + std::to_string(f))] = {
+                llvm::orc::ExecutorAddr::fromPtr(prog.constants[prog.closureConst[f]].p),
+                llvm::JITSymbolFlags::Exported};
+        }
+    }
     jit.program = &prog;
     if (symbols.empty()) {
         return llvm::Error::success();

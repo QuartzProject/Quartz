@@ -8,6 +8,23 @@ namespace quartz::vm {
 using ir::TypeId;
 using ir::TypeKind;
 
+Closure* Sandbox::newClosure(std::uint32_t function, std::uint32_t captures, std::uint32_t slots, const Slot* values) {
+    auto* c = static_cast<Closure*>(cur_->allocate(kClosureHeader + slots * sizeof(Slot)));
+    if (c == nullptr) {
+        fail(ir::TrapCode::OutOfMemory);
+        return nullptr;
+    }
+    c->fn = function;
+    c->captures = static_cast<std::uint16_t>(captures);
+    c->slots = static_cast<std::uint16_t>(slots);
+    c->owner = Owner::Arena;
+    c->level = static_cast<std::uint8_t>(curLevel_);
+    if (slots != 0) {
+        std::memcpy(c->caps, values, slots * sizeof(Slot));
+    }
+    return c;
+}
+
 bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level) {
     const ir::TypeTable& types = program_->module->types;
     const Layouts& lay = *program_->layouts;
@@ -114,6 +131,28 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
                     return false;
                 }
             }
+        }
+        dst->p = out;
+        return true;
+    }
+    case TypeKind::Fn: {
+        auto* c = static_cast<Closure*>(src->p);
+        if (c == nullptr || c->owner != Owner::Arena || (mode == Copy::NewerThan && c->level <= level)) {
+            dst->p = src->p;
+            return true;
+        }
+        const ir::Function& f = program_->module->functions[c->fn];
+        // Closures never live in a state, so for StateOnly only their captures can hold views and they move in place.
+        Closure* out = mode == Copy::StateOnly ? c : newClosure(c->fn, c->captures, c->slots, c->caps);
+        if (out == nullptr) {
+            return false;
+        }
+        std::uint32_t off = 0;
+        for (std::uint32_t p = f.paramCount - c->captures; p < f.paramCount; ++p) {
+            if (!copyToArena(f.regs[p], c->caps + off, out->caps + off, mode, level)) {
+                return false;
+            }
+            off += lay.slots(f.regs[p]);
         }
         dst->p = out;
         return true;

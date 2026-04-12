@@ -151,6 +151,7 @@ struct IdentExpr : Expr {
     sema::Local* local = nullptr;
     sema::FnInfo* fn = nullptr;
     sema::GlobalInfo* global = nullptr;
+    std::span<std::uint32_t> fnTypeArgs; // a generic function used as a value: its type arguments
 };
 
 struct SelfExpr : Expr {
@@ -243,6 +244,8 @@ struct Param {
 struct LambdaExpr : Expr {
     std::span<Param> params;
     Expr* body; // block or expression
+    std::span<sema::Local*> captures; // outer locals the body reads, copied into the closure when it is made
+    sema::FnInfo* info = nullptr;
 };
 
 struct CastExpr : Expr {

@@ -25,6 +25,8 @@ struct Local {
     Span span;
     std::uint32_t reg = ~0U; // assigned by lowering
     std::uint32_t scopeDepth = 0; // `scope` nesting where it was declared, set by lowering
+    std::uint32_t lambdaDepth = 0; // lambdas around its declaration; a deeper lambda captures it
+    bool captured = false;
 };
 
 struct AnnotationInfo {

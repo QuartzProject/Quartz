@@ -523,6 +523,27 @@ private:
             }
             return in.dst == kNoReg ? std::expected<void, ValidationError>{} : def(in.dst);
         }
+        case Op::Closure:
+            if (!reg(in.dst)) {
+                return fail("register out of range");
+            }
+            if (std::string why = closureMismatch(m_, fn_, in); !why.empty()) {
+                return fail(std::move(why));
+            }
+            return def(in.dst);
+        case Op::CallValue: {
+            if (auto r = needA(); !r) {
+                return r;
+            }
+            if (t_.kind(ty(in.a)) != TypeKind::Fn) {
+                return fail("call.value of a value that is not a function");
+            }
+            std::vector<TypeId> params = t_.info(ty(in.a)).elems;
+            if (auto r = callArgs(in, params, t_.info(ty(in.a)).result); !r) {
+                return r;
+            }
+            return in.dst == kNoReg ? std::expected<void, ValidationError>{} : def(in.dst);
+        }
         case Op::CallHost: {
             if (in.imm >= m_.imports.size()) {
                 return fail("call to unknown import");

@@ -469,6 +469,33 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
                 R = nb;
                 NEXT();
             }
+            CASE(CallV) {
+                const auto* clo = static_cast<const Closure*>(RB.p);
+                const CompiledFunction* callee = &P.functions[clo->fn];
+                Slot* nb = R + ins.c;
+                if (nb + callee->frameSlots > stackEnd || calls_.size() >= maxDepth) {
+                    TRAP(ir::TrapCode::StackOverflow, {});
+                }
+                if (--fuel < 0) {
+                    OUT_OF_FUEL(pc - 1);
+                }
+                for (std::uint32_t i = 0, at = callee->paramSlots - clo->slots; i < clo->slots; ++i) {
+                    nb[at + i] = clo->caps[i];
+                }
+                calls_.push_back({fn, pc, R, ins.a});
+                fn = callee;
+                pc = fn->code.data();
+                R = nb;
+                NEXT();
+            }
+            CASE(Clo) {
+                std::uint32_t f = WORD();
+                std::uint32_t shape = WORD();
+                Closure* c = newClosure(f, shape >> 16, shape & 0xFFFF, &RC);
+                CHECK(c != nullptr);
+                RA.p = c;
+                NEXT();
+            }
             CASE(CallHost) {
                 fuel_ = fuel;
                 CHECK(callHost(ins.b, R + ins.c, P.importResultSlots[ins.b] != 0 ? &RA : nullptr));

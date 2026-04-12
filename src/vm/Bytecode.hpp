@@ -47,6 +47,8 @@ class TierState;
     X(NullP)     /* a = null */                                                                                        \
     X(NullF)     /* flag a = 0 */                                                                                      \
     X(Call)      /* a = dst, b = function, c = first argument slot; callee frame starts at c */                       \
+    X(CallV)     /* a = dst, b = closure slot, c = first argument slot; captures follow the arguments */              \
+    X(Clo)       /* a = closure of the function in the next word over slots c..; captures << 16 | slots after it */ \
     X(CallHost)  /* a = dst, b = import, c = first argument slot */                                                    \
     X(Ret)       /* return slots a..a+n */                                                                             \
     X(Ret0)                                                                                                            \
@@ -143,11 +145,12 @@ struct Program {
     std::unique_ptr<Layouts> layouts;
     std::vector<CompiledFunction> functions;
     std::vector<Slot> constants;
-    std::vector<std::unique_ptr<std::byte[]>> staticStrings;
+    std::vector<std::unique_ptr<std::byte[]>> staticStrings; // also the closures of functions that capture nothing
     std::uint32_t maxFrameSlots = 0;
     std::vector<std::uint32_t> importResultSlots;
     std::vector<bool> importReprC; // an import passes or returns a @repr(C) struct
     std::shared_ptr<TierState> tier; // native code and hotness counters
+    std::vector<std::uint32_t> closureConst; // per function: constant holding its capture-free closure, or ~0
 
     [[nodiscard]] std::uint32_t findFunction(std::string_view name) const;
 };

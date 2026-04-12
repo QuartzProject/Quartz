@@ -461,6 +461,9 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
         }
         return finishCall(call, fn, callee->object);
     }
+    if (TypeId ft = fnField(call, callee, recv); ft != ir::kError || callee->type != ir::kError) {
+        return ft;
+    }
     call->receiver = callee->object;
     std::string_view mname = str(callee->name);
     bool isResult = types_->isResult(recv);
@@ -496,13 +499,15 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
     if (e->callee->kind == ExprKind::Ident) {
         auto* id = static_cast<IdentExpr*>(e->callee);
         if (findLocal(id->name) != nullptr) {
-            diags_.error(e->callee->span, "calling a value is not supported yet");
-            return ir::kError;
+            return checkIndirectCall(e, check(e->callee, ir::kError));
         }
         if (FnInfo* target = findFunction(id->name)) {
             id->ref = IdentRef::Function;
             id->fn = target;
             return finishCall(e, target, nullptr);
+        }
+        if (findGlobal(id->name) != nullptr) {
+            return checkIndirectCall(e, check(e->callee, ir::kError));
         }
         bool found = false;
         TypeId bt = checkBuiltinFunction(e, id->name, expected, found);
@@ -544,8 +549,7 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
         }
         return ir::kError;
     }
-    diags_.error(e->callee->span, "this expression cannot be called");
-    return ir::kError;
+    return checkIndirectCall(e, checkValue(e->callee, ir::kError));
 }
 
 TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {

@@ -1,5 +1,6 @@
 #include "ir/Types.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace quartz::ir {
@@ -274,12 +275,12 @@ std::string TypeTable::name(TypeId id) const {
     case TypeKind::Nullable: return std::format("{}?", name(t.elem));
     case TypeKind::Tuple:
     case TypeKind::Fn: {
-        std::string out = "(";
+        std::string out = t.kind == TypeKind::Fn ? "fn(" : "(";
         for (std::size_t i = 0; i < t.elems.size(); ++i) {
             out += (i ? ", " : "") + name(t.elems[i]);
         }
         out += ")";
-        if (t.kind == TypeKind::Fn) {
+        if (t.kind == TypeKind::Fn && t.result != kVoid) {
             out += " -> " + name(t.result);
         }
         return out;
@@ -317,6 +318,46 @@ bool TypeTable::isRefKind(TypeId id) const {
     case TypeKind::Fn: return true;
     default: return false;
     }
+}
+
+namespace {
+
+bool containsFnFrom(const TypeTable& t, TypeId id, std::vector<bool>& seen) {
+    if (id >= t.size() || seen[id]) {
+        return false;
+    }
+    seen[id] = true;
+    const TypeInfo& info = t.info(id);
+    auto any = [&](const std::vector<TypeId>& ids) {
+        return std::any_of(ids.begin(), ids.end(), [&](TypeId x) { return containsFnFrom(t, x, seen); });
+    };
+    switch (info.kind) {
+    case TypeKind::Fn:
+        return true;
+    case TypeKind::List:
+    case TypeKind::Nullable:
+        return containsFnFrom(t, info.elem, seen);
+    case TypeKind::Map:
+        return containsFnFrom(t, info.key, seen) || containsFnFrom(t, info.elem, seen);
+    case TypeKind::Tuple:
+        return any(info.elems);
+    case TypeKind::Struct:
+    case TypeKind::State:
+        return std::any_of(info.fields.begin(), info.fields.end(),
+                           [&](const Field& f) { return containsFnFrom(t, f.type, seen); });
+    case TypeKind::Enum:
+        return std::any_of(info.variants.begin(), info.variants.end(),
+                           [&](const VariantInfo& v) { return any(v.payload); });
+    default:
+        return false;
+    }
+}
+
+} // namespace
+
+bool TypeTable::containsFn(TypeId id) const {
+    std::vector<bool> seen(types_.size(), false);
+    return containsFnFrom(*this, id, seen);
 }
 
 bool TypeTable::hasRefs(TypeId id) const {

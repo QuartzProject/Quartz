@@ -140,6 +140,9 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
             return ir::kError;
         }
         s->local = currentFn_->selfLocal;
+        if (s->local->lambdaDepth < lambdas_.size()) {
+            noteCapture(s->local);
+        }
         return s->local->type;
     }
     case ExprKind::Unary: return checkUnary(static_cast<UnaryExpr*>(e), expected);
@@ -225,8 +228,7 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
         return types_->tuple(elems);
     }
     case ExprKind::Lambda:
-        diags_.error(e->span, "lambdas are not supported yet");
-        return ir::kError;
+        return checkLambda(static_cast<LambdaExpr*>(e), expected);
     case ExprKind::Cast: return checkCast(static_cast<CastExpr*>(e));
     case ExprKind::Is:
         diags_.error(e->span, "'is' is not supported yet");
@@ -240,10 +242,17 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
 }
 
 TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
-    (void)expected;
     if (Local* l = findLocal(e->name)) {
         e->ref = IdentRef::Local;
         e->local = l;
+        if (l->lambdaDepth < lambdas_.size()) {
+            if (l->stateView && holdsMutable(l->type)) {
+                diags_.error(e->span, std::format("a lambda cannot capture '{}', a list or map of the state: after a "
+                                                  "'wait' it would be a copy; use it through the state",
+                                                  str(e->name)));
+            }
+            noteCapture(l);
+        }
         if (atDepth_ > 0 && types_->hasRefs(l->type) && l->type != ir::kStr) {
             bool outer = true;
             for (std::size_t i = atScopeBase_; i < scopes_.size(); ++i) {
@@ -283,9 +292,8 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
         }
         return g->type;
     }
-    if (findFunction(e->name) != nullptr) {
-        diags_.error(e->span, std::format("function '{}' must be called; functions are not values yet", str(e->name)));
-        return ir::kError;
+    if (FnInfo* fn = findFunction(e->name)) {
+        return checkFunctionValue(e, fn, expected);
     }
     if (lookupTypeName(e->name, e->span, false) != ir::kError) {
         diags_.error(e->span, std::format("'{}' is a type, not a value", str(e->name)));
@@ -556,6 +564,7 @@ Local* Checker::declareLocal(Symbol name, TypeId type, bool mutable_, Span span)
     l->type = type;
     l->mutable_ = mutable_;
     l->span = span;
+    l->lambdaDepth = static_cast<std::uint32_t>(lambdas_.size());
     if (!scopes_.empty() && name.valid() && str(name) != "_") {
         scopes_.back()[name] = l;
     }

@@ -289,11 +289,18 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         "var s = 0\n    for i in 0..100000 { s += i }\n    return s",
         "var s = 0\n    for i in 0..100000 {\n        s += i % 7\n    }\n    return s",
         "var s = 0\n    var i = 0\n    while i < 100000 {\n        s += i % 7\n        i += 1\n    }\n    return s",
+        "let f = (x: int) => [x][x + 1]\n    return f(0)",
+        "let k = 3\n    return hop(5, (x: int) => x / (k - 3))",
+        "return hop(0, deep)",
+        "var s = 0\n    let f = (x: int) => x % 7\n    for i in 0..100000 { s += f(i) }\n    return s",
     };
     for (const char* body : bodies) {
         CAPTURE(body);
-        std::string text =
-            std::format("fn rec(n: int) -> int {{ return rec(n + 1) + 1 }}\nfn main() -> int {{\n    {}\n}}\n", body);
+        std::string text = std::format(
+            "fn rec(n: int) -> int {{ return rec(n + 1) + 1 }}\nfn hop(n: int, f: fn(int) -> int) -> int {{ "
+            "return f(n) }}\nfn deep(n: int) -> int {{ return hop(n + 1, deep) + 1 }}\nfn main() -> int "
+            "{{\n    {}\n}}\n",
+            body);
         auto p = withStd("trap.qz", text);
         Outcome native = runMain(p, TierMode::Native, 100'000);
         Outcome interp = runMain(p, TierMode::Interpreter, 100'000);

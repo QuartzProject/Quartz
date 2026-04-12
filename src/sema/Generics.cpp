@@ -1,5 +1,6 @@
 #include "sema/SemaImpl.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace quartz::sema {
@@ -162,7 +163,8 @@ bool Checker::unify(TypeId pattern, TypeId actual, ir::TypeSubst& bindings) {
     switch (p.kind) {
     case ir::TypeKind::List: return unify(p.elem, a.elem, bindings);
     case ir::TypeKind::Map: return unify(p.key, a.key, bindings) && unify(p.elem, a.elem, bindings);
-    case ir::TypeKind::Tuple: {
+    case ir::TypeKind::Tuple:
+    case ir::TypeKind::Fn: {
         if (p.elems.size() != a.elems.size()) {
             return false;
         }
@@ -171,7 +173,7 @@ bool Checker::unify(TypeId pattern, TypeId actual, ir::TypeSubst& bindings) {
                 return false;
             }
         }
-        return true;
+        return p.kind == ir::TypeKind::Tuple || unify(p.result, a.result, bindings);
     }
     default: break;
     }
@@ -213,19 +215,33 @@ TypeId Checker::finishGenericCall(CallExpr* call, FnInfo* fn, Expr* receiver, ir
         }
         ordered[slot] = a.value;
     }
-    // Arguments whose parameter type is already known are checked against it; the rest drive inference.
-    for (int pass = 0; pass < 2; ++pass) {
+    // Arguments whose parameter type is already known are checked against it; the rest drive inference, lambdas
+    // last so their parameter types can come from the other arguments.
+    std::vector<bool> done(n, false);
+    for (int pass = 0; pass < 3; ++pass) {
         for (std::size_t i = 0; i < n; ++i) {
             Expr* arg = ordered[i];
-            if (arg == nullptr) {
+            if (arg == nullptr || done[i]) {
                 continue;
             }
             TypeId pt = types_->subst(fn->params[i + skip], bindings);
             bool known = !types_->hasParams(pt);
-            if ((pass == 0) == known || (pass == 1 && arg->type != ir::kError)) {
+            bool lambda = arg->kind == ExprKind::Lambda;
+            if ((pass == 0 && !known) || (pass == 1 && lambda)) {
                 continue;
             }
+            done[i] = true;
+            if (lambda && !known && types_->kind(pt) == ir::TypeKind::Fn) {
+                LambdaHint hint{types_->info(pt).elems, types_->info(pt).result, {}};
+                for (TypeId tp : fn->typeParams) {
+                    if (std::none_of(bindings.begin(), bindings.end(), [&](const auto& b) { return b.first == tp; })) {
+                        hint.unknown.push_back(tp);
+                    }
+                }
+                lambdaHint_ = std::move(hint);
+            }
             TypeId at = checkValue(arg, known ? pt : ir::kError);
+            lambdaHint_.reset();
             if (!unify(fn->params[i + skip], at, bindings)) {
                 diags_.error(arg->span, std::format("expected '{}', found '{}'", typeName(pt), typeName(at)));
             }

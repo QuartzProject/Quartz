@@ -718,6 +718,28 @@ private:
             }
             return;
         }
+        case Op::CallValue: {
+            std::uint32_t base = outgoing(argsOf(in));
+            put(Opc::CallV, in.dst != ir::kNoReg ? offset_[in.dst] : 0, s(in.a), base);
+            return;
+        }
+        case Op::Closure: {
+            std::vector<Reg> caps = argsOf(in);
+            if (caps.empty()) {
+                std::size_t at = put(Opc::LoadK, s(in.dst));
+                code_[at].setBc(static_cast<std::int32_t>(prog_.closureConst[in.imm]));
+                return;
+            }
+            std::uint32_t slots = 0;
+            for (Reg r : caps) {
+                slots += n(r);
+            }
+            std::uint32_t base = outgoing(caps);
+            put(Opc::Clo, s(in.dst), 0, base);
+            word(in.imm);
+            word(static_cast<std::uint32_t>(caps.size()) << 16 | slots);
+            return;
+        }
         case Op::Intrinsic: intrinsic(in); return;
         case Op::FieldGet: {
             TypeId agg = ty(in.a);
@@ -898,6 +920,22 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
             v.u = c.bits;
         }
         prog->constants.push_back(v);
+    }
+    prog->closureConst.assign(prog->module->functions.size(), ~0U);
+    for (const ir::Function& fn : prog->module->functions) {
+        for (const ir::Inst& in : fn.code) {
+            if (in.op != ir::Op::Closure || in.argCount != 0 || prog->closureConst[in.imm] != ~0U) {
+                continue;
+            }
+            auto mem = std::make_unique<std::byte[]>(sizeof(Closure));
+            auto* c = reinterpret_cast<Closure*>(mem.get());
+            *c = Closure{in.imm, 0, 0, Owner::Static, 0, {}, {}};
+            Slot v{};
+            v.p = c;
+            prog->closureConst[in.imm] = static_cast<std::uint32_t>(prog->constants.size());
+            prog->constants.push_back(v);
+            prog->staticStrings.push_back(std::move(mem));
+        }
     }
     for (const ir::HostImport& imp : prog->module->imports) {
         prog->importResultSlots.push_back(prog->layouts->slots(imp.result));

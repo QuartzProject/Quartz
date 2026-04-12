@@ -1,0 +1,2 @@
+fn hostLog(x: int)
+fn hostEach(f: fn(int))

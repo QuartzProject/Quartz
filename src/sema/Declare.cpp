@@ -408,10 +408,13 @@ TypeId Checker::resolveTypeExpr(TypeExpr* t) {
     case TypeExprKind::Fn: {
         auto* f = static_cast<FnTypeExpr*>(t);
         std::vector<TypeId> params;
+        bool ok = true;
         for (TypeExpr* p : f->params) {
             params.push_back(resolveType(p));
+            ok = ok && params.back() != ir::kError && params.back() != ir::kVoid;
         }
-        return types_->fn(params, f->result != nullptr ? resolveType(f->result) : ir::kVoid);
+        TypeId result = f->result != nullptr ? resolveType(f->result) : ir::kVoid;
+        return ok && result != ir::kError ? types_->fn(params, result) : ir::kError;
     }
     }
     return ir::kError;
@@ -554,6 +557,7 @@ std::unique_ptr<Program> Checker::run() {
     completeTypes();
     declareTraits();
     declareFunctions();
+    checkFunctionTypes();
     for (GlobalInfo* g : globalList_) {
         currentFile_ = g->decl->span.file;
         if (g->type == ir::kError && !g->checking) {

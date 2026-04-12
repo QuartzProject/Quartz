@@ -139,6 +139,7 @@ public:
     Slot* mapFind(const Map* m, const Slot* key) const;
     bool mapSet(Map* m, const Slot* key, const Slot* value);
     bool mapRemove(Map* m, const Slot* key);
+    Closure* newClosure(std::uint32_t function, std::uint32_t captures, std::uint32_t slots, const Slot* values);
     bool storeState(ir::TypeId type, const Slot* src, Slot* dst);
     void releaseState(ir::TypeId type, Slot* slots);
 

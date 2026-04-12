@@ -202,3 +202,64 @@ TEST_CASE("invalid programs report the expected diagnostics") {
         }
     }
 }
+
+TEST_CASE("the validator rejects function values that do not match their types") {
+    quartz::SourceInput src[] = {{"v.qz", R"(state S {
+    n: int = 0
+}
+fn inc(x: int) -> int {
+    return x + 1
+}
+fn run(k: int) -> int {
+    let f = (x: int) => x + k
+    let g = inc
+    return f(1) + g(2)
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto reject = [&](auto mutate, std::string_view why) {
+        auto mod = quartz::ir::deserialize(out.binary);
+        REQUIRE(mod.has_value());
+        quartz::ir::Module& m = **mod;
+        quartz::ir::Function& run = m.functions[out.program->findFunction("run")];
+        std::vector<quartz::ir::Inst*> closures;
+        quartz::ir::Inst* call = nullptr;
+        for (quartz::ir::Inst& in : run.code) {
+            if (in.op == quartz::ir::Op::Closure) {
+                closures.push_back(&in);
+            } else if (in.op == quartz::ir::Op::CallValue && call == nullptr) {
+                call = &in;
+            }
+        }
+        REQUIRE(closures.size() == 2);
+        REQUIRE(call != nullptr);
+        mutate(m, run, *closures[0], *closures[1], *call);
+        auto loaded = quartz::load(quartz::ir::serialize(m));
+        REQUIRE_FALSE(loaded.has_value());
+        CHECK_MESSAGE(loaded.error().find(why) != std::string::npos, loaded.error());
+    };
+    using quartz::ir::Function;
+    using quartz::ir::Inst;
+    using quartz::ir::Module;
+    reject([](Module&, Function&, Inst& lambda, Inst& named, Inst&) { lambda.imm = named.imm; },
+           "closure type does not match its function");
+    reject([](Module& m, Function&, Inst& lambda, Inst&, Inst&) { m.functions[lambda.imm].regs[1] = quartz::ir::kStr; },
+           "capture 0 has the wrong type");
+    reject([](Module& m, Function&, Inst& lambda, Inst&, Inst&) { m.functions[lambda.imm].isSuspend = true; },
+           "a suspend function cannot be a value");
+    reject([](Module&, Function&, Inst&, Inst&, Inst& call) { call.a = 0; },
+           "call.value of a value that is not a function");
+    reject([](Module&, Function& run, Inst&, Inst&, Inst& call) { run.regs[call.dst] = quartz::ir::kStr; },
+           "call result type mismatch");
+    reject([](Module&, Function& run, Inst& lambda, Inst&, Inst&) { run.regs[0] = run.regs[lambda.dst]; },
+           "exported function takes or returns a function value");
+    reject([](Module& m, Function& run, Inst& lambda, Inst&,
+              Inst&) { m.imports.push_back({"h", {run.regs[lambda.dst]}, quartz::ir::kVoid}); },
+           "import with invalid type");
+    reject([](Module& m, Function& run, Inst& lambda, Inst&,
+              Inst&) { m.types.mutableInfo(m.states[0]).fields[0].type = run.regs[lambda.dst]; },
+           "state holds a function value");
+    reject([](Module& m, Function&, Inst&, Inst&, Inst&) { m.types.fn({quartz::ir::kNever}, quartz::ir::kI64); },
+           "malformed type");
+}

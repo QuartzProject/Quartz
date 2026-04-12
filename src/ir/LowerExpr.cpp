@@ -392,6 +392,8 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
         }
         return dst;
     }
+    case CallKind::Indirect:
+        return lowerIndirectCall(e, dst);
     default: break;
     }
     return dst;
@@ -420,6 +422,9 @@ Reg Lowerer::lowerInner(Expr* e) {
         }
         if (id->ref == IdentRef::Const) {
             return lowerExpr(id->global->decl->value, T(id->global->type));
+        }
+        if (id->ref == IdentRef::Function) {
+            return lowerFunctionValue(id);
         }
         return newReg(kError);
     }
@@ -555,6 +560,8 @@ Reg Lowerer::lowerInner(Expr* e) {
     case ExprKind::If: return lowerIf(static_cast<IfExpr*>(e), T(e->type), true);
     case ExprKind::Match: return lowerMatch(static_cast<MatchExpr*>(e), T(e->type), true);
     case ExprKind::Block: return lowerBlockValue(static_cast<BlockExpr*>(e), T(e->type));
+    case ExprKind::Lambda:
+        return lowerClosure(static_cast<LambdaExpr*>(e));
     default: break;
     }
     return newReg(kError);
@@ -686,7 +693,13 @@ std::unique_ptr<Module> Lowerer::run() {
         mod_->stateInit.push_back(idx);
         lowerStateInit(state, function(idx));
     }
-    while (!work_.empty()) {
+    while (!work_.empty() || !lambdaWork_.empty()) {
+        if (!lambdaWork_.empty()) {
+            LambdaWork w = std::move(lambdaWork_.back());
+            lambdaWork_.pop_back();
+            lowerLambda(w);
+            continue;
+        }
         auto [fn, args, idx] = work_.back();
         work_.pop_back();
         subst_.clear();

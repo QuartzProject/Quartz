@@ -30,9 +30,27 @@ std::vector<LoopSpan> findLoops(const Function& fn) {
     return loops;
 }
 
+// A function value may have captured a state and write it, so a call that can reach one may write any state.
+std::vector<bool> reachesCallValue(const Module& m) {
+    std::vector<bool> out(m.functions.size(), false);
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (std::size_t f = 0; f < m.functions.size(); ++f) {
+            for (const Inst& in : m.functions[f].code) {
+                bool hit = in.op == Op::CallValue || (in.op == Op::Call && in.imm < out.size() && out[in.imm]);
+                if (hit && !out[f]) {
+                    out[f] = true;
+                    changed = true;
+                }
+            }
+        }
+    }
+    return out;
+}
+
 // A state field read moves out of a loop when nothing in the loop can change that field: no FieldSet on a state of
 // the same type and no call that receives such a state (only code given a state can modify it).
-bool hoistStateReads(Module& m, Function& fn) {
+bool hoistStateReads(Module& m, Function& fn, const std::vector<bool>& callsValues) {
     const TypeTable& t = m.types;
     std::vector<std::uint32_t> defs(fn.regs.size(), 0);
     for (const Inst& in : fn.code) {
@@ -48,10 +66,12 @@ bool hoistStateReads(Module& m, Function& fn) {
         std::vector<TypeId> passed;
         std::vector<bool> definedInside(fn.regs.size(), false);
         bool suspends = false;
+        bool opaque = false;
         for (std::size_t i = loop.begin + 1; i < loop.end; ++i) {
             const Inst& in = fn.code[i];
             // A view held across a suspension becomes a task-local copy (D35), so it must be read after each resume.
             suspends = suspends || in.op == Op::Wait || (in.op == Op::Call && m.functions[in.imm].isSuspend);
+            opaque = opaque || in.op == Op::CallValue || (in.op == Op::Call && callsValues[in.imm]);
             if (in.dst != kNoReg) {
                 definedInside[in.dst] = true;
             }
@@ -67,7 +87,7 @@ bool hoistStateReads(Module& m, Function& fn) {
                 }
             }
         }
-        if (suspends) {
+        if (suspends || opaque) {
             continue;
         }
         std::vector<Inst> hoisted;
@@ -102,8 +122,9 @@ bool hoistStateReads(Module& m, Function& fn) {
 } // namespace
 
 void optimize(Module& m) {
+    std::vector<bool> callsValues = reachesCallValue(m);
     for (Function& fn : m.functions) {
-        for (int round = 0; round < 64 && hoistStateReads(m, fn); ++round) {
+        for (int round = 0; round < 64 && hoistStateReads(m, fn, callsValues); ++round) {
         }
     }
 }

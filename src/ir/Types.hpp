@@ -134,6 +134,8 @@ public:
     /// True when a value of this type holds a pointer the runtime must track (strings, collections, state).
     [[nodiscard]] bool hasRefs(TypeId id) const;
     [[nodiscard]] bool isRefKind(TypeId id) const;
+    /// True when a value of this type can hold a function value, in itself or in its fields, elements or payloads.
+    [[nodiscard]] bool containsFn(TypeId id) const;
 
 private:
     TypeId intern(TypeInfo info, const std::string& key);

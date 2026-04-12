@@ -39,6 +39,21 @@ public:
     void bindPattern(Pattern* p, Reg subject, TypeId subjectType);
     Reg zeroValue(TypeId t, Span span);
 
+    // LowerLambda.cpp
+    struct LambdaWork {
+        LambdaExpr* expr;
+        ir::TypeSubst subst;
+        std::uint32_t index;
+        std::string name;
+    };
+
+    std::vector<LambdaWork> lambdaWork_;
+    Reg lowerClosure(LambdaExpr* e);
+    Reg lowerFunctionValue(IdentExpr* e);
+    Reg lowerIndirectCall(CallExpr* e, Reg dst);
+    void lowerLambda(const LambdaWork& w);
+    [[nodiscard]] bool signatureHasFn(const Function& f) const;
+
     // LowerExpr.cpp
     Reg lowerExpr(Expr* e, TypeId want = kError);
     Reg lowerInner(Expr* e);

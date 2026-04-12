@@ -2,6 +2,7 @@
 
 #include "vm/NativeAbi.hpp"
 
+#include <algorithm>
 #include <llvm/IR/Attributes.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/Support/ModRef.h>
@@ -33,6 +34,7 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_scope_in", false, false},  {"qz_scope_out", false, false},   {"qz_persist", false, false},
     {"qz_pow", false, false},       {"qz_sin", false, false},         {"qz_cos", false, false},
     {"qz_task_wait", false, false}, {"qz_task_save", false, false},   {"qz_task_restore", false, false},
+    {"qz_closure", false, false},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
 
@@ -54,6 +56,7 @@ UnitCodegen::UnitCodegen(llvm::LLVMContext& ctx, llvm::Module& mod, const vm::Pr
     tbaaBytes = scalarTbaa(root, "bytes");
     tbaaFuel = scalarTbaa(root, "fuel");
     tbaaCtx = scalarTbaa(root, "ctx");
+    tbaaClosure = scalarTbaa(root, "closure");
     cold = md.createBranchWeights(1, 1u << 20);
     functions_.assign(IR.functions.size(), nullptr);
     results_.assign(IR.functions.size(), nullptr);
@@ -251,6 +254,9 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
     case Rt::TaskRestore:
         ty = llvm::FunctionType::get(ptr, {ptr}, false);
         break;
+    case Rt::Closure:
+        ty = llvm::FunctionType::get(ptr, {ptr, i32, i32, ptr}, false);
+        break;
     case Rt::Count:
         break;
     }
@@ -279,6 +285,27 @@ llvm::Constant* UnitCodegen::stringConstant(std::uint32_t index) {
         return g;
     }
     return new llvm::GlobalVariable(M, i8, true, llvm::GlobalValue::ExternalLinkage, nullptr, name);
+}
+
+llvm::Constant* UnitCodegen::closureConstant(std::uint32_t function) {
+    std::string name = "qzc." + std::to_string(function);
+    if (llvm::GlobalVariable* g = M.getNamedGlobal(name)) {
+        return g;
+    }
+    return new llvm::GlobalVariable(M, i8, true, llvm::GlobalValue::ExternalLinkage, nullptr, name);
+}
+
+std::vector<std::uint32_t> UnitCodegen::closureTargets(ir::TypeId fnType) const {
+    const ir::TypeInfo& ft = T.info(fnType);
+    std::vector<std::uint32_t> out;
+    for (std::uint32_t f : taken_) {
+        const ir::Function& fn = IR.functions[f];
+        if (fn.result == ft.result && fn.paramCount >= ft.elems.size() &&
+            std::equal(ft.elems.begin(), ft.elems.end(), fn.regs.begin())) {
+            out.push_back(f);
+        }
+    }
+    return out;
 }
 
 llvm::StructType* UnitCodegen::resultType(std::uint32_t index) {
@@ -324,17 +351,24 @@ void UnitCodegen::collectReachable(std::uint32_t root) {
     std::vector<bool> seen(IR.functions.size(), false);
     std::vector<std::uint32_t> work{root};
     seen[root] = true;
+    std::vector<bool> taken(IR.functions.size(), false);
     while (!work.empty()) {
         std::uint32_t f = work.back();
         work.pop_back();
         reachable_.push_back(f);
         for (const ir::Inst& in : IR.functions[f].code) {
-            if (in.op == ir::Op::Call && in.imm < IR.functions.size() && !seen[in.imm]) {
+            bool closure = in.op == ir::Op::Closure;
+            if ((in.op == ir::Op::Call || closure) && in.imm < IR.functions.size() && !seen[in.imm]) {
                 seen[in.imm] = true;
                 work.push_back(in.imm);
             }
+            if (closure && in.imm < IR.functions.size() && !taken[in.imm]) {
+                taken[in.imm] = true;
+                taken_.push_back(in.imm);
+            }
         }
     }
+    std::sort(taken_.begin(), taken_.end());
 }
 
 void UnitCodegen::computeCycles() {
@@ -351,6 +385,15 @@ void UnitCodegen::computeCycles() {
                 if (in.op == ir::Op::Call && in.imm < n && !r[in.imm]) {
                     r[in.imm] = true;
                     work.push_back(in.imm);
+                }
+                if (in.op != ir::Op::CallValue) {
+                    continue;
+                }
+                for (std::uint32_t t : taken_) {
+                    if (!r[t]) {
+                        r[t] = true;
+                        work.push_back(t);
+                    }
                 }
             }
         }

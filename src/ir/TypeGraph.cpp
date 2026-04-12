@@ -185,6 +185,11 @@ std::expected<void, ValidationError> validateTypes(const TypeTable& t) {
             }
             break;
         case TypeKind::Fn:
+            for (TypeId e : info.elems) {
+                good = good && ok(e);
+            }
+            good = good && (info.result == kVoid || ok(info.result));
+            break;
         case TypeKind::Handle:
         case TypeKind::Param:
             break;

@@ -147,6 +147,11 @@ void Checker::checkFunction(FnInfo* fn) {
     if (fn->generic() && !fn->decl->attrs.empty() && !fn->annotations.empty()) {
         diags_.error(fn->decl->span, "generic functions cannot be host handlers");
     }
+    if (!fn->annotations.empty() &&
+        (types_->containsFn(fn->result) ||
+         std::any_of(fn->params.begin(), fn->params.end(), [&](TypeId p) { return types_->containsFn(p); }))) {
+        diags_.error(fn->decl->span, "a host handler cannot take or return functions");
+    }
     currentFn_ = fn;
     selfType_ = fn->owner;
     loopDepth_ = 0;
@@ -243,6 +248,9 @@ void Checker::checkStmt(Stmt* s) {
         auto* r = static_cast<ReturnStmt*>(s);
         if (atDepth_ > 0) {
             diags_.error(s->span, "'return' cannot leave an 'at' block");
+        }
+        if (lambdaReturn(r)) {
+            return;
         }
         TypeId want = currentFn_ != nullptr ? currentFn_->result : ir::kVoid;
         if (r->value == nullptr) {
@@ -457,6 +465,8 @@ void Checker::checkAssign(AssignStmt* s) {
         }
     } else if (!mut) {
         diags_.error(s->target->span, "cannot assign to an immutable binding; declare it with 'var'");
+    } else {
+        checkCapturedAssign(s->target, s->target->span);
     }
     if (s->op == AssignOp::Set) {
         expectAssignable(checkValue(s->value, tt), tt, s->value->span);

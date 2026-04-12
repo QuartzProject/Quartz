@@ -119,6 +119,7 @@ bool FunctionCodegen::countedLoop(std::size_t loop, CountedLoop& out) const {
         switch (in.op) {
         case Op::Loop:
         case Op::Call:
+        case Op::CallValue:
         case Op::Wait:
             return false;
         case Op::Block:

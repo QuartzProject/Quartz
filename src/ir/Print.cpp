@@ -40,11 +40,13 @@ namespace {
 
 const char* opName(Op op) {
     static const char* const kNames[] = {
-        "block", "loop",  "if",      "else",    "end",       "br",      "br_if",    "return",   "trap",
-        "const", "move",  "neg",     "not",     "bitnot",    "add",     "sub",      "mul",      "div",
-        "rem",   "and",   "or",      "xor",     "shl",       "shr",     "eq",       "ne",       "lt",
-        "le",    "gt",    "ge",      "convert", "call",      "callhost", "intrinsic", "field.get", "field.set",
-        "make",  "isnull", "unwrap", "wrap",    "nullof",    "enum.make", "enum.tag", "enum.field", "wait", "scope.enter", "scope.exit", "persist",
+        "block",    "loop",       "if",        "else",       "end",  "br",          "br_if",      "return",
+        "trap",     "const",      "move",      "neg",        "not",  "bitnot",      "add",        "sub",
+        "mul",      "div",        "rem",       "and",        "or",   "xor",         "shl",        "shr",
+        "eq",       "ne",         "lt",        "le",         "gt",   "ge",          "convert",    "call",
+        "callhost", "intrinsic",  "field.get", "field.set",  "make", "isnull",      "unwrap",     "wrap",
+        "nullof",   "enum.make",  "enum.tag",  "enum.field", "wait", "scope.enter", "scope.exit", "persist",
+        "closure",  "call.value",
     };
     return kNames[static_cast<std::size_t>(op)];
 }
@@ -103,7 +105,7 @@ std::string print(const Module& m) {
                 } else {
                     out += std::format(" {}", static_cast<std::int64_t>(c.bits));
                 }
-            } else if (in.op == Op::Call) {
+            } else if (in.op == Op::Call || in.op == Op::Closure) {
                 out += std::format(" {}", m.functions[in.imm].name);
             } else if (in.op == Op::CallHost) {
                 out += std::format(" {}", m.imports[in.imm].name);

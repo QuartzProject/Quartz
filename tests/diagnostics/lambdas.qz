@@ -1,0 +1,45 @@
+// error: a state cannot hold functions: they would not survive a reload
+// error: host function 'hostEach' cannot take or return functions
+// error: cannot assign 'n' after a lambda captured it
+// error: cannot assign 'm' inside a lambda: lambdas capture copies of variables
+// error: cannot infer the type of lambda parameter 'x'
+// error: suspend function 'task' cannot be used as a value
+// error: host function 'hostLog' cannot be used as a value yet
+// error: operator '==' is not defined for 'fn() -> int'
+// error: expected a function with 1 parameter(s), found a lambda with 2
+// error: a value of type 'int' cannot be called
+// error: arguments to a function value cannot be named
+// error: expected 'fn(int) -> str', found 'fn(int) -> int'
+// error: a lambda cannot capture 'items', a list or map of the state
+
+state Hub {
+    cb: fn()
+    items: [int]
+}
+
+suspend fn task() {}
+
+fn main() {
+    var n = 1
+    let f = () => n
+    n = 2
+    var m = 1
+    let g = () => {
+        m = 3
+    }
+    let h = (x) => x
+    let t = task
+    let l = hostLog
+    let e = f == f
+    let k: fn(int) -> int = (a, b) => a
+    let q = 5
+    q(1)
+    let r = (x: int) => x
+    r(x = 1)
+    let s: fn(int) -> str = r
+}
+
+fn view(hub: Hub) -> fn() -> int {
+    let items = hub.items
+    return () => items.len()
+}

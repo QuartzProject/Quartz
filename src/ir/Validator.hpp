@@ -24,6 +24,8 @@ std::expected<void, ValidationError> validateTypeGraph(const TypeTable& types);
 
 /// False when a dst, a or b field the opcode does not use is set; later passes count every set field.
 bool operandsAllowed(const Inst& in);
+/// Why a closure instruction (operands already checked) does not match its function; empty when it does.
+std::string closureMismatch(const Module& m, const Function& fn, const Inst& in);
 /// Imports, annotations, states and parameter counts: everything the function validator indexes without checking.
 std::expected<void, ValidationError> validateTables(const Module& m);
 
