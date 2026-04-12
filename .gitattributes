@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+# Temporary mapping to Gleam (#ffaff3) for language bar visibility and syntax highlighting
+# until Quartz reaches enough public adoption to submit a PR to github-linguist/linguist
+# with its official rose quartz color (#F9A8D4).
+*.qz linguist-detectable=true
+*.qz linguist-language=Gleam
+*.qzi linguist-detectable=true
+*.qzi linguist-language=Gleam
+
+# Compiled, signed modules: never diffed or normalized.
+*.qzb binary
