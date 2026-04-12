@@ -4048,6 +4048,10 @@
         "type": "SEQ",
         "members": [
           {
+            "type": "STRING",
+            "value": "fn"
+          },
+          {
             "type": "FIELD",
             "name": "parameters",
             "content": {
@@ -4061,16 +4065,29 @@
             }
           },
           {
-            "type": "STRING",
-            "value": "->"
-          },
-          {
-            "type": "FIELD",
-            "name": "return_type",
-            "content": {
-              "type": "SYMBOL",
-              "name": "_type"
-            }
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "STRING",
+                    "value": "->"
+                  },
+                  {
+                    "type": "FIELD",
+                    "name": "return_type",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "_type"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
           }
         ]
       }

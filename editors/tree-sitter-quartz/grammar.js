@@ -521,9 +521,9 @@ module.exports = grammar({
     tuple_type: $ => seq('(', commaSep($._type), ')'),
 
     function_type: $ => prec.right(seq(
+      'fn',
       field('parameters', alias($.tuple_type, $.parameter_types)),
-      '->',
-      field('return_type', $._type),
+      optional(seq('->', field('return_type', $._type))),
     )),
 
     nullable_type: $ => prec(PREC.postfix + 1, seq($._type, '?')),

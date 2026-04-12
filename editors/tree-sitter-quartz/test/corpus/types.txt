@@ -8,8 +8,8 @@ fn f(
     c: [f32; 3],
     d: Map<str, List<i32>>,
     e: (int, str),
-    g: (int, str) -> bool,
-    h: () -> void,
+    g: fn(int, str) -> bool,
+    h: fn(),
     i: Player?,
     j: org.quartzlang.data.Value,
     k: Result<int, str>,
@@ -59,8 +59,7 @@ fn f(
       (parameter
         (identifier)
         (function_type
-          (parameter_types)
-          (type_identifier)))
+          (parameter_types)))
       (parameter
         (identifier)
         (nullable_type
