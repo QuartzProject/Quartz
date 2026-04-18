@@ -39,6 +39,7 @@ int usage() {
                  "       quartz keygen <seed file>\n"
                  "       quartz new <package name, like org.example.hello>\n"
                  "       quartz doc <file.qz|file.qzi|package dir>... [-o out.md]\n"
+                 "       quartz repl\n"
                  "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
     return 2;
 }
@@ -274,6 +275,9 @@ int build(Args& a) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string_view(argv[1]) == "repl") {
+        return runRepl();
+    }
     if (argc < 3) {
         return usage();
     }

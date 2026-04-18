@@ -13,5 +13,8 @@ int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::str
 /// `quartz doc`: Markdown for the public declarations and their `///` comments, grouped by package.
 int runDoc(const std::vector<quartz::SourceInput>& inputs, const std::string& output);
 
+/// `quartz repl`: expressions print their value; declarations, imports and `state` carry over between inputs.
+int runRepl();
+
 /// `quartz new <package name>`: a folder with package.toml, a source file and a test.
 int newProject(std::string_view name);
