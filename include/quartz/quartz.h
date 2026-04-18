@@ -1,4 +1,4 @@
-/* The C interface of Quartz: compile or load programs and run them in sandboxes, from any language with a C FFI. */
+/* The C interface of Quartz. A qz_program may be shared across threads; a qz_sandbox is used by one at a time. */
 #ifndef QUARTZ_QUARTZ_H
 #define QUARTZ_QUARTZ_H
 
@@ -99,6 +99,7 @@ QZ_API qz_sandbox* qz_sandbox_new(const qz_program* program, const qz_limits* li
 QZ_API void qz_sandbox_free(qz_sandbox* sandbox);
 QZ_API bool qz_sandbox_bind(qz_sandbox* sandbox, const char* import_name, qz_host_fn fn, void* user);
 QZ_API qz_status qz_sandbox_start(qz_sandbox* sandbox);
+/* A str or list result lives until the next call on this sandbox: copy what you keep. */
 QZ_API qz_status qz_sandbox_call(qz_sandbox* sandbox, uint32_t function, const qz_slot* args, size_t count,
                                  qz_slot* result);
 QZ_API qz_status qz_sandbox_spawn(qz_sandbox* sandbox, uint32_t function, const qz_slot* args, size_t count,
@@ -115,7 +116,7 @@ QZ_API size_t qz_sandbox_memory_used(const qz_sandbox* sandbox);
 /* Every state as JSON (for persistence or reload); NULL on a trap. Free with qz_free. */
 QZ_API char* qz_sandbox_export_state(qz_sandbox* sandbox);
 QZ_API qz_status qz_sandbox_import_state(qz_sandbox* sandbox, const char* json, size_t length);
-/* Binds client's imports `package.fn` to provider's exports; calls run in the provider on its budget. */
+/* Binds client's imports `package.fn` to provider's exports, run on its budget; the provider outlives the client. */
 QZ_API qz_status qz_sandbox_link(qz_sandbox* client, const char* package, qz_sandbox* provider);
 
 /* The bytes of a str slot (not NUL terminated). */
@@ -132,6 +133,91 @@ QZ_API bool qz_call_charge(qz_call* call, int64_t units);
 /* Sets the trap message; return false from the host function after it. */
 QZ_API void qz_call_fail(qz_call* call, const char* message);
 QZ_API qz_sandbox* qz_call_sandbox(qz_call* call);
+/* Slots the arguments of this call take (a struct takes one per field). */
+QZ_API size_t qz_call_arg_count(const qz_call* call);
+
+/* A host function that gets its arguments and result slot directly, saving two calls through the FFI. */
+typedef bool (*qz_host_fn_direct)(qz_call* call, const qz_slot* args, qz_slot* result, void* user);
+QZ_API bool qz_sandbox_bind_direct(qz_sandbox* sandbox, const char* import_name, qz_host_fn_direct fn, void* user);
+
+/* Types, so a binding can check arguments before a call: passing a str where an int goes is undefined behaviour. */
+typedef enum qz_kind {
+    QZ_KIND_VOID = 0,
+    QZ_KIND_BOOL,
+    QZ_KIND_I8,
+    QZ_KIND_I16,
+    QZ_KIND_I32,
+    QZ_KIND_I64,
+    QZ_KIND_U8,
+    QZ_KIND_U16,
+    QZ_KIND_U32,
+    QZ_KIND_U64,
+    QZ_KIND_F32,
+    QZ_KIND_F64,
+    QZ_KIND_CHAR,
+    QZ_KIND_STR,
+    QZ_KIND_BYTES,
+    QZ_KIND_LIST,
+    QZ_KIND_MAP,
+    QZ_KIND_STRUCT,
+    QZ_KIND_ENUM,
+    QZ_KIND_NULLABLE,
+    QZ_KIND_TUPLE,
+    QZ_KIND_HANDLE,
+    QZ_KIND_FUNCTION,
+    QZ_KIND_OTHER
+} qz_kind;
+
+/* Parameters a caller passes to a function (the sandbox supplies `state` parameters itself). */
+QZ_API uint32_t qz_program_function_arity(const qz_program* program, uint32_t function);
+/* Kind of parameter `index`; `*slots` (when not NULL) gets how many slots it takes. */
+QZ_API qz_kind qz_program_function_param(const qz_program* program, uint32_t function, uint32_t index, uint32_t* slots);
+QZ_API qz_kind qz_program_function_result(const qz_program* program, uint32_t function, uint32_t* slots);
+QZ_API uint32_t qz_program_import_count(const qz_program* program);
+/* Name to bind it by (`log`, `Player.health`); valid while the program lives. */
+QZ_API const char* qz_program_import_name(const qz_program* program, uint32_t import);
+QZ_API uint32_t qz_program_import_arity(const qz_program* program, uint32_t import);
+QZ_API qz_kind qz_program_import_param(const qz_program* program, uint32_t import, uint32_t index, uint32_t* slots);
+QZ_API qz_kind qz_program_import_result(const qz_program* program, uint32_t import, uint32_t* slots);
+/* The .qzi other packages compile against, for a program built with a package.toml; NULL with *error otherwise. */
+QZ_API char* qz_program_interface(const qz_program* program, const char* manifest, char** error);
+
+/* Lists. A list type is an opaque id; qz_sandbox_wait_type gives the one a waiting task expects. */
+QZ_API uint32_t qz_sandbox_wait_type(const qz_sandbox* sandbox, uint32_t task);
+/* An empty list built like qz_sandbox_str (or in a host function, its result); 0 slot when the type is not a list. */
+QZ_API qz_slot qz_sandbox_list(qz_sandbox* sandbox, uint32_t list_type);
+/* Appends one element given as its slots; false when the quota is exhausted or the size is wrong. */
+QZ_API bool qz_list_push(qz_sandbox* sandbox, qz_slot list, const qz_slot* element, size_t slots);
+QZ_API size_t qz_list_length(qz_slot list);
+/* Copies element `index` (its slots) into `out`; false out of range. */
+QZ_API bool qz_list_get(qz_slot list, size_t index, qz_slot* out, size_t slots);
+
+/* Trap codes, for hosts that react to the kind of failure. */
+typedef enum qz_trap {
+    QZ_TRAP_NONE = 0,
+    QZ_TRAP_UNREACHABLE,
+    QZ_TRAP_DIVIDE_BY_ZERO,
+    QZ_TRAP_INDEX_OUT_OF_BOUNDS,
+    QZ_TRAP_NULL_UNWRAP,
+    QZ_TRAP_OUT_OF_FUEL,
+    QZ_TRAP_OUT_OF_MEMORY,
+    QZ_TRAP_STACK_OVERFLOW,
+    QZ_TRAP_INVALID_HANDLE,
+    QZ_TRAP_PANIC,
+    QZ_TRAP_HOST_ERROR
+} qz_trap;
+
+/* The kind of the last trap, QZ_TRAP_NONE after a call that did not trap. */
+QZ_API qz_trap qz_sandbox_trap_code(const qz_sandbox* sandbox);
+
+/* Replaces the program in place, keeping bindings, limits and the state migrated; on failure nothing changes. */
+QZ_API qz_status qz_sandbox_reload(qz_sandbox* sandbox, const qz_program* program);
+/* `@persist(per = Handle)` states of one handle, as JSON (free with qz_free), and back. */
+QZ_API char* qz_sandbox_export_handle(qz_sandbox* sandbox, uint64_t handle);
+QZ_API qz_status qz_sandbox_import_handle(qz_sandbox* sandbox, uint64_t handle, const char* json, size_t length);
+QZ_API void qz_sandbox_drop_handle(qz_sandbox* sandbox, uint64_t handle);
+QZ_API size_t qz_sandbox_live_tasks(const qz_sandbox* sandbox);
+QZ_API int64_t qz_sandbox_fuel_per_call(const qz_sandbox* sandbox);
 
 #ifdef __cplusplus
 }

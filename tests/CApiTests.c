@@ -20,7 +20,7 @@ static bool greet(qz_call* call, void* user) {
     char text[64];
     int n = snprintf(text, sizeof text, "hi %.*s", (int)len, name);
     qz_call_set_result(call, qz_call_str(call, text, (size_t)n));
-    ++*calls;
+    *calls += qz_call_arg_count(call) == 1 ? 1 : 100;
     return qz_call_sandbox(call) != NULL;
 }
 
@@ -61,6 +61,15 @@ int main(void) {
     uint32_t hello = qz_program_function(loaded, "hello");
     uint32_t divide = qz_program_function(loaded, "divide");
     CHECK(hello != UINT32_MAX && qz_program_function(loaded, "missing") == UINT32_MAX);
+    uint32_t slots = 0;
+    CHECK(qz_program_function_arity(loaded, hello) == 1);
+    CHECK(qz_program_function_param(loaded, hello, 0, &slots) == QZ_KIND_I64 && slots == 1);
+    CHECK(qz_program_function_result(loaded, hello, NULL) == QZ_KIND_STR);
+    uint32_t greetImport = UINT32_MAX;
+    for (uint32_t i = 0; i < qz_program_import_count(loaded); ++i) {
+        greetImport = strcmp(qz_program_import_name(loaded, i), "greet") == 0 ? i : greetImport;
+    }
+    CHECK(greetImport != UINT32_MAX && qz_program_import_param(loaded, greetImport, 0, NULL) == QZ_KIND_STR);
     qz_limits limits = {0, 0, 0, 1};
     qz_sandbox* sb = qz_sandbox_new(loaded, &limits);
     qz_program_free(loaded);
@@ -83,8 +92,10 @@ int main(void) {
     qz_slot pair[2] = {{.i = 7}, {.i = 0}};
     CHECK(qz_sandbox_call(sb, divide, pair, 2, &result) == QZ_TRAP);
     CHECK(strstr(qz_sandbox_error(sb), "division") != NULL);
+    CHECK(qz_sandbox_trap_code(sb) == QZ_TRAP_DIVIDE_BY_ZERO);
     pair[1].i = 2;
     CHECK(qz_sandbox_call(sb, divide, pair, 2, &result) == QZ_OK && result.i == 3);
+    CHECK(qz_sandbox_trap_code(sb) == QZ_TRAP_NONE);
     CHECK(qz_sandbox_call(sb, 9999, NULL, 0, &result) == QZ_ERROR);
     qz_sandbox_free(sb);
 
