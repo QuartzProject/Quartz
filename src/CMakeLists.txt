@@ -15,7 +15,8 @@ target_sources(quartz_ir PRIVATE ir/Liveness.cpp)
 # The native tier loads libquartz_compiler at run time (D15); the core never links LLVM.
 target_sources(quartz_vm PRIVATE vm/Tier.cpp vm/NativeRuntime.cpp)
 target_link_libraries(quartz_vm PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
-quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp driver/Bind.cpp DEPS quartz_vm)
+quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp driver/Bind.cpp driver/TomlLite.cpp driver/Index.cpp
+    driver/Archive.cpp driver/Resolve.cpp DEPS quartz_vm)
 # Duplicate the dispatch jump into every handler; without it clang shares one indirect jump (D29).
 set_source_files_properties(vm/Interp.cpp PROPERTIES COMPILE_OPTIONS "-mllvm;-tail-dup-indirect-size=200;-mllvm;-tail-dup-size=200")
 # The C interface (include/quartz/quartz.h), static; QUARTZ_SHARED also builds libquartz exporting only qz_*.

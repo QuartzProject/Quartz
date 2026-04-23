@@ -13,10 +13,15 @@
 
 namespace quartz {
 
+/// A library is compiled from source into every package that uses it; a plugin keeps its own sandbox and is linked.
+enum class PackageKind : std::uint8_t { Library, Plugin };
+
 /// `package.toml` (spec 8.3).
 struct Manifest {
     std::string name;    // the package, e.g. `net.blueva.hub`
     std::string version; // semver `major.minor.patch`
+    PackageKind kind = PackageKind::Library;
+    std::string registry;  // where `quartz fetch` resolves dependencies: a path, `file://` or `https://` URL
     std::uint32_t api = 0; // lowest host API version it needs
     std::vector<std::pair<std::string, std::string>> dependencies; // package -> version range
     std::vector<std::string> capabilities;
@@ -32,6 +37,10 @@ struct Version {
 
 std::expected<Manifest, std::string> parseManifest(std::string_view text);
 std::expected<Version, std::string> parseVersion(std::string_view text);
+std::string formatVersion(const Version& v);
+std::string_view kindName(PackageKind kind);
+/// A reverse domain: two or more lower case segments, like `org.example.economy`.
+bool isPackageName(std::string_view name);
 /// Ranges: `1.2.3`, `^1.2`, `~1.2`, `>=1.0`, `<2.0.0`, joined with commas (all must hold), or `*`.
 std::expected<bool, std::string> satisfies(const Version& v, std::string_view range);
 

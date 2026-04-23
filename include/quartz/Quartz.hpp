@@ -15,6 +15,7 @@ namespace quartz {
 struct SourceInput {
     std::string name; // `.qzi` names are host interfaces
     std::string text;
+    bool dependency = false; // a library compiled in from the registry: its `@test` functions are not this package's
 };
 
 struct CompileOutput {

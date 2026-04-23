@@ -1,13 +1,25 @@
-#include "quartz/Quartz.hpp"
-
 #include "ir/Lower.hpp"
 #include "ir/Optimize.hpp"
 #include "ir/Validator.hpp"
-#include "std/Std.hpp"
+#include "quartz/Quartz.hpp"
 #include "sema/Sema.hpp"
+#include "std/Std.hpp"
 #include "syntax/Parser.hpp"
 
+#include <algorithm>
+
 namespace quartz {
+
+namespace {
+
+void dropAttribute(syntax::Module& m, Symbol name) {
+    for (syntax::Decl* d : m.decls) {
+        auto kept = std::remove_if(d->attrs.begin(), d->attrs.end(), [&](const auto& a) { return a.name == name; });
+        d->attrs = d->attrs.first(static_cast<std::size_t>(kept - d->attrs.begin()));
+    }
+}
+
+} // namespace
 
 CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions options) {
     CompileOutput out;
@@ -16,9 +28,13 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     Arena arena;
     Interner names;
     std::vector<syntax::Module*> modules;
+    Symbol test = names.intern("test");
     for (const SourceInput& in : inputs) {
         const SourceFile& file = sources.add(in.name, in.text);
         modules.push_back(syntax::parseModule(file, arena, names, diags));
+        if (in.dependency && modules.back() != nullptr) {
+            dropAttribute(*modules.back(), test);
+        }
     }
     for (const auto& [name, text] : stdlib::sources()) {
         const SourceFile& file = sources.add(std::string(name), std::string(text));

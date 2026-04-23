@@ -53,7 +53,8 @@ std::expected<std::vector<std::string>, std::string> stringList(std::string_view
     return out;
 }
 
-// A package name is a reverse domain the author controls: `org.example.economy`, two or more lower case segments.
+} // namespace
+
 bool isPackageName(std::string_view name) {
     std::size_t segments = 0;
     while (true) {
@@ -71,7 +72,9 @@ bool isPackageName(std::string_view name) {
     }
 }
 
-} // namespace
+std::string formatVersion(const Version& v) { return std::format("{}.{}.{}", v.major, v.minor, v.patch); }
+
+std::string_view kindName(PackageKind kind) { return kind == PackageKind::Plugin ? "plugin" : "library"; }
 
 std::expected<Version, std::string> parseVersion(std::string_view text) {
     Version v;
@@ -203,12 +206,18 @@ std::expected<Manifest, std::string> parseManifest(std::string_view text) {
             } else if (value != "false") {
                 return fail("capabilities are true or false");
             }
-        } else if (key == "name" || key == "version") {
+        } else if (key == "name" || key == "version" || key == "registry") {
             auto s = unquote(value);
             if (!s) {
                 return fail(s.error());
             }
-            (key == "name" ? m.name : m.version) = *s;
+            (key == "name" ? m.name : key == "version" ? m.version : m.registry) = *s;
+        } else if (key == "kind") {
+            auto s = unquote(value);
+            if (!s || (*s != "library" && *s != "plugin")) {
+                return fail("kind is \"library\" or \"plugin\"");
+            }
+            m.kind = *s == "plugin" ? PackageKind::Plugin : PackageKind::Library;
         } else if (key == "api") {
             if (std::from_chars(value.data(), value.data() + value.size(), m.api).ptr != value.data() + value.size()) {
                 return fail("api is an integer");
