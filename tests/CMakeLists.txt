@@ -12,6 +12,10 @@ if(QUARTZ_COMPILER)
         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
     set_tests_properties(quartz_native_unavailable PROPERTIES ENVIRONMENT QUARTZ_NATIVE_LINKER=none)
 endif()
+quartz_test(quartz_registry_tests SOURCES RegistryTests.cpp DEPS quartz)
+target_compile_definitions(quartz_registry_tests PRIVATE QUARTZ_CLI_PATH="$<TARGET_FILE:quartz-cli>"
+    QUARTZ_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+add_dependencies(quartz_registry_tests quartz-cli)
 quartz_test(quartz_lsp_tests SOURCES LspTests.cpp DEPS quartz_lsp)
 target_include_directories(quartz_lsp_tests PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(quartz_lsp_tests PRIVATE QUARTZ_LSP_PATH="$<TARGET_FILE:quartz-lsp>"

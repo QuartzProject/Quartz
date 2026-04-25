@@ -20,7 +20,8 @@ bool hostTicks(quartz::vm::HostCall& call, void*) {
 
 } // namespace
 
-int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::string_view filter) {
+int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::string_view filter,
+             const std::vector<quartz::cli::Plugin>& plugins) {
     std::size_t passed = 0;
     std::size_t failed = 0;
     for (const quartz::ir::Annotation& a : program->module->annotations) {
@@ -32,9 +33,17 @@ int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::str
             continue;
         }
         std::string printed;
+        auto bind = [&](quartz::vm::Sandbox& s) {
+            s.bind("print", capturePrint, &printed);
+            s.bind("int.ticks", hostTicks);
+        };
+        quartz::cli::PluginHost host;
         quartz::vm::Sandbox sb(program);
-        sb.bind("print", capturePrint, &printed);
-        sb.bind("int.ticks", hostTicks);
+        bind(sb);
+        if (auto linked = host.start(plugins, bind).and_then([&] { return host.link(sb); }); !linked) {
+            std::fprintf(stderr, "%s\n", linked.error().c_str());
+            return 1;
+        }
         auto start = std::chrono::steady_clock::now();
         auto started = sb.start();
         auto r = started ? sb.call(a.function, {})

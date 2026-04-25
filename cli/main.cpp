@@ -1,6 +1,7 @@
 #include "Commands.hpp"
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
+#include "Registry.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 
@@ -36,6 +37,10 @@ int usage() {
                  "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
                  "[--strip-lines] [--host-only]\n"
                  "       quartz interface <package.qzb>\n"
+                 "       quartz add <name>[@range] [package dir] [--registry url]\n"
+                 "       quartz fetch [package dir] [--registry url] [--update] [--allow-key-change]\n"
+                 "       quartz publish [package dir] --registry <dir> --sign <seed file>\n"
+                 "       quartz owner <prefix> <public key hex> --registry <dir>\n"
                  "       quartz keygen <seed file>\n"
                  "       quartz new <package name, like org.example.hello>\n"
                  "       quartz doc <file.qz|file.qzi|package dir>... [-o out.md]\n"
@@ -119,10 +124,21 @@ int keygen(const char* path) {
     return 0;
 }
 
-int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry) {
-    quartz::vm::Sandbox sb(program);
+void bindHost(quartz::vm::Sandbox& sb) {
     sb.bind("print", hostPrint);
     sb.bind("int.ticks", hostTicks);
+}
+
+int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry,
+               const std::vector<quartz::cli::Plugin>& plugins) {
+    quartz::cli::PluginHost host;
+    auto started = host.start(plugins, bindHost);
+    quartz::vm::Sandbox sb(program);
+    bindHost(sb);
+    if (auto l = started ? host.link(sb) : started; !l) {
+        std::fprintf(stderr, "%s\n", l.error().c_str());
+        return 3;
+    }
     if (auto s = sb.start(); !s) {
         std::fprintf(stderr, "%s\n", s.error().describe().c_str());
         return 3;
@@ -169,7 +185,31 @@ struct Args {
     bool hostOnly = false;
     std::string manifest;
     std::string filter;
+    std::filesystem::path packageDir;
+    quartz::cli::DependencyOptions deps;
+    std::vector<quartz::cli::Plugin> plugins;
 };
+
+// Library sources and plugin interfaces from quartz.lock, fetched and verified first.
+bool addDependencies(Args& a) {
+    auto text = readFile(a.packageDir / "package.toml");
+    if (!text) {
+        return true;
+    }
+    auto m = quartz::parseManifest(*text);
+    if (!m) {
+        std::fprintf(stderr, "%s\n", m.error().c_str());
+        return false;
+    }
+    auto deps = quartz::cli::prepareDependencies(a.packageDir, *m, a.deps);
+    if (!deps) {
+        std::fprintf(stderr, "%s\n", deps.error().c_str());
+        return false;
+    }
+    a.inputs.insert(a.inputs.end(), deps->inputs.begin(), deps->inputs.end());
+    a.plugins.insert(a.plugins.end(), deps->plugins.begin(), deps->plugins.end());
+    return true;
+}
 
 std::optional<Args> parseArgs(int argc, char** argv) {
     Args a;
@@ -193,6 +233,10 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             a.trusted.push_back(*key);
         } else if (arg == "--filter" && hasValue) {
             a.filter = argv[++i];
+        } else if (arg == "--registry" && hasValue) {
+            a.deps.registry = argv[++i];
+        } else if (arg == "--allow-key-change") {
+            a.deps.allowKeyChange = true;
         } else if (arg == "--require-signature") {
             a.requireSignature = true;
         } else if (arg == "--strip-lines") {
@@ -201,6 +245,7 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             a.binaryPath = argv[i];
         } else if (std::filesystem::is_directory(argv[i])) {
             // A package directory: its package.toml and every .qz and .qzi below it.
+            a.packageDir = argv[i];
             std::vector<std::filesystem::path> files;
             for (const auto& e : std::filesystem::recursive_directory_iterator(argv[i])) {
                 auto ext = e.path().extension();
@@ -230,6 +275,9 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             }
             a.inputs.push_back({argv[i], std::move(*text)});
         }
+    }
+    if (!a.packageDir.empty() && !addDependencies(a)) {
+        return std::nullopt;
     }
     return a;
 }
@@ -278,10 +326,25 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "repl") {
         return runRepl();
     }
-    if (argc < 3) {
+    if (argc < 2) {
         return usage();
     }
     std::string_view cmd = argv[1];
+    if (cmd == "add") {
+        return quartz::cli::addCommand(argc, argv);
+    }
+    if (cmd == "fetch") {
+        return quartz::cli::fetchCommand(argc, argv);
+    }
+    if (cmd == "publish") {
+        return quartz::cli::publishCommand(argc, argv);
+    }
+    if (cmd == "owner") {
+        return quartz::cli::ownerCommand(argc, argv);
+    }
+    if (argc < 3) {
+        return usage();
+    }
     if (cmd == "fmt") {
         return runFmt(argc, argv);
     }
@@ -346,7 +409,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (cmd == "test") {
-        return runTests(program, args->filter);
+        return runTests(program, args->filter, args->plugins);
     }
     if (cmd == "interface") {
         auto m = quartz::parseManifest(program->module->manifest);
@@ -375,5 +438,5 @@ int main(int argc, char** argv) {
     if (cmd != "run") {
         return usage();
     }
-    return runProgram(program, args->entry);
+    return runProgram(program, args->entry, args->plugins);
 }

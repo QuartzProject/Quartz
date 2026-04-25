@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Registry.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <memory>
@@ -8,7 +9,9 @@
 #include <vector>
 
 /// `quartz test`: runs every `@test` function in its own sandbox; 0 when all pass.
-int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::string_view filter);
+/// Each test also gets fresh sandboxes of the plugins it links to.
+int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::string_view filter,
+             const std::vector<quartz::cli::Plugin>& plugins);
 
 /// `quartz doc`: Markdown for the public declarations and their `///` comments, grouped by package.
 int runDoc(const std::vector<quartz::SourceInput>& inputs, const std::string& output);
