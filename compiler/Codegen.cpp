@@ -35,6 +35,9 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_pow", false, false},       {"qz_sin", false, false},         {"qz_cos", false, false},
     {"qz_task_wait", false, false}, {"qz_task_save", false, false},   {"qz_task_restore", false, false},
     {"qz_closure", false, false},
+    {"qz_builtin", false, false},   {"qz_tan", false, false},         {"qz_asin", false, false},
+    {"qz_acos", false, false},      {"qz_atan", false, false},        {"qz_exp", false, false},
+    {"qz_log", false, false},       {"qz_log10", false, false},       {"qz_atan2", false, false},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
 
@@ -243,7 +246,20 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
         break;
     case Rt::Sin:
     case Rt::Cos:
+    case Rt::Tan:
+    case Rt::Asin:
+    case Rt::Acos:
+    case Rt::Atan:
+    case Rt::Exp:
+    case Rt::Log:
+    case Rt::Log10:
         ty = llvm::FunctionType::get(f64, {f64}, false);
+        break;
+    case Rt::Atan2:
+        ty = llvm::FunctionType::get(f64, {f64, f64}, false);
+        break;
+    case Rt::Builtin:
+        ty = llvm::FunctionType::get(i32, {ptr, i32, ptr, ptr}, false);
         break;
     case Rt::TaskWait:
         ty = llvm::FunctionType::get(v, {ptr, i32, i64, i32}, false);
@@ -267,7 +283,7 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
         f->setMemoryEffects(llvm::MemoryEffects::readOnly());
         f->addFnAttr(llvm::Attribute::WillReturn);
     }
-    if (rt == Rt::Pow || rt == Rt::Sin || rt == Rt::Cos) {
+    if (rt == Rt::Pow || rt == Rt::Sin || rt == Rt::Cos || (rt >= Rt::Tan && rt <= Rt::Atan2)) {
         f->setMemoryEffects(llvm::MemoryEffects::none());
         f->addFnAttr(llvm::Attribute::WillReturn);
     }

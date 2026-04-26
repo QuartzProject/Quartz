@@ -128,6 +128,39 @@ enum class Intrinsic : std::uint16_t {
     MathSin,
     MathCos,
     Panic,        // args: str message
+    // Runtime builtins, StrToInt to ListSort: one implementation in vm/*Builtins.cpp that both tiers call.
+    StrToInt,            // dst int?, args: str
+    StrToFloat,          // dst float?, args: str
+    StrReplace,          // dst str, args: str, from, to
+    StrSplit,            // dst [str], args: str, separator
+    StrTrim,             // dst str, args: str
+    StrTrimStart,        // dst str, args: str
+    StrTrimEnd,          // dst str, args: str
+    StrRepeat,           // dst str, args: str, count
+    StrEqualsIgnoreCase, // dst bool, args: str, str
+    StrChars,            // dst [char], args: str
+    CharFromInt,         // dst char?, args: int
+    ListInsert,          // args: list, index, value
+    ListRemoveAt,        // dst T, args: list, index
+    ListContains,        // dst bool, args: list, value
+    ListIndexOf,         // dst int?, args: list, value
+    ListReverse,         // args: list
+    ListSlice,           // dst [T], args: list, begin, end
+    ListInsertAll,       // args: list, index, [T]
+    ListSort,            // args: list
+    CharCode,            // dst int, args: char
+    MathTan,             // dst float, args: float (also MathAsin to MathRound)
+    MathAsin,
+    MathAcos,
+    MathAtan,
+    MathExp,
+    MathLog,
+    MathLog10,
+    MathRound,
+    MathAtan2,           // dst float, args: y, x
+    MathFmod,            // dst float, args: x, y
+    MathClampI,          // dst int, args: value, lo, hi
+    MathClampF,          // dst float, args: value, lo, hi
     Count,
 };
 

@@ -1,7 +1,7 @@
-#include "vm/Bytecode.hpp"
-
-#include "vm/Tier.hpp"
+#include "ir/Builtins.hpp"
 #include "ir/Liveness.hpp"
+#include "vm/Bytecode.hpp"
+#include "vm/Tier.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -591,6 +591,41 @@ private:
         case Intrinsic::MathCos: put(Opc::Cos, d, sa(0)); return;
         case Intrinsic::Panic: put(Opc::Panic, sa(0)); return;
         case Intrinsic::Count: return;
+        default:
+            extraIntrinsic(op, a, d);
+            return;
+        }
+    }
+
+    // Intrinsics added after Panic; runtime builtins read their arguments from the outgoing area.
+    void extraIntrinsic(Intrinsic op, const std::vector<Reg>& a, std::uint16_t d) {
+        if (ir::isRuntimeBuiltin(op)) {
+            std::uint32_t base = outgoing(a);
+            put(Opc::Builtin, d, base, ir::runtimeBuiltinIndex(op));
+            return;
+        }
+        auto sa = [&](std::size_t i) { return s(a[i]); };
+        switch (op) {
+        case Intrinsic::CharCode:
+            move(d, sa(0), 1);
+            return;
+        case Intrinsic::MathAtan2:
+            put(Opc::Atan2, d, sa(0), sa(1));
+            return;
+        case Intrinsic::MathFmod:
+            put(Opc::RemF, d, sa(0), sa(1));
+            return;
+        case Intrinsic::MathClampI:
+        case Intrinsic::MathClampF: {
+            bool f = op == Intrinsic::MathClampF;
+            std::uint32_t t = outgoing({a[0]});
+            put(f ? Opc::MaxF : Opc::MaxI, t, t, sa(1));
+            put(f ? Opc::MinF : Opc::MinI, d, t, sa(2));
+            return;
+        }
+        default:
+            put(Opc::MathF1, d, sa(0), static_cast<std::uint32_t>(op) - static_cast<std::uint32_t>(Intrinsic::MathTan));
+            return;
         }
     }
 

@@ -223,6 +223,14 @@ bool HostCall::charge(std::int64_t units) {
     return true;
 }
 
+bool Sandbox::chargeFuel(std::int64_t units) {
+    fuel_ -= units;
+    if (fuel_ < -limits_.fuelPerCall || (!taskMode_ && fuel_ < 0)) {
+        return fail(ir::TrapCode::OutOfFuel);
+    }
+    return true;
+}
+
 Str* Sandbox::concat(const Slot* parts, std::uint32_t count) {
     std::size_t total = 0;
     for (std::uint32_t i = 0; i < count; ++i) {
@@ -241,15 +249,18 @@ Str* Sandbox::concat(const Slot* parts, std::uint32_t count) {
     return s;
 }
 
+// Negative bounds count from the end, as in Python; both must then fall on character boundaries.
 Str* Sandbox::sliceStr(const Str* s, std::int64_t begin, std::int64_t end) {
     auto isBoundary = [&](std::int64_t i) {
         return i == s->len || (static_cast<unsigned char>(s->data[i]) & 0xC0) != 0x80;
     };
-    if (begin < 0 || end < begin || end > s->len || !isBoundary(begin) || !isBoundary(end)) {
+    std::int64_t from = begin < 0 ? begin + s->len : begin;
+    std::int64_t to = end < 0 ? end + s->len : end;
+    if (from < 0 || to < from || to > s->len || !isBoundary(from) || !isBoundary(to)) {
         fail(ir::TrapCode::IndexOutOfBounds, std::format("slice [{}, {}) of a string of {} bytes", begin, end, s->len));
         return nullptr;
     }
-    return newStr(std::string_view(s->data + begin, static_cast<std::size_t>(end - begin)));
+    return newStr(std::string_view(s->data + from, static_cast<std::size_t>(to - from)));
 }
 
 Str* Sandbox::caseMap(const Str* s, bool upper) {
@@ -282,6 +293,9 @@ Str* Sandbox::fromU64(std::uint64_t v) {
 }
 
 Str* Sandbox::fromF64(double v) {
+    if (v != v) {
+        return newStr("nan"); // the sign of a NaN differs between CPUs (0.0 / 0.0 is -nan on x86, nan on arm64)
+    }
     char buf[40];
     auto r = std::to_chars(buf, buf + sizeof buf - 3, v);
     std::string_view text(buf, static_cast<std::size_t>(r.ptr - buf));

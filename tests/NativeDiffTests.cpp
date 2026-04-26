@@ -293,13 +293,18 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         "let k = 3\n    return hop(5, (x: int) => x / (k - 3))",
         "return hop(0, deep)",
         "var s = 0\n    let f = (x: int) => x % 7\n    for i in 0..100000 { s += f(i) }\n    return s",
+        "let xs = [1]\n    xs.insert(3, 1)\n    return 0",
+        "return [(1, 2.0)].removeAt(1).0",
+        "return \"abc\".slice(-4, 2).len()",
+        "assert(xs().len() > 2, \"short: {xs().len()}\")\n    return 0",
+        "let s = \"x\".repeat(4000)\n    var n = 0\n    for i in 0..300 { n += s.replace(s, s).len() }\n    return n",
     };
     for (const char* body : bodies) {
         CAPTURE(body);
         std::string text = std::format(
             "fn rec(n: int) -> int {{ return rec(n + 1) + 1 }}\nfn hop(n: int, f: fn(int) -> int) -> int {{ "
             "return f(n) }}\nfn deep(n: int) -> int {{ return hop(n + 1, deep) + 1 }}\nfn main() -> int "
-            "{{\n    {}\n}}\n",
+            "{{\n    {}\n}}\nfn xs() -> [int] {{ return [1] }}\n",
             body);
         auto p = withStd("trap.qz", text);
         Outcome native = runMain(p, TierMode::Native, 100'000);
@@ -323,6 +328,22 @@ TEST_CASE("fuel charged by host functions inside a counted loop matches the inte
                        "}\n";
     auto p = withStd("charge.qz", text);
     for (std::int64_t fuel : {1'000, 2'399, 2'400, 2'401, 100'000}) {
+        CAPTURE(fuel);
+        CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
+    }
+}
+
+TEST_CASE("fuel charged by runtime builtins inside a counted loop matches the interpreter") {
+    std::string text = "fn main() -> int {\n"
+                       "    var n = 0\n"
+                       "    let line = \"alpha,beta,gamma,delta,epsilon,zeta,eta,theta,iota,kappa,lambda,mu\"\n"
+                       "    for i in 0..300 {\n"
+                       "        n += line.split(\",\").len() + line.upper().len()\n"
+                       "    }\n"
+                       "    return n\n"
+                       "}\n";
+    auto p = withStd("builtin.qz", text);
+    for (std::int64_t fuel : {500, 2'399, 2'400, 2'401, 7'000, 100'000}) {
         CAPTURE(fuel);
         CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
     }

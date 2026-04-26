@@ -1,6 +1,6 @@
-#include "vm/Sandbox.hpp"
-
+#include "vm/Builtins.hpp"
 #include "vm/Math.hpp"
+#include "vm/Sandbox.hpp"
 
 #include <cmath>
 #include <limits>
@@ -759,6 +759,17 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             CASE(Cos) RA.f = math::cos(RB.f);
             NEXT();
             CASE(Panic) TRAP(ir::TrapCode::Panic, std::string(STR(RA)->view()));
+            CASE(Builtin) {
+                fuel_ = fuel;
+                bool ok = Builtins::run(*this, ins.c, &RB, &RA);
+                fuel = fuel_;
+                CHECK(ok);
+                NEXT();
+            }
+            CASE(MathF1) RA.f = math::kUnary[ins.c](RB.f);
+            NEXT();
+            CASE(Atan2) RA.f = math::atan2(RB.f, RC.f);
+            NEXT();
             CASE(ScopeIn) CHECK(scopeIn());
             NEXT();
             CASE(ScopeOut) scopeOut();

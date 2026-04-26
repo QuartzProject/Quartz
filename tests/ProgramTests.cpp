@@ -1,7 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "ir/Validator.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <doctest/doctest.h>
+
 #include <expected>
 #include <filesystem>
 #include <fstream>
@@ -189,6 +191,33 @@ TEST_CASE("truncated, corrupt or untrusted binary modules are rejected without c
             (void)quartz::load(quartz::ir::seal(bad));
         }
     }
+}
+
+TEST_CASE("builtin intrinsics given another builtin's operands are rejected") {
+    quartz::SourceInput in[] = {{"v.qz", "struct P {\n    x: int\n}\nfn f(xs: [int], ps: [P]) -> bool {\n"
+                                         "    ps.reverse()\n    return xs.contains(1)\n}\n"}};
+    quartz::CompileOutput out = quartz::compile(in, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto mod = quartz::ir::deserialize(out.binary);
+    REQUIRE(mod.has_value());
+    using quartz::ir::Intrinsic;
+    int checked = 0;
+    for (quartz::ir::Function& fn : (*mod)->functions) {
+        for (quartz::ir::Inst& inst : fn.code) {
+            if (inst.op != quartz::ir::Op::Intrinsic || inst.imm < static_cast<std::uint32_t>(Intrinsic::StrToInt)) {
+                continue;
+            }
+            std::uint32_t own = inst.imm;
+            for (auto op = static_cast<std::uint32_t>(Intrinsic::StrToInt);
+                 op < static_cast<std::uint32_t>(Intrinsic::Count); ++op) {
+                inst.imm = op;
+                CHECK_MESSAGE(quartz::ir::validate(**mod).has_value() == (op == own), op);
+                ++checked;
+            }
+            inst.imm = own;
+        }
+    }
+    CHECK(checked == 2 * 32);
 }
 
 TEST_CASE("invalid programs report the expected diagnostics") {

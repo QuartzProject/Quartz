@@ -289,6 +289,10 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
         return dst;
     }
     case CallKind::Special: {
+        if (static_cast<SpecialOp>(e->builtin) == SpecialOp::Assert) {
+            lowerAssert(e);
+            return dst;
+        }
         Reg recv = lowerExpr(e->receiver);
         TypeId rt0 = T(e->receiver->type);
         auto op = static_cast<SpecialOp>(e->builtin);
@@ -368,7 +372,9 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
         // Parameter types for coercion come from the arguments' checked types, except nullable-free builtins.
         for (Expr* a : e->ordered) {
             TypeId want = kError;
-            if (op == Intrinsic::ListPush || op == Intrinsic::MapSet) {
+            if (TypeId elem = builtinElementParam(e, op, a); elem != kError) {
+                want = elem;
+            } else if (op == Intrinsic::ListPush || op == Intrinsic::MapSet) {
                 const TypeInfo& recv = types_->info(T(e->receiver->type));
                 want = op == Intrinsic::ListPush ? recv.elem : (a == e->ordered[0] ? recv.key : recv.elem);
             } else if (op == Intrinsic::MapGet || op == Intrinsic::MapHas || op == Intrinsic::MapRemove) {

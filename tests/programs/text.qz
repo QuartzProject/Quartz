@@ -1,0 +1,37 @@
+// expect: toInt 42 0 7 -9223372036854775808 9223372036854775807 null null null null null null null
+// expect: toFloat 1.5 -0.002 1000.0 inf -inf 0.0 0.1 null null null nan -inf null 5e-324
+// expect: a::b::c bb abc abc
+// expect: 4:[a||b|] 1:[] 3:[h|é|y] 2:[a|b]
+// expect: [x y] [x ] [  x] []
+// expect: ababab [] [] true false
+// expect: llo hé 0
+// expect: 4 97 233 8364 128512
+// expect: a 😀 ? ? ?
+
+fn show(xs: [str]) -> str {
+    return "{xs.len()}:[{xs.join("|")}]"
+}
+
+fn main() -> int {
+    let ints = ["42", "-0", "+7", "-9223372036854775808", "9223372036854775807", "9223372036854775808", "", "-", "1_0", " 1", "0x10", "12a"]
+    var line = ""
+    for s in ints {
+        line = line + " " + (if let v = s.toInt() { "{v}" } else { "null" })
+    }
+    print("toInt{line}")
+    let floats = ["1.5", "-2e-3", "+1E3", "1e400", "-1e400", "1e-400", "0.1", "1.", ".5", "1e", "NaN", "-Infinity", "inf ", "4.9e-324"]
+    line = ""
+    for s in floats {
+        line = line + " " + (if let v = s.toFloat() { "{v}" } else { "null" })
+    }
+    print("toFloat{line}")
+    print("{"a.b.c".replace(".", "::")} {"aaaa".replace("aa", "b")} {"abc".replace("", "x")} {"abc".replace("z", "y")}")
+    print("{show("a,,b,".split(","))} {show("".split(","))} {show("héy".split(""))} {show("a--b".split("--"))}")
+    print("[{" \t\n x y \u{3000}".trim()}] [{"  x ".trimStart()}] [{"  x ".trimEnd()}] [{"\u{a0}".trim()}]")
+    print("{"ab".repeat(3)} [{"ab".repeat(0)}] [{"ab".repeat(-2)}] {"Hello".equalsIgnoreCase("hELLO")} {"é".equalsIgnoreCase("É")}")
+    print("{"héllo".slice(-3, 6)} {"héllo".slice(0, -3)} {"abc".slice(-3, -3).len()}")
+    let cs = "aé€😀".chars()
+    print("{cs.len()} {cs[0].code()} {cs[1].code()} {cs[2].code()} {cs[3].code()}")
+    print("{(97).toChar() ?? '?'} {(128512).toChar() ?? '?'} {(55296).toChar() ?? '?'} {(1114112).toChar() ?? '?'} {(-1).toChar() ?? '?'}")
+    return 0
+}

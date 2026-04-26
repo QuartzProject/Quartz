@@ -9,6 +9,9 @@ namespace quartz::sema {
 using ir::Intrinsic;
 
 std::optional<BuiltinSig> Checker::builtinMethod(TypeId recv, std::string_view name) {
+    if (std::optional<BuiltinSig> extra = extraBuiltinMethod(recv, name)) {
+        return extra;
+    }
     const ir::TypeInfo& info = types_->info(recv);
     if (recv == ir::kStr) {
         static const std::pair<std::string_view, BuiltinSig> table[] = {
@@ -223,13 +226,16 @@ TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expecte
     found = true;
     std::string_view n = str(name);
     static constexpr std::string_view kMath[] = {"sqrt", "floor", "ceil", "sin", "cos", "pow", "abs", "min", "max"};
+    auto inMath = [](std::string_view s) {
+        return std::find(std::begin(kMath), std::end(kMath), s) != std::end(kMath) || isExtraMathFunction(s);
+    };
     bool isMath = false;
     if (qualified) {
-        isMath = std::find(std::begin(kMath), std::end(kMath), n) != std::end(kMath);
+        isMath = inMath(n);
     } else if (std::string_view original; mathImported(name, original)) {
-        isMath = std::find(std::begin(kMath), std::end(kMath), original) != std::end(kMath);
+        isMath = inMath(original);
         n = isMath ? original : n;
-    } else if (std::find(std::begin(kMath), std::end(kMath), n) != std::end(kMath)) {
+    } else if (inMath(n)) {
         diags_.error(call->callee->span,
                      std::format("'{}' is in {}; import it with 'import {}.{}'", n, kMathPackage, kMathPackage, n));
         for (Arg& a : call->args) {
@@ -248,6 +254,9 @@ TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expecte
         bindArgs(call, {ir::kF64}, {}, {}, 0);
         return ir::kF64;
     };
+    if (TypeId extra = ir::kError; checkExtraBuiltinFunction(call, n, expected, extra)) {
+        return extra;
+    }
     if (n == "sqrt") {
         return unaryF64(Intrinsic::MathSqrt);
     }

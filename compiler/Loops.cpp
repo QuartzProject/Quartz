@@ -1,4 +1,5 @@
 #include "Codegen.hpp"
+#include "ir/Builtins.hpp"
 
 #include <limits>
 
@@ -137,8 +138,7 @@ bool FunctionCodegen::countedLoop(std::size_t loop, CountedLoop& out) const {
             break;
         case Op::Intrinsic: {
             auto op = static_cast<ir::Intrinsic>(in.imm);
-            if (listBound &&
-                (op == ir::Intrinsic::ListPush || op == ir::Intrinsic::ListPop || op == ir::Intrinsic::ListClear)) {
+            if (listBound && ir::changesListLength(op)) {
                 return false;
             }
             break;

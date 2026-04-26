@@ -406,6 +406,10 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         error_ = "bad intrinsic";
         return;
     default:
+        if (op > Intrinsic::Panic) {
+            extraIntrinsic(in, op);
+            return;
+        }
         stringOp(in, op);
         return;
     }

@@ -1,0 +1,92 @@
+// expect: 7,5,3,9,1,3,0, true false 2 -1
+// expect: 5 3,9,1,3, 3,0, []
+// expect: 9,7,3,3,9,7,3,3,1,0,1,0,
+// expect: -2.5,-1.0,-0.0,0.0,2.5,inf,nan, true -1
+// expect: |Apple|apple|pea|pear 3
+// expect: abcé true
+// expect: false false 3 0
+// expect: -1 3 0 18446744073709551615
+// expect: b 5 zcbza
+// expect: 3 5 -1
+// expect: a9,x,a5,x,a1,x,b,y,b,y,b,y 9 false true p2
+
+struct P {
+    x: int
+    tag: str
+}
+state Bag {
+    names: [str]
+    flags: [bool]
+    points: [P]
+}
+
+fn ints(xs: [int]) -> str {
+    var out = ""
+    for x in xs {
+        out = out + "{x},"
+    }
+    return out
+}
+
+fn floats(xs: [float]) -> str {
+    var out = ""
+    for x in xs {
+        out = out + "{x},"
+    }
+    return out
+}
+
+fn fill(b: Bag) {
+    b.names.push("b")
+    b.names.insert(0, "a{b.names.len()}")
+    b.names.insertAll(1, ["x", "y"])
+    let gone = b.names.removeAt(2)
+    b.names.insert(b.names.len(), gone)
+    b.flags.insertAll(0, [true, false, true])
+    b.flags.sort()
+    b.points.insert(0, P(1, "p{b.points.len()}"))
+}
+
+fn main(bag: Bag) -> int {
+    let xs = [5, 3, 9, 1, 3]
+    xs.insert(0, 7)
+    xs.insert(6, 0)
+    print("{ints(xs)} {xs.contains(9)} {xs.contains(4)} {xs.indexOf(3) ?? -1} {xs.indexOf(4) ?? -1}")
+    print("{xs.removeAt(1)} {ints(xs.slice(1, -1))} {ints(xs.slice(-2, xs.len()))} [{ints(xs.slice(2, 2))}]")
+    xs.sort()
+    xs.insertAll(2, xs)
+    xs.reverse()
+    print("{ints(xs)}")
+    let fs = [2.5, -0.0, 0.0 / 0.0, -1.0, 0.0, 1.0 / 0.0, -2.5]
+    fs.sort()
+    print("{floats(fs)} {fs.contains(0.0)} {fs.indexOf(0.0 / 0.0) ?? -1}")
+    let ss = ["pear", "Apple", "apple", "", "pea"]
+    ss.sort()
+    print("{ss.join("|")} {ss.indexOf("pea") ?? -1}")
+    let cs = ['c', 'a', 'é', 'b']
+    cs.sort()
+    print("{cs[0]}{cs[1]}{cs[2]}{cs[3]} {cs.contains('é')}")
+    let bs = [true, false, true, false]
+    bs.reverse()
+    print("{bs[0]} {bs.removeAt(0)} {bs.len()} {bs.indexOf(true) ?? -1}")
+    let small: [i32] = [3, -1, 2]
+    small.sort()
+    let big: [u64] = [18446744073709551615, 1, 0]
+    big.sort()
+    print("{small[0]} {small[2]} {big[0]} {big[2]}")
+    let ps = [P(1, "a"), P(2, "b"), P(3, "c")]
+    ps.insert(1, P(9, "z"))
+    ps.reverse()
+    let mid = ps.slice(1, 3)
+    ps.insertAll(0, mid)
+    let first = ps.removeAt(0)
+    print("{first.tag} {ps.len()} {ps[0].tag}{ps[1].tag}{ps[2].tag}{ps[3].tag}{ps[4].tag}")
+    let opt: [int?] = [1, null]
+    opt.insert(1, 5)
+    print("{opt.len()} {opt[1] ?? -1} {opt[2] ?? -1}")
+    for i in 0..3 {
+        fill(bag)
+    }
+    print("{bag.names.join(",")} {bag.flags.len()} {bag.flags[0]} {bag.flags[8]} {bag.points[0].tag}")
+    return 0
+}

@@ -31,9 +31,23 @@ const char* intrinsicName(Intrinsic in) {
         "math.mini",    "math.maxi",    "math.minf",   "math.maxf",  "math.pow",    "math.sin",    "math.cos",
         "panic",
     };
-    static_assert(sizeof(kNames) / sizeof(kNames[0]) == static_cast<std::size_t>(Intrinsic::Count));
+    static const char* const kExtra[] = {
+        "str.toInt",     "str.toFloat",   "str.replace",
+        "str.split",     "str.trim",      "str.trimStart",
+        "str.trimEnd",   "str.repeat",    "str.equalsIgnoreCase",
+        "str.chars",     "char.fromInt",  "list.insert",
+        "list.removeAt", "list.contains", "list.indexOf",
+        "list.reverse",  "list.slice",    "list.insertAll",
+        "list.sort",     "char.code",     "math.tan",
+        "math.asin",     "math.acos",     "math.atan",
+        "math.exp",      "math.log",      "math.log10",
+        "math.round",    "math.atan2",    "math.fmod",
+        "math.clampi",   "math.clampf",
+    };
+    constexpr std::size_t kBase = sizeof(kNames) / sizeof(kNames[0]);
+    static_assert(kBase + sizeof(kExtra) / sizeof(kExtra[0]) == static_cast<std::size_t>(Intrinsic::Count));
     auto i = static_cast<std::size_t>(in);
-    return i < static_cast<std::size_t>(Intrinsic::Count) ? kNames[i] : "?";
+    return i < kBase ? kNames[i] : i < static_cast<std::size_t>(Intrinsic::Count) ? kExtra[i - kBase] : "?";
 }
 
 namespace {

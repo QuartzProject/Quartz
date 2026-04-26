@@ -579,6 +579,10 @@ void FunctionCodegen::callHost(const ir::Inst& in) {
     if (in.dst != ir::kNoReg && resultSlots != 0) {
         write(in.dst, loadSlots(result, 0, kindsOf(in.dst), U.tbaaSlot));
     }
+    afterFuelCharge(before);
+}
+
+void FunctionCodegen::afterFuelCharge(llvm::Value* before) {
     if (recordResume_) {
         llvm::BasicBlock* resume = llvm::BasicBlock::Create(U.C, "host.resume", F_);
         B_.CreateBr(resume);
@@ -593,7 +597,7 @@ void FunctionCodegen::callHost(const ir::Inst& in) {
             B_.CreateCondBr(charged, it->second, cont, U.cold);
             B_.SetInsertPoint(cont);
         } else {
-            error_ = "host call without a resume point";
+            error_ = "fuel charging call without a resume point";
         }
     }
 }

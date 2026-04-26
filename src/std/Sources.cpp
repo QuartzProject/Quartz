@@ -133,8 +133,15 @@ fn readZip(data: Bytes) -> Result<[ZipEntry], str>
 fn writeZip(entries: [ZipEntry], level: int = 6) -> Bytes
 )";
 
-// The free math functions are built into the compiler; this declares the package they are imported from.
-constexpr std::string_view kMathQz = "package org.quartzlang.math\n";
+// The free math functions are built into the compiler; the constants are the doubles nearest to each value.
+constexpr std::string_view kMathQz = R"(package org.quartzlang.math
+
+pub const PI: float = 3.141592653589793
+pub const TAU: float = 6.283185307179586
+pub const INFINITY: float = 1.0 / 0.0
+pub const MAX_INT: int = 9223372036854775807
+pub const MIN_INT: int = -9223372036854775807 - 1
+)";
 
 } // namespace
 

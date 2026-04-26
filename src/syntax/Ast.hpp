@@ -177,7 +177,15 @@ struct Arg {
 enum class CallKind : std::uint8_t { Unresolved, Function, Host, Construct, Variant, Builtin, Special, Indirect };
 
 /// Calls lowered to small IR sequences instead of an intrinsic.
-enum class SpecialOp : std::uint8_t { ResultIsOk, ResultIsErr, ResultUnwrap, ResultUnwrapOr, NullUnwrap, NullUnwrapOr };
+enum class SpecialOp : std::uint8_t {
+    ResultIsOk,
+    ResultIsErr,
+    ResultUnwrap,
+    ResultUnwrapOr,
+    NullUnwrap,
+    NullUnwrapOr,
+    Assert, // `assert(cond, message)`: the message is built only when cond is false
+};
 
 struct CallExpr : Expr {
     Expr* callee;

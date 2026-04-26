@@ -37,6 +37,19 @@ struct Factorials {
 };
 constexpr Factorials<20> kFact;
 
+// 1/n for n up to 23, computed here; the same values the divisions gave when written inline.
+struct Reciprocals {
+    double inv[24]{};
+
+    constexpr Reciprocals() {
+        for (int i = 1; i < 24; ++i) {
+            inv[i] = 1.0 / i;
+        }
+    }
+};
+
+constexpr Reciprocals kRecip;
+
 // sin(r) for |r| <= pi/4: the dropped term r^19/19! is below 1e-19 relative.
 double sinPoly(double r) {
     double z = r * r;
@@ -135,9 +148,9 @@ DD logDD(double x) {
     DD s = ddDiv(twoSum(m, -1.0), twoSum(m, 1.0));
     DD s2 = ddMul(s, s);
     double z = s2.hi;
-    double tail = 1.0 / 23;
+    double tail = kRecip.inv[23];
     for (int k = 21; k >= 5; k -= 2) {
-        tail = tail * z + 1.0 / k;
+        tail = tail * z + kRecip.inv[k];
     }
     constexpr double kThird = 1.0 / 3;
     DD three = twoProd(3.0, kThird);
@@ -162,6 +175,100 @@ double expDD(DD a) {
     double tail = x * x * q + r.lo * (1.0 + x);
     DD ex = ddAdd(lead, {tail, 0});
     return std::ldexp(ex.hi + ex.lo, static_cast<int>(k));
+}
+
+// Derived with exact decimal arithmetic (Machin's formula, atanh series): the rounded value and the rest.
+constexpr DD kPio2DD{0x1.921fb54442d18p+0, 0x1.1a62633145c07p-54};
+constexpr DD kPiDD{0x1.921fb54442d18p+1, 0x1.1a62633145c07p-53};
+constexpr DD kInvLn10{0x1.bcb7b1526e50ep-2, 0x1.95355baaafad3p-57};
+// atan(k/8) for k = 0..8.
+constexpr DD kAtanEighths[] = {
+    {0.0, 0.0},
+    {0x1.fd5ba9aac2f6ep-4, -0x1.cd37686760c17p-59},
+    {0x1.f5b75f92c80ddp-3, 0x1.8ab6e3cf7afbdp-57},
+    {0x1.6f61941e4def1p-2, -0x1.c63aae6f6e918p-56},
+    {0x1.dac670561bb4fp-2, 0x1.a2b7f222f65e2p-56},
+    {0x1.1e00babdefeb4p-1, -0x1.928df287a668fp-58},
+    {0x1.4978fa3269ee1p-1, 0x1.2419a87f2a458p-56},
+    {0x1.700a7c5784634p-1, -0x1.8c34d25aadef6p-56},
+    {0x1.921fb54442d18p-1, 0x1.1a62633145c07p-55},
+};
+
+DD ddNeg(DD a) { return {-a.hi, -a.lo}; }
+
+DD ddSqrt(DD a) {
+    double r = std::sqrt(a.hi);
+    if (r == 0) {
+        return {r, 0};
+    }
+    DD e = ddAdd(a, ddNeg(twoProd(r, r)));
+    return twoSum(r, e.hi / (2 * r));
+}
+
+// atan(w) for 0 <= w <= 1: atan(c) + atan(t) with c = k/8 nearest and t = (w - c) / (1 + w c), |t| <= 1/15.
+DD atanUnit(DD w) {
+    auto k = static_cast<int>(std::floor(w.hi * 8 + 0.5));
+    double c = k / 8.0;
+    DD t = k == 0 ? w : ddDiv(ddAdd(w, {-c, 0}), ddAdd({1.0, 0}, ddMul(w, {c, 0})));
+    double z = t.hi * t.hi;
+    double p = -kRecip.inv[19];
+    for (int n = 17; n >= 3; n -= 2) {
+        p = p * z + ((n / 2) % 2 == 0 ? kRecip.inv[n] : -kRecip.inv[n]);
+    }
+    DD series = ddAdd(t, {t.hi * z * p, 0});
+    return ddAdd(kAtanEighths[k], series);
+}
+
+// atan(z) for z >= 0 finite, through atan(z) = pi/2 - atan(1/z) above 1.
+DD atanPositive(DD z) {
+    if (z.hi <= 1.0) {
+        return atanUnit(z);
+    }
+    return ddAdd(kPio2DD, ddNeg(atanUnit(ddDiv({1.0, 0}, z))));
+}
+
+// atan(|y| / |x|) for finite nonzero operands, scaled so no intermediate overflows.
+DD atanRatio(double ay, double ax) {
+    int ey = 0;
+    int ex = 0;
+    double my = std::frexp(ay, &ey);
+    double mx = std::frexp(ax, &ex);
+    int d = ey - ex;
+    if (d > 60) {
+        return ddAdd(kPio2DD, {-(ax / ay), 0});
+    }
+    if (d < -60) {
+        return {ay / ax, 0};
+    }
+    DD q = ddDiv({my, 0}, {mx, 0});
+    return atanPositive({std::ldexp(q.hi, d), std::ldexp(q.lo, d)});
+}
+
+DD sinDD(double r) {
+    double z = r * r;
+    double p = kFact.inv[17];
+    p = p * z - kFact.inv[15];
+    p = p * z + kFact.inv[13];
+    p = p * z - kFact.inv[11];
+    p = p * z + kFact.inv[9];
+    p = p * z - kFact.inv[7];
+    p = p * z + kFact.inv[5];
+    p = p * z - kFact.inv[3];
+    return twoSum(r, r * z * p);
+}
+
+DD cosDD(double r) {
+    DD z = twoProd(r, r);
+    double p = -kFact.inv[18];
+    p = p * z.hi + kFact.inv[16];
+    p = p * z.hi - kFact.inv[14];
+    p = p * z.hi + kFact.inv[12];
+    p = p * z.hi - kFact.inv[10];
+    p = p * z.hi + kFact.inv[8];
+    p = p * z.hi - kFact.inv[6];
+    p = p * z.hi + kFact.inv[4];
+    DD lead = twoSum(1.0, -0.5 * z.hi);
+    return twoSum(lead.hi, (lead.lo - 0.5 * z.lo) + z.hi * z.hi * p);
 }
 
 bool isOddInteger(double y) {
@@ -284,5 +391,132 @@ double pow(double x, double y) {
     }
     return sign * expDD(t);
 }
+
+double tan(double x) {
+    if (!std::isfinite(x)) {
+        return kNaN;
+    }
+    if (std::fabs(x) < 0x1p-27) {
+        return x;
+    }
+    if (std::fabs(x) > kReduceLimit) {
+        x = std::fmod(x, kTwoPi);
+    }
+    // The reduction of reduce(), kept as a double-double: x - k*A is exact for |k| < 2^20 (Sterbenz).
+    double k = std::floor(x * kTwoOverPi + 0.5);
+    DD r = twoSum(x - k * kPio2A, -k * kPio2B);
+    r = twoSum(r.hi, r.lo - k * kPio2C);
+    DD s = sinDD(r.hi);
+    DD c = cosDD(r.hi);
+    // sin(h + l) = sin h + l cos h and cos(h + l) = cos h - l sin h, to first order in the tiny l.
+    s = ddAdd(s, {r.lo * c.hi, 0});
+    c = ddAdd(c, {-r.lo * s.hi, 0});
+    return (static_cast<std::int64_t>(k) & 1) == 0 ? ddDiv(s, c).hi : -ddDiv(c, s).hi;
+}
+
+double atan(double x) {
+    if (std::isnan(x)) {
+        return x;
+    }
+    double ax = std::fabs(x);
+    if (ax < 0x1p-27) {
+        return x;
+    }
+    DD r = std::isinf(x) ? kPio2DD : ax > 0x1p60 ? ddAdd(kPio2DD, {-(1.0 / ax), 0}) : atanPositive({ax, 0});
+    return std::copysign(r.hi, x);
+}
+
+// The special cases follow C99 Annex F (F.9.1.4).
+double atan2(double y, double x) {
+    if (std::isnan(x) || std::isnan(y)) {
+        return kNaN;
+    }
+    bool xNeg = std::signbit(x);
+    DD r{0, 0};
+    if (y == 0) {
+        r = xNeg ? kPiDD : DD{0, 0};
+    } else if (std::isinf(y)) {
+        r = std::isinf(x) ? (xNeg ? ddMul(kPiDD, {0.75, 0}) : ddMul(kPiDD, {0.25, 0})) : kPio2DD;
+    } else if (x == 0) {
+        r = kPio2DD;
+    } else if (std::isinf(x)) {
+        r = xNeg ? kPiDD : DD{0, 0};
+    } else {
+        r = atanRatio(std::fabs(y), std::fabs(x));
+        if (xNeg) {
+            r = ddAdd(kPiDD, ddNeg(r));
+        }
+    }
+    return std::copysign(r.hi, y);
+}
+
+double asin(double x) {
+    double ax = std::fabs(x);
+    if (std::isnan(x) || ax > 1.0) {
+        return kNaN;
+    }
+    if (ax < 0x1p-27) {
+        return x;
+    }
+    if (ax == 1.0) {
+        return std::copysign(kPio2DD.hi, x);
+    }
+    // asin(x) = atan(x / sqrt(1 - x^2)), with 1 - x^2 exact in double-double.
+    DD c = ddSqrt(ddAdd({1.0, 0}, ddNeg(twoProd(ax, ax))));
+    return std::copysign(atanPositive(ddDiv({ax, 0}, c)).hi, x);
+}
+
+double acos(double x) {
+    double ax = std::fabs(x);
+    if (std::isnan(x) || ax > 1.0) {
+        return kNaN;
+    }
+    if (ax < 0x1p-60) {
+        return ddAdd(kPio2DD, {-x, 0}).hi;
+    }
+    if (x == 1.0) {
+        return 0.0;
+    }
+    DD c = ddSqrt(ddAdd({1.0, 0}, ddNeg(twoProd(ax, ax))));
+    DD r = atanPositive(ddDiv(c, {ax, 0}));
+    return x < 0 ? ddAdd(kPiDD, ddNeg(r)).hi : r.hi;
+}
+
+double exp(double x) {
+    if (std::isnan(x)) {
+        return x;
+    }
+    if (x > 709.8) {
+        return kInf;
+    }
+    if (x < -745.2) {
+        return 0.0;
+    }
+    return expDD({x, 0});
+}
+
+double log(double x) {
+    if (std::isnan(x) || x < 0) {
+        return kNaN;
+    }
+    if (x == 0) {
+        return -kInf;
+    }
+    if (std::isinf(x)) {
+        return x;
+    }
+    return logDD(x).hi;
+}
+
+double log10(double x) {
+    if (std::isnan(x) || x < 0 || x == 0 || std::isinf(x)) {
+        return log(x);
+    }
+    return ddMul(logDD(x), kInvLn10).hi;
+}
+
+double round(double x) { return std::round(x); }
+
+const UnaryFn kUnary[8] = {tan, asin, acos, atan, exp, log, log10, round};
 
 } // namespace quartz::vm::math

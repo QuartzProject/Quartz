@@ -60,6 +60,15 @@ enum class Rt : std::uint8_t {
     TaskSave,
     TaskRestore,
     Closure,
+    Builtin,
+    Tan,
+    Asin,
+    Acos,
+    Atan,
+    Exp,
+    Log,
+    Log10,
+    Atan2,
     Count,
 };
 
@@ -225,6 +234,11 @@ private:
     void stringOp(const ir::Inst& in, ir::Intrinsic op);
     void mathOp(const ir::Inst& in, ir::Intrinsic op);
     llvm::Value* javaMinMax(llvm::Value* a, llvm::Value* b, bool isMin);
+    // Builtins.cpp
+    void extraIntrinsic(const ir::Inst& in, ir::Intrinsic op);
+    void runtimeBuiltin(const ir::Inst& in, ir::Intrinsic op);
+    /// After a runtime call that may charge fuel: inside an unchecked counted loop, continue in the checked copy.
+    void afterFuelCharge(llvm::Value* before);
 
     // Support (FunctionSupport.cpp)
     const std::vector<SlotKind>& kindsOf(ir::Reg r);

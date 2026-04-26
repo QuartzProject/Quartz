@@ -1,5 +1,7 @@
 #include "ir/Validator.hpp"
 
+#include "ir/Builtins.hpp"
+
 #include <algorithm>
 #include <format>
 #include <span>
@@ -246,6 +248,9 @@ private:
         case Intrinsic::MathMaxI: ok = sig({kI64, kI64}, kI64); break;
         case Intrinsic::Panic: ok = sig({kStr}, kVoid); break;
         case Intrinsic::Count: break;
+        default:
+            ok = builtinSignatureOk(t_, op, at, dst);
+            break;
         }
         if (!ok) {
             return fail(std::format("bad operand types for intrinsic {}", intrinsicName(op)));

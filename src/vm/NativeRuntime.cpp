@@ -1,5 +1,6 @@
-#include "vm/Sandbox.hpp"
+#include "vm/Builtins.hpp"
 #include "vm/Math.hpp"
+#include "vm/Sandbox.hpp"
 #include "vm/Tier.hpp"
 
 #include <bit>
@@ -285,6 +286,14 @@ double qzSin(double a) { return math::sin(a); }
 
 double qzCos(double a) { return math::cos(a); }
 
+std::uint32_t qzBuiltin(NativeCtx* c, std::uint32_t index, const Slot* args, Slot* out) {
+    std::int64_t& fuel = NativeRuntimeAccess::fuel(sb(c));
+    fuel = c->fuel;
+    bool ok = Builtins::run(sb(c), index, args, out);
+    c->fuel = fuel;
+    return ok ? 1 : 0;
+}
+
 template <class F>
 void* addr(F* f) {
     return reinterpret_cast<void*>(f);
@@ -331,6 +340,15 @@ const NativeSymbol kSymbols[] = {
     {"qz_task_save", addr(qzTaskSave)},
     {"qz_task_restore", addr(qzTaskRestore)},
     {"qz_closure", addr(qzClosure)},
+    {"qz_builtin", addr(qzBuiltin)},
+    {"qz_tan", addr(math::tan)},
+    {"qz_asin", addr(math::asin)},
+    {"qz_acos", addr(math::acos)},
+    {"qz_atan", addr(math::atan)},
+    {"qz_exp", addr(math::exp)},
+    {"qz_log", addr(math::log)},
+    {"qz_log10", addr(math::log10)},
+    {"qz_atan2", addr(math::atan2)},
 };
 
 } // namespace

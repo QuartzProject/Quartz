@@ -66,6 +66,9 @@ public:
     Reg toStr(Reg r, TypeId t);
     Reg coerce(Reg r, TypeId from, TypeId to);
     Op binaryOp(BinaryOp op) const;
+    // LowerBuiltins.cpp
+    void lowerAssert(CallExpr* e);
+    TypeId builtinElementParam(CallExpr* e, Intrinsic op, const Expr* arg);
 
     // emission
     Reg newReg(TypeId t);

@@ -141,6 +141,8 @@ public:
     bool mapRemove(Map* m, const Slot* key);
     Closure* newClosure(std::uint32_t function, std::uint32_t captures, std::uint32_t slots, const Slot* values);
     bool storeState(ir::TypeId type, const Slot* src, Slot* dst);
+    /// Charges fuel for work done natively (spec 9.2); false, with an out of fuel trap, once the budget is gone.
+    bool chargeFuel(std::int64_t units);
     void releaseState(ir::TypeId type, Slot* slots);
 
     bool scopeIn();
@@ -270,6 +272,7 @@ private:
     friend struct HostCall;
     friend class Interpreter;
     friend struct NativeRuntimeAccess;
+    friend struct Builtins;
 };
 
 } // namespace quartz::vm

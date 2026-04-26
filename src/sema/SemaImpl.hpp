@@ -11,6 +11,9 @@ namespace quartz::sema {
 
 inline constexpr std::string_view kMathPackage = "org.quartzlang.math";
 
+/// The math functions added after sqrt..max (CheckBuiltins.cpp).
+bool isExtraMathFunction(std::string_view name);
+
 using namespace syntax;
 
 struct TypeEntry {
@@ -93,6 +96,9 @@ public:
     bool bindArgs(CallExpr* call, const std::vector<TypeId>& params, const std::vector<Symbol>& names,
                   const std::vector<Expr*>& defaults, std::size_t skip);
     std::optional<BuiltinSig> builtinMethod(TypeId recv, std::string_view name);
+    // CheckBuiltins.cpp
+    std::optional<BuiltinSig> extraBuiltinMethod(TypeId recv, std::string_view name);
+    bool checkExtraBuiltinFunction(CallExpr* call, std::string_view name, TypeId expected, TypeId& result);
 
     // Generics.cpp
     void declareTraits();

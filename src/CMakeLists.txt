@@ -4,10 +4,10 @@ quartz_module(quartz_syntax SOURCES syntax/Lexer.cpp syntax/Parser.cpp syntax/Pa
 quartz_module(quartz_format SOURCES format/Format.cpp format/AstDump.cpp format/Printer.cpp format/PrintDecl.cpp
     format/PrintStmt.cpp format/PrintExpr.cpp DEPS quartz_syntax)
 quartz_module(quartz_sema SOURCES ir/Types.cpp sema/Declare.cpp sema/CheckExpr.cpp sema/CheckCall.cpp sema/Lambdas.cpp
-    sema/CheckStmt.cpp sema/Generics.cpp sema/Names.cpp DEPS quartz_syntax)
-quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/LowerLambda.cpp ir/Optimize.cpp ir/Validator.cpp
-    ir/TypeGraph.cpp ir/ValidateModule.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp DEPS quartz_sema quartz_monocypher)
-quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/HostValues.cpp vm/Link.cpp vm/Migrate.cpp vm/Math.cpp vm/ReprC.cpp vm/Interp.cpp
+    sema/CheckStmt.cpp sema/Generics.cpp sema/Names.cpp sema/CheckBuiltins.cpp DEPS quartz_syntax)
+quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/LowerLambda.cpp ir/LowerBuiltins.cpp ir/Optimize.cpp ir/Validator.cpp
+    ir/TypeGraph.cpp ir/ValidateModule.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp ir/Builtins.cpp DEPS quartz_sema quartz_monocypher)
+quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/HostValues.cpp vm/Link.cpp vm/Migrate.cpp vm/Math.cpp vm/ReprC.cpp vm/Interp.cpp vm/StrBuiltins.cpp vm/ListBuiltins.cpp
     std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Binary.cpp
     DEPS quartz_ir quartz_zstd)
 # Suspension-point liveness, shared with the native compiler (D69).

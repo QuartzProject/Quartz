@@ -81,6 +81,9 @@ class TierState;
     X(StrFromI) X(StrFromU) X(StrFromF) X(StrFromB) X(StrFromC)                                                        \
     X(Sqrt) X(Floor) X(Ceil) X(AbsF) X(AbsI) X(MinI) X(MaxI) X(MinF) X(MaxF) X(Pow) X(Sin) X(Cos)                       \
     X(Panic)                                                                                                           \
+    X(Builtin)   /* a.. = runtime builtin c (vm/Builtins.hpp) of the arguments at b.. */                              \
+    X(MathF1)    /* a = math::kUnary[c](b) */                                                                         \
+    X(Atan2)     /* a = atan2(b, c) */                                                                                \
     X(Wait)      /* suspend the task on handle a; resume value goes to b unless 0xFFFF; c = kind; type in next word */ \
     X(ScopeIn) X(ScopeOut)                                                                                             \
     X(Zero)      /* slots a..a+c = 0 */                                                                                \

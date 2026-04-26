@@ -1,0 +1,23 @@
+// expect: 0.5463024898437905 2.185039863261519 -0.373624453987599 0.3046926540153975 2.3461938234056494 1.2490457723982544 -1.5707963267948966
+// expect: 2.677945044588987 -3.141592653589793 0.0 2.356194490192345
+// expect: 2.0137527074704766 5.980196118639791e-305 inf -1.2039728043259361 -713.8013788281542 0.3010299956639812 22.0 nan
+// expect: -1.5 1.0 -2.0 2.0 1.0 0.3010299956639812
+// expect: 0 1.0 8 nan 3.141592653589793 6.283185307179586 inf
+// expect: 9223372036854775807 -9223372036854775808 true
+// trap: panic: no card 11 in a deck of 10
+
+import org.quartzlang.math
+import org.quartzlang.math.*
+
+fn main() -> int {
+    print("{tan(0.5)} {tan(-2.0)} {tan(1000000.0)} {asin(0.3)} {acos(-0.7)} {atan(3.0)} {atan(-1e300)}")
+    print("{atan2(1.0, -2.0)} {atan2(-0.0, -1.0)} {atan2(0.0, 0.0)} {atan2(1.0 / 0.0, -1.0 / 0.0)}")
+    print("{exp(0.7)} {exp(-700.5)} {exp(710.0)} {log(0.3)} {log(1e-310)} {log10(2.0)} {log10(1e22)} {log(-1.0)}")
+    print("{fmod(-7.5, 2.0)} {round(0.5)} {round(-1.5)} {round(2.4999999999999996)} {(1.25).round()} {(2.0).log10()}")
+    print("{clamp(-3, 0, 10)} {clamp(4.5, 0.0, 1.0)} {(7).clamp(8, 9)} {(0.0 / 0.0).clamp(0.0, 1.0)} {math.PI} {TAU} {INFINITY}")
+    print("{MAX_INT} {MIN_INT} {MAX_INT + 1 == MIN_INT}")
+    let deck = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert(deck.len() == 10, "lost cards")
+    assert(deck.contains(11), "no card {11} in a deck of {deck.len()}")
+    return 0
+}
