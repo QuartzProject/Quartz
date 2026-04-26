@@ -104,6 +104,7 @@ impl str {
 fn bytesOf(values: [int]) -> Bytes
 fn concatBytes(parts: [Bytes]) -> Bytes
 fn readUInt(data: Bytes, offset: int, size: int, bigEndian: bool = false) -> int
+fn writeUInt(data: Bytes, offset: int, size: int, value: int, bigEndian: bool = false) -> Bytes
 fn crc32(data: Bytes) -> int
 )";
 
@@ -143,6 +144,99 @@ pub const MAX_INT: int = 9223372036854775807
 pub const MIN_INT: int = -9223372036854775807 - 1
 )";
 
+// xoroshiro128++ seeded through SplitMix64, in plain integer code: every platform and tier gives the same sequence.
+constexpr std::string_view kRandomQz = R"(package org.quartzlang.random
+
+/// A seeded generator; copies share one sequence. `words` is its internal state, filled on first use.
+pub struct Random {
+    seed: int
+    words: [int] = []
+}
+
+fn rotl(x: int, k: int) -> int {
+    return (x << k) | ((x as u64) >> (64 - k)) as int
+}
+
+fn splitMix(x: int) -> int {
+    var z = x
+    z = (z ^ ((z as u64) >> 30) as int) * -4658895280553007687
+    z = (z ^ ((z as u64) >> 27) as int) * -7723592293110705685
+    return z ^ ((z as u64) >> 31) as int
+}
+
+impl Random {
+    /// The next 64 random bits.
+    pub fn nextLong(self) -> int {
+        let s = self.words
+        if s.len() != 2 {
+            s.clear()
+            s.push(splitMix(self.seed + -7046029254386353131))
+            s.push(splitMix(self.seed + -7046029254386353131 * 2))
+        }
+        let s0 = s[0]
+        var s1 = s[1]
+        let result = rotl(s0 + s1, 17) + s0
+        s1 ^= s0
+        s[0] = rotl(s0, 49) ^ s1 ^ (s1 << 21)
+        s[1] = rotl(s1, 28)
+        return result
+    }
+
+    /// Uniform in [0, bound) without modulo bias; bound must be positive.
+    pub fn nextInt(self, bound: int) -> int {
+        if bound <= 0 {
+            panic("nextInt bound must be positive, got {bound}")
+        }
+        let b = bound as u64
+        let threshold = (0 as u64 - b) % b
+        while true {
+            let r = self.nextLong() as u64
+            if r >= threshold {
+                return (r % b) as int
+            }
+        }
+        return 0
+    }
+
+    /// Uniform in [from, until); until must be greater than from.
+    pub fn nextIntIn(self, from: int, until: int) -> int {
+        if until <= from {
+            panic("nextIntIn needs from < until, got {from} and {until}")
+        }
+        let span = (until - from) as u64
+        let threshold = (0 as u64 - span) % span
+        while true {
+            let r = self.nextLong() as u64
+            if r >= threshold {
+                return from + (r % span) as int
+            }
+        }
+        return 0
+    }
+
+    /// Uniform in [0, 1), a multiple of 2^-53.
+    pub fn nextFloat(self) -> float {
+        return ((self.nextLong() as u64) >> 11) as float * 1.1102230246251565e-16
+    }
+
+    pub fn nextBool(self) -> bool {
+        return self.nextLong() < 0
+    }
+
+    /// Fisher-Yates from the last element down.
+    pub fn shuffle<T>(self, items: [T]) {
+        var i = items.len() - 1
+        while i > 0 {
+            let j = self.nextInt(i + 1)
+            let t = items[i]
+            items[i] = items[j]
+            items[j] = t
+            i -= 1
+        }
+    }
+}
+)";
+
 } // namespace
 
 const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
@@ -154,6 +248,7 @@ const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
         {"<std>/zip.qz", kZipQz},
         {"<std>/zip.qzi", kZipQzi},
         {"<std>/math.qz", kMathQz},
+        {"<std>/random.qz", kRandomQz},
     };
     return kSources;
 }

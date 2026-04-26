@@ -157,7 +157,7 @@ bool readUInt(vm::HostCall& call, void*) {
     auto b = bytesOf(call.args[0]);
     std::int64_t at = call.args[1].i;
     std::int64_t size = call.args[2].i;
-    if (size < 1 || size > 8 || at < 0 || static_cast<std::uint64_t>(at + size) > b.size()) {
+    if (size < 1 || size > 8 || at < 0 || at > static_cast<std::int64_t>(b.size()) - size) {
         call.error = std::format("cannot read {} bytes at {} of {}", size, at, b.size());
         return false;
     }
@@ -168,6 +168,25 @@ bool readUInt(vm::HostCall& call, void*) {
     }
     call.result.u = v;
     return true;
+}
+
+// A copy with the low `size` bytes of the value at `at`; a write that runs past the end extends the copy.
+bool writeUInt(vm::HostCall& call, void*) {
+    auto b = bytesOf(call.args[0]);
+    std::int64_t at = call.args[1].i;
+    std::int64_t size = call.args[2].i;
+    std::uint64_t v = call.args[3].u;
+    if (size < 1 || size > 8 || at < 0 || at > static_cast<std::int64_t>(b.size())) {
+        call.error = std::format("cannot write {} bytes at {} of {}", size, at, b.size());
+        return false;
+    }
+    std::vector<std::uint8_t> out(b.begin(), b.end());
+    out.resize(std::max(out.size(), static_cast<std::size_t>(at + size)));
+    for (std::int64_t k = 0; k < size; ++k) {
+        std::int64_t idx = call.args[4].u != 0 ? at + size - 1 - k : at + k;
+        out[static_cast<std::size_t>(idx)] = static_cast<std::uint8_t>(v >> (8 * k));
+    }
+    return returnBytes(call, out, &call.result);
 }
 
 bool crc(vm::HostCall& call, void*) {
@@ -519,6 +538,7 @@ void addBinaryNatives(std::vector<Native>& out) {
                               {"org.quartzlang.bytes.bytesOf", bytesFromList},
                               {"org.quartzlang.bytes.concatBytes", bytesConcat},
                               {"org.quartzlang.bytes.readUInt", readUInt},
+                              {"org.quartzlang.bytes.writeUInt", writeUInt},
                               {"org.quartzlang.bytes.crc32", crc},
                               {"org.quartzlang.compress.deflate", compressRaw},
                               {"org.quartzlang.compress.inflate", decompressRaw},

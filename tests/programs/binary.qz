@@ -4,6 +4,7 @@
 // expect: zip 2 a.txt 3 b.bin 2000
 // expect: crc 1095738169
 // expect: be 258 le 513
+// expect: write 0102 0102 0102ddccbbaa 8 fe 123456789 -2
 
 import org.quartzlang.bytes.*
 import org.quartzlang.compress.*
@@ -33,5 +34,8 @@ fn main() -> int {
     print("crc {crc32("The quick brown fox jumps over the lazy dog".toBytes())}")
     let two = bytesOf([1, 2])
     print("be {readUInt(two, 0, 2, true)} le {readUInt(two, 0, 2)}")
+    let grown = writeUInt(two, 2, 4, 2864434397)
+    let wide = writeUInt(bytesOf([]), 0, 8, -2, true)
+    print("write {two.hex()} {writeUInt(two, 0, 2, 513).hex()} {grown.hex()} {wide.len()} {wide.slice(7, 8).hex()} {readUInt(writeUInt(grown, 1, 5, 123456789, true), 1, 5, true)} {readUInt(wide, 0, 8, true)}")
     return 0
 }
