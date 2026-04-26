@@ -1,0 +1,211 @@
+package org.quartzlang.jvm;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import org.junit.jupiter.api.Test;
+
+class SandboxTest {
+    private static final String HOST = """
+            fn greet(name: str) -> str
+            fn fail(code: int) -> int
+            """;
+    private static final String PLUGIN = """
+            state Counter {
+                total: int
+            }
+            fn add(c: Counter, n: int) -> int {
+                c.total = c.total + n
+                return c.total
+            }
+            fn hello(name: str, times: int) -> str {
+                return greet("{name}x{times}")
+            }
+            fn divide(a: int, b: int) -> int {
+                return a / b
+            }
+            fn spin(n: int) -> int {
+                var i = 0
+                while i >= 0 {
+                    i += n
+                }
+                return i
+            }
+            fn check(code: int) -> int {
+                return fail(code) + 1
+            }
+            """;
+
+    private static Program plugin() {
+        return Quartz.compile(Source.of("host.qzi", HOST), Source.of("plugin.qz", PLUGIN));
+    }
+
+    private static Sandbox started(Program program, Limits limits) {
+        Sandbox sandbox = new Sandbox(program, limits);
+        sandbox.bind("greet", call -> "hi " + call.stringArg(0));
+        sandbox.bind("fail", call -> {
+            if (call.longArg(0) != 0) {
+                throw new IllegalStateException("boom " + call.longArg(0));
+            }
+            return 0L;
+        });
+        sandbox.start();
+        return sandbox;
+    }
+
+    @Test
+    void compilesAndCallsWithIntsAndStrings() {
+        try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT)) {
+            assertEquals(5, sandbox.call("add", 5).asLong());
+            assertEquals(12, sandbox.call("add", 7).asLong());
+            assertEquals("hi zoë x3", sandbox.call("hello", "zoë ", 3).asString());
+            CompileException bad = assertThrows(CompileException.class,
+                    () -> Quartz.compile(Source.of("bad.qz", "fn f() -> int {\n    return \"x\"\n}\n")));
+            assertTrue(bad.diagnostics().contains("error"), bad.diagnostics());
+        }
+    }
+
+    @Test
+    void stringResultsCannotOutliveTheNextCall() {
+        try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT)) {
+            Value first = sandbox.call("hello", "a", 1);
+            sandbox.call("add", 1);
+            assertThrows(IllegalStateException.class, first::asString);
+        }
+    }
+
+    @Test
+    void trapsLeaveTheSandboxUsable() {
+        try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT.withFuel(100_000))) {
+            TrapException division = assertThrows(TrapException.class, () -> sandbox.call("divide", 7, 0));
+            assertTrue(division.getMessage().contains("division"), division.getMessage());
+            assertEquals(3, sandbox.call("divide", 7, 2).asLong());
+            TrapException fuel = assertThrows(TrapException.class, () -> sandbox.call("spin", 1));
+            assertTrue(fuel.getMessage().contains("fuel"), fuel.getMessage());
+            assertEquals(4, sandbox.call("divide", 8, 2).asLong());
+        }
+    }
+
+    @Test
+    void hostExceptionsBecomeTraps() {
+        try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT)) {
+            TrapException trap = assertThrows(TrapException.class, () -> sandbox.call("check", 9));
+            assertTrue(trap.getMessage().contains("boom 9"), trap.getMessage());
+            assertInstanceOf(IllegalStateException.class, trap.getCause());
+            assertEquals(1, sandbox.call("check", 0).asLong());
+        }
+    }
+
+    @Test
+    void stateSurvivesExportAndImport() {
+        try (Program program = plugin(); Sandbox first = started(program, Limits.DEFAULT)) {
+            first.call("add", 40);
+            String json = first.exportState();
+            try (Sandbox second = started(program, Limits.DEFAULT)) {
+                second.importState(json);
+                assertEquals(42, second.call("add", 2).asLong());
+            }
+        }
+    }
+
+    @Test
+    void aWaitingTaskResumesWithTheHostValue() {
+        String host = "@handle\n@awaitable(int)\nstruct Ticket {}\nfn ticket() -> Ticket\n";
+        String plugin = "suspend fn twice() -> int {\n    let got = wait ticket()\n    return got * 2\n}\n";
+        try (Program program = Quartz.compile(Source.of("host.qzi", host), Source.of("task.qz", plugin));
+                Sandbox sandbox = new Sandbox(program)) {
+            sandbox.bind("ticket", call -> 77L);
+            sandbox.start();
+            TaskOutcome waiting = sandbox.spawn("twice");
+            assertEquals(TaskOutcome.Kind.WAIT, waiting.kind());
+            assertEquals(77, waiting.value().asLong());
+            TaskOutcome done = sandbox.resume(waiting.task(), 21L);
+            assertTrue(done.done());
+            assertEquals(42, done.value().asLong());
+        }
+    }
+
+    @Test
+    void linkedSandboxesCallEachOther() {
+        String economy = """
+                package org.example.economy
+                state Bank {
+                    money: Map<str, int>
+                }
+                fn balance(bank: Bank, who: str) -> int {
+                    return bank.money.get(who) ?? 100
+                }
+                fn pay(bank: Bank, who: str, amount: int) -> str {
+                    bank.money[who] = balance(bank, who) + amount
+                    return "{who}={bank.money[who]}"
+                }
+                """;
+        String iface = "package org.example.economy\n\nfn balance(a0: str) -> int\nfn pay(a0: str, a1: int) -> str\n";
+        String shop = """
+                import org.example.economy.*
+                fn buy(who: str) -> str {
+                    let receipt = pay(who, 0 - 30)
+                    return "{receipt} left {balance(who)}"
+                }
+                """;
+        try (Program eco = Quartz.compile(Source.of("eco.qz", economy));
+                Program client = Quartz.compile(Source.of("economy.qzi", iface), Source.of("shop.qz", shop));
+                Sandbox user = new Sandbox(client)) {
+            Sandbox provider = new Sandbox(eco);
+            user.link("org.example.economy", provider);
+            provider.start();
+            user.start();
+            assertEquals("ana=70 left 70", user.call("buy", "ana").asString());
+            provider.close();
+            assertEquals("ana=40 left 40", user.call("buy", "ana").asString());
+        }
+    }
+
+    @Test
+    void sandboxesSharingAProgramRunOnSeparateThreads() throws Exception {
+        try (Program program = plugin(); ExecutorService pool = Executors.newFixedThreadPool(3)) {
+            List<Future<Long>> results = new ArrayList<>();
+            for (int t = 0; t < 3; ++t) {
+                final long step = t + 1;
+                results.add(pool.submit(() -> {
+                    try (Sandbox sandbox = started(program, Limits.DEFAULT)) {
+                        long last = 0;
+                        for (int i = 0; i < 2_000; ++i) {
+                            last = sandbox.call("add", step).asLong();
+                            assertEquals("hi tx" + i, sandbox.call("hello", "t", i).asString());
+                        }
+                        return last;
+                    }
+                }));
+            }
+            for (int t = 0; t < 3; ++t) {
+                assertEquals(2_000L * (t + 1), results.get(t).get());
+            }
+
+            CountDownLatch inside = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            try (Sandbox shared = new Sandbox(program)) {
+                shared.bind("greet", call -> {
+                    inside.countDown();
+                    release.await();
+                    return "late";
+                });
+                shared.bind("fail", call -> 0L);
+                shared.start();
+                Future<String> busy = pool.submit(() -> shared.call("hello", "x", 1).asString());
+                inside.await();
+                assertThrows(IllegalStateException.class, () -> shared.call("add", 1));
+                release.countDown();
+                assertEquals("late", busy.get());
+            }
+        }
+    }
+}
