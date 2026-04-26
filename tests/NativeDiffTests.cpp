@@ -337,13 +337,18 @@ TEST_CASE("fuel charged by runtime builtins inside a counted loop matches the in
     std::string text = "fn main() -> int {\n"
                        "    var n = 0\n"
                        "    let line = \"alpha,beta,gamma,delta,epsilon,zeta,eta,theta,iota,kappa,lambda,mu\"\n"
+                       "    let words = line.split(\",\")\n"
                        "    for i in 0..300 {\n"
-                       "        n += line.split(\",\").len() + line.upper().len()\n"
+                       "        let up = \"{line}{i}\".upper()\n"
+                       "        if up.contains(\"ZETA\") && up != line && up.lower().startsWith(line) {\n"
+                       "            n += up.slice(-24, -1).len() + words.join(\";\").len()\n"
+                       "        }\n"
+                       "        n += line.split(\",\").len() + (up.find(\"MU\") ?? 0)\n"
                        "    }\n"
                        "    return n\n"
                        "}\n";
     auto p = withStd("builtin.qz", text);
-    for (std::int64_t fuel : {500, 2'399, 2'400, 2'401, 7'000, 100'000}) {
+    for (std::int64_t fuel : {500, 2'399, 2'400, 2'401, 7'000, 12'345, 100'000}) {
         CAPTURE(fuel);
         CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
     }

@@ -396,6 +396,8 @@ void FunctionCodegen::compare(const ir::Inst& in) {
         return;
     }
     if (t == ir::kStr || (info.kind == TypeKind::Nullable && info.elem == ir::kStr)) {
+        // The charge may branch into the checked loop copy, so the operands are read again after it.
+        chargeCompare(read1(in.a), read1(in.b), in.op == Op::Eq || in.op == Op::Ne, t != ir::kStr);
         llvm::Value* a = read1(in.a);
         llvm::Value* b = read1(in.b);
         if (in.op == Op::Eq || in.op == Op::Ne) {

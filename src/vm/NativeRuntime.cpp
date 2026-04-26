@@ -124,11 +124,39 @@ std::uint32_t qzPersist(NativeCtx* c, std::uint32_t type, Slot* value, std::uint
     return NativeRuntimeAccess::persist(sb(c), type, value, levels) ? 1 : 0;
 }
 
-Str* qzConcat(NativeCtx* c, const Slot* parts, std::uint32_t n) { return sb(c).concat(parts, n); }
+// Keeps the sandbox's fuel and the compiled code's in step around a runtime call that may charge (D34).
+class FuelSync {
+public:
+    explicit FuelSync(NativeCtx* c) : c_(c) { NativeRuntimeAccess::fuel(sb(c)) = c->fuel; }
 
-Str* qzSlice(NativeCtx* c, const Str* s, std::int64_t b, std::int64_t e) { return sb(c).sliceStr(s, b, e); }
+    FuelSync(const FuelSync&) = delete;
+    FuelSync& operator=(const FuelSync&) = delete;
 
-Str* qzCase(NativeCtx* c, const Str* s, std::uint32_t upper) { return sb(c).caseMap(s, upper != 0); }
+    ~FuelSync() { c_->fuel = NativeRuntimeAccess::fuel(sb(c_)); }
+
+private:
+    NativeCtx* c_;
+};
+
+Str* qzConcat(NativeCtx* c, const Slot* parts, std::uint32_t n) {
+    FuelSync sync(c);
+    return sb(c).concat(parts, n);
+}
+
+Str* qzSlice(NativeCtx* c, const Str* s, std::int64_t b, std::int64_t e) {
+    FuelSync sync(c);
+    return sb(c).sliceStr(s, b, e);
+}
+
+Str* qzCase(NativeCtx* c, const Str* s, std::uint32_t upper) {
+    FuelSync sync(c);
+    return sb(c).caseMap(s, upper != 0);
+}
+
+std::uint32_t qzCharge(NativeCtx* c, std::int64_t units) {
+    FuelSync sync(c);
+    return sb(c).chargeFuel(units) ? 1 : 0;
+}
 
 Str* qzFromI64(NativeCtx* c, std::int64_t v) { return sb(c).fromI64(v); }
 
@@ -155,6 +183,8 @@ std::int32_t qzStrCmp(const Str* a, const Str* b) {
     }
     return a->len < b->len ? -1 : a->len > b->len ? 1 : 0;
 }
+
+} // namespace
 
 #if defined(__SSE2__)
 // Candidates in [skip, 16) of the block at `base` whose first and last bytes match; -1 when none matches fully.
@@ -222,6 +252,8 @@ std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t
 }
 #endif
 
+namespace {
+
 std::uint32_t qzStrContains(const Str* a, const Str* b) {
     return findBytes(a->data, a->len, b->data, b->len) >= 0 ? 1 : 0;
 }
@@ -235,6 +267,7 @@ std::uint32_t qzStrEnds(const Str* a, const Str* b) { return a->view().ends_with
 List* qzListNew(NativeCtx* c, std::uint32_t elem) { return sb(c).newList(elem); }
 
 List* qzListFilled(NativeCtx* c, std::int64_t n, const Slot* v, std::uint32_t elem) {
+    FuelSync sync(c);
     return sb(c).filledList(n, v, elem);
 }
 
@@ -246,7 +279,10 @@ void qzListPop(NativeCtx* c, List* l, Slot* dst) { sb(c).listPop(l, dst); }
 
 void qzListClear(NativeCtx* c, List* l) { sb(c).listClear(l); }
 
-Str* qzJoin(NativeCtx* c, const List* l, const Str* sep) { return sb(c).join(l, sep); }
+Str* qzJoin(NativeCtx* c, const List* l, const Str* sep) {
+    FuelSync sync(c);
+    return sb(c).join(l, sep);
+}
 
 Map* qzMapNew(NativeCtx* c, std::uint32_t type) { return sb(c).newMap(type); }
 
@@ -287,11 +323,8 @@ double qzSin(double a) { return math::sin(a); }
 double qzCos(double a) { return math::cos(a); }
 
 std::uint32_t qzBuiltin(NativeCtx* c, std::uint32_t index, const Slot* args, Slot* out) {
-    std::int64_t& fuel = NativeRuntimeAccess::fuel(sb(c));
-    fuel = c->fuel;
-    bool ok = Builtins::run(sb(c), index, args, out);
-    c->fuel = fuel;
-    return ok ? 1 : 0;
+    FuelSync sync(c);
+    return Builtins::run(sb(c), index, args, out) ? 1 : 0;
 }
 
 template <class F>
@@ -349,6 +382,7 @@ const NativeSymbol kSymbols[] = {
     {"qz_log", addr(math::log)},
     {"qz_log10", addr(math::log10)},
     {"qz_atan2", addr(math::atan2)},
+    {"qz_charge", addr(qzCharge)},
 };
 
 } // namespace

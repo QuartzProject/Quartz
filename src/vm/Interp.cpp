@@ -77,6 +77,10 @@ int strCompare(const Str* a, const Str* b) {
     return a->len < b->len ? -1 : a->len > b->len ? 1 : 0;
 }
 
+std::uint32_t equalBytes(const Str* a, const Str* b) {
+    return a != nullptr && b != nullptr && a->len == b->len ? a->len : 0;
+}
+
 bool strEqNullable(const Str* a, const Str* b) {
     if (a == nullptr || b == nullptr) {
         return a == b;
@@ -166,6 +170,18 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
         pc += off;                                                                                                     \
         if (off < 0 && --fuel < 0) {                                                                                   \
             OUT_OF_FUEL(pc);                                                                                           \
+        }                                                                                                              \
+    } while (0)
+// Work that grows with its input charges like Sandbox::chargeFuel, which decides once the budget is overdrawn (D34).
+#define CHARGE_BYTES(bytes)                                                                                            \
+    do {                                                                                                               \
+        auto units_ = static_cast<std::int64_t>((bytes) >> kFuelByteShift);                                            \
+        fuel -= units_;                                                                                                \
+        if (units_ != 0 && fuel < 0) {                                                                                 \
+            fuel_ = fuel;                                                                                              \
+            bool ok_ = chargeFuel(0);                                                                                  \
+            fuel = fuel_;                                                                                              \
+            CHECK(ok_);                                                                                                \
         }                                                                                                              \
     } while (0)
 #define RA R[ins.a]
@@ -375,13 +391,17 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             NEXT();
             CASE(LeF32) RA.u = RB.f32 <= RC.f32;
             NEXT();
-            CASE(EqS) RA.u = strEqNullable(STR(RB), STR(RC));
+            CASE(EqS) CHARGE_BYTES(equalBytes(STR(RB), STR(RC)));
+            RA.u = strEqNullable(STR(RB), STR(RC));
             NEXT();
-            CASE(NeS) RA.u = !strEqNullable(STR(RB), STR(RC));
+            CASE(NeS) CHARGE_BYTES(equalBytes(STR(RB), STR(RC)));
+            RA.u = !strEqNullable(STR(RB), STR(RC));
             NEXT();
-            CASE(LtS) RA.u = strCompare(STR(RB), STR(RC)) < 0;
+            CASE(LtS) CHARGE_BYTES(std::min(STR(RB)->len, STR(RC)->len));
+            RA.u = strCompare(STR(RB), STR(RC)) < 0;
             NEXT();
-            CASE(LeS) RA.u = strCompare(STR(RB), STR(RC)) <= 0;
+            CASE(LeS) CHARGE_BYTES(std::min(STR(RB)->len, STR(RC)->len));
+            RA.u = strCompare(STR(RB), STR(RC)) <= 0;
             NEXT();
             CASE(EqN) {
                 std::uint32_t n = WORD();
@@ -554,7 +574,9 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             }
             CASE(ListFilled) {
                 ir::TypeId t = WORD();
+                fuel_ = fuel;
                 List* l = filledList(RB.i, &RC, t);
+                fuel = fuel_;
                 CHECK(l != nullptr);
                 RA.p = l;
                 NEXT();
@@ -624,7 +646,9 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             CASE(ListClear) listClear(LIST(RA));
             NEXT();
             CASE(ListJoin) {
+                fuel_ = fuel;
                 Str* s = join(LIST(RB), STR(RC));
+                fuel = fuel_;
                 CHECK(s != nullptr);
                 RA.p = s;
                 NEXT();
@@ -660,41 +684,53 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             CASE(StrLen) RA.i = STR(RB)->len;
             NEXT();
             CASE(StrConcat) {
+                fuel_ = fuel;
                 Str* s = concat(&RB, ins.c);
+                fuel = fuel_;
                 CHECK(s != nullptr);
                 RA.p = s;
                 NEXT();
             }
             CASE(StrSlice) {
+                fuel_ = fuel;
                 Str* s = sliceStr(STR(RB), (&RC)[0].i, (&RC)[1].i);
+                fuel = fuel_;
                 CHECK(s != nullptr);
                 RA.p = s;
                 NEXT();
             }
             CASE(StrLower) {
+                fuel_ = fuel;
                 Str* s = caseMap(STR(RB), false);
+                fuel = fuel_;
                 CHECK(s != nullptr);
                 RA.p = s;
                 NEXT();
             }
             CASE(StrUpper) {
+                fuel_ = fuel;
                 Str* s = caseMap(STR(RB), true);
+                fuel = fuel_;
                 CHECK(s != nullptr);
                 RA.p = s;
                 NEXT();
             }
-            CASE(StrContains) RA.u = STR(RB)->view().find(STR(RC)->view()) != std::string_view::npos;
+            CASE(StrContains) CHARGE_BYTES(std::uint64_t{STR(RB)->len} + STR(RC)->len);
+            RA.u = findBytes(STR(RB)->data, STR(RB)->len, STR(RC)->data, STR(RC)->len) >= 0;
             NEXT();
             CASE(StrFind) {
-                std::size_t at = STR(RB)->view().find(STR(RC)->view());
+                CHARGE_BYTES(std::uint64_t{STR(RB)->len} + STR(RC)->len);
+                std::int64_t at = findBytes(STR(RB)->data, STR(RB)->len, STR(RC)->data, STR(RC)->len);
                 Slot* d = &RA;
-                d[0].u = at != std::string_view::npos;
-                d[1].i = at != std::string_view::npos ? static_cast<std::int64_t>(at) : 0;
+                d[0].u = at >= 0 ? 1 : 0;
+                d[1].i = at >= 0 ? at : 0;
                 NEXT();
             }
-            CASE(StrStarts) RA.u = STR(RB)->view().starts_with(STR(RC)->view());
+            CASE(StrStarts) CHARGE_BYTES(STR(RC)->len);
+            RA.u = STR(RB)->view().starts_with(STR(RC)->view());
             NEXT();
-            CASE(StrEnds) RA.u = STR(RB)->view().ends_with(STR(RC)->view());
+            CASE(StrEnds) CHARGE_BYTES(STR(RC)->len);
+            RA.u = STR(RB)->view().ends_with(STR(RC)->view());
             NEXT();
             CASE(StrByteAt) {
                 const Str* s = STR(RB);

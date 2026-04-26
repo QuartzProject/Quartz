@@ -8,10 +8,11 @@
 namespace quartz::vm {
 
 class Sandbox;
-struct List;
 
-/// One fuel unit per this many bytes a runtime operation reads or writes (spec 9.2, D34).
+/// One fuel unit per this many bytes a runtime operation reads (spec 9.2, D34).
 inline constexpr std::uint32_t kFuelByteShift = 4;
+/// A byte written to new memory weighs this many read bytes: measured, filling fresh arena memory costs about that.
+inline constexpr std::uint64_t kFuelWriteFactor = 4;
 
 /// The runtime builtins (ir::isRuntimeBuiltin): the interpreter and the native tier call the same code, so both give
 /// the same bits and charge the same fuel. Arguments sit in consecutive slots in IR order; results go to `out`.
@@ -45,10 +46,10 @@ struct Builtins {
     static bool slice(Sandbox& sb, const Slot* a, Slot* out);
     static bool insertAll(Sandbox& sb, const Slot* a, Slot* out);
     static bool sort(Sandbox& sb, const Slot* a, Slot* out);
-
-private:
-    static bool makeRoom(Sandbox& sb, List* l, std::uint32_t at, std::uint32_t count);
 };
+
+/// Offset of the first `needle` in `hay` or -1, the same answer as std::string_view::find (NativeRuntime.cpp).
+std::int64_t findBytes(const char* hay, std::size_t hayLen, const char* needle, std::size_t needleLen);
 
 /// Decodes one UTF-8 scalar at `i`; malformed input reads as U+FFFD for one byte.
 std::uint32_t decodeUtf8(std::string_view s, std::size_t& i);

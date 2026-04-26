@@ -1,6 +1,7 @@
 #include "ir/Builtins.hpp"
 
 #include "Codegen.hpp"
+#include "vm/Builtins.hpp"
 #include "vm/NativeAbi.hpp"
 
 #include <llvm/IR/Intrinsics.h>
@@ -33,6 +34,61 @@ void FunctionCodegen::runtimeBuiltin(const ir::Inst& in, Intrinsic op) {
         write(in.dst, loadSlots(out, 0, kindsOf(in.dst), U.tbaaSlot));
     }
     afterFuelCharge(before);
+}
+
+// parity: the interpreter's CHARGE_BYTES and Builtins::chargeBytes (D34)
+void FunctionCodegen::chargeBytes(llvm::Value* bytes) {
+    llvm::Value* units = B_.CreateLShr(bytes, constI64(vm::kFuelByteShift));
+    llvm::Value* before = B_.CreateLoad(U.i64, fuel_);
+    llvm::Value* left = B_.CreateSub(before, units);
+    B_.CreateStore(left, fuel_);
+    // Only an overdrawn budget needs the runtime, which decides between trapping and a task's overdraft.
+    llvm::BasicBlock* charge = llvm::BasicBlock::Create(U.C, "charge", F_);
+    llvm::BasicBlock* cont = llvm::BasicBlock::Create(U.C, "charged", F_);
+    B_.CreateCondBr(B_.CreateAnd(B_.CreateICmpNE(units, constI64(0)), B_.CreateICmpSLT(left, constI64(0))), charge,
+                    cont, U.cold);
+    B_.SetInsertPoint(charge);
+    spillFuel();
+    llvm::Value* ok = B_.CreateCall(U.runtime(Rt::Charge), {ctx_, constI64(0)});
+    reloadFuel();
+    trapIf(B_.CreateICmpEQ(ok, constI32(0)), static_cast<ir::TrapCode>(vm::kTrapAlreadySet));
+    B_.CreateBr(cont);
+    B_.SetInsertPoint(cont);
+    afterFuelCharge(before);
+}
+
+void FunctionCodegen::chargeCompare(llvm::Value* a, llvm::Value* b, bool equality, bool nullable) {
+    auto bytes = [&] {
+        llvm::Value* la = B_.CreateZExt(loadField(U.i32, a, offsetof(vm::Str, len), U.tbaaStr), U.i64);
+        llvm::Value* lb = B_.CreateZExt(loadField(U.i32, b, offsetof(vm::Str, len), U.tbaaStr), U.i64);
+        return equality ? B_.CreateSelect(B_.CreateICmpEQ(la, lb), la, constI64(0))
+                        : B_.CreateSelect(B_.CreateICmpULT(la, lb), la, lb);
+    };
+    if (!nullable) {
+        chargeBytes(bytes());
+        return;
+    }
+    llvm::BasicBlock* from = B_.GetInsertBlock();
+    llvm::BasicBlock* both = llvm::BasicBlock::Create(U.C, "cmp.lens", F_);
+    llvm::BasicBlock* join = llvm::BasicBlock::Create(U.C, "cmp.bytes", F_);
+    B_.CreateCondBr(B_.CreateAnd(B_.CreateIsNotNull(a), B_.CreateIsNotNull(b)), both, join);
+    B_.SetInsertPoint(both);
+    llvm::Value* n = bytes();
+    llvm::BasicBlock* bothEnd = B_.GetInsertBlock();
+    B_.CreateBr(join);
+    B_.SetInsertPoint(join);
+    llvm::PHINode* phi = B_.CreatePHI(U.i64, 2);
+    phi->addIncoming(constI64(0), from);
+    phi->addIncoming(n, bothEnd);
+    chargeBytes(phi);
+}
+
+llvm::Value* FunctionCodegen::chargingCall(Rt rt, llvm::ArrayRef<llvm::Value*> args, llvm::Value*& result) {
+    llvm::Value* before = B_.CreateLoad(U.i64, fuel_);
+    spillFuel();
+    result = B_.CreateCall(U.runtime(rt), args);
+    reloadFuel();
+    return before;
 }
 
 void FunctionCodegen::extraIntrinsic(const ir::Inst& in, Intrinsic op) {

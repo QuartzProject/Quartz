@@ -200,7 +200,7 @@ bool Builtins::slice(Sandbox& sb, const Slot* a, Slot* out) {
         return sb.fail(ir::TrapCode::IndexOutOfBounds, std::format("slice [{}, {}) of a list of {}", b, e, len));
     }
     auto n = static_cast<std::uint32_t>(to - from);
-    if (!chargeBytes(sb, std::uint64_t{n} * l->stride())) {
+    if (!chargeBytes(sb, kFuelWriteFactor * std::uint64_t{n} * l->stride())) {
         return false;
     }
     List* r = sb.newList(l->elemType);
@@ -231,7 +231,7 @@ bool Builtins::insertAll(Sandbox& sb, const Slot* a, Slot*) {
     if (std::uint64_t{len0} + n > 0x7FFFFFFFu) {
         return sb.fail(ir::TrapCode::OutOfMemory, "list too large");
     }
-    std::uint64_t moved = (std::uint64_t{len0} - static_cast<std::uint64_t>(i) + n) * l->stride();
+    std::uint64_t moved = (std::uint64_t{len0} - static_cast<std::uint64_t>(i) + kFuelWriteFactor * n) * l->stride();
     if (!chargeBytes(sb, moved) || (l->cap < len0 + n && !sb.growList(l, len0 + n))) {
         return false;
     }
@@ -262,7 +262,7 @@ bool Builtins::sort(Sandbox& sb, const Slot* a, Slot*) {
     if (n < 2) {
         return true;
     }
-    std::uint64_t bytes = n * log2Ceil(n) * 8;
+    std::uint64_t bytes = n * log2Ceil(n) * 16;
     if (l->elemType == ir::kStr) {
         for (std::uint64_t i = 0; i < n; ++i) {
             bytes += static_cast<const Str*>(l->data[i].p)->len * log2Ceil(n);

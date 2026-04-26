@@ -1,5 +1,6 @@
 #include "vm/Sandbox.hpp"
 
+#include "vm/Builtins.hpp"
 #include "vm/ReprC.hpp"
 
 #include <algorithm>
@@ -236,6 +237,9 @@ Str* Sandbox::concat(const Slot* parts, std::uint32_t count) {
     for (std::uint32_t i = 0; i < count; ++i) {
         total += static_cast<const Str*>(parts[i].p)->len;
     }
+    if (!Builtins::chargeBytes(*this, kFuelWriteFactor * total)) {
+        return nullptr;
+    }
     Str* s = allocStr(total);
     if (s == nullptr) {
         return nullptr;
@@ -260,10 +264,16 @@ Str* Sandbox::sliceStr(const Str* s, std::int64_t begin, std::int64_t end) {
         fail(ir::TrapCode::IndexOutOfBounds, std::format("slice [{}, {}) of a string of {} bytes", begin, end, s->len));
         return nullptr;
     }
+    if (!Builtins::chargeBytes(*this, kFuelWriteFactor * static_cast<std::uint64_t>(to - from))) {
+        return nullptr;
+    }
     return newStr(std::string_view(s->data + from, static_cast<std::size_t>(to - from)));
 }
 
 Str* Sandbox::caseMap(const Str* s, bool upper) {
+    if (!Builtins::chargeBytes(*this, (1 + kFuelWriteFactor) * s->len)) {
+        return nullptr;
+    }
     Str* out = allocStr(s->len);
     if (out == nullptr) {
         return nullptr;
@@ -377,6 +387,10 @@ List* Sandbox::filledList(std::int64_t n, const Slot* value, TypeId elem) {
         fail(ir::TrapCode::OutOfMemory, std::format("cannot create a list of {} elements", n));
         return nullptr;
     }
+    std::uint64_t stride = elem == ir::kBool ? 1 : program_->layouts->slots(elem) * sizeof(Slot);
+    if (!Builtins::chargeBytes(*this, kFuelWriteFactor * static_cast<std::uint64_t>(n) * stride)) {
+        return nullptr;
+    }
     List* l = newList(elem);
     if (l == nullptr || (n > 0 && !growList(l, static_cast<std::uint32_t>(n)))) {
         return nullptr;
@@ -476,6 +490,9 @@ Str* Sandbox::join(const List* l, const Str* sep) {
     std::size_t total = l->len > 0 ? static_cast<std::size_t>(l->len - 1) * sep->len : 0;
     for (std::uint32_t i = 0; i < l->len; ++i) {
         total += static_cast<const Str*>(l->data[i].p)->len;
+    }
+    if (!Builtins::chargeBytes(*this, kFuelWriteFactor * total)) {
+        return nullptr;
     }
     Str* s = allocStr(total);
     if (s == nullptr) {

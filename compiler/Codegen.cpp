@@ -38,6 +38,7 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_builtin", false, false},   {"qz_tan", false, false},         {"qz_asin", false, false},
     {"qz_acos", false, false},      {"qz_atan", false, false},        {"qz_exp", false, false},
     {"qz_log", false, false},       {"qz_log10", false, false},       {"qz_atan2", false, false},
+    {"qz_charge", false, true},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
 
@@ -260,6 +261,9 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
         break;
     case Rt::Builtin:
         ty = llvm::FunctionType::get(i32, {ptr, i32, ptr, ptr}, false);
+        break;
+    case Rt::Charge:
+        ty = llvm::FunctionType::get(i32, {ptr, i64}, false);
         break;
     case Rt::TaskWait:
         ty = llvm::FunctionType::get(v, {ptr, i32, i64, i32}, false);

@@ -69,6 +69,7 @@ enum class Rt : std::uint8_t {
     Log,
     Log10,
     Atan2,
+    Charge,
     Count,
 };
 
@@ -239,6 +240,12 @@ private:
     void runtimeBuiltin(const ir::Inst& in, ir::Intrinsic op);
     /// After a runtime call that may charge fuel: inside an unchecked counted loop, continue in the checked copy.
     void afterFuelCharge(llvm::Value* before);
+    /// Charges the fuel for touching `bytes` (an i64) as Builtins::chargeBytes does; a cold call when nonzero.
+    void chargeBytes(llvm::Value* bytes);
+    /// A runtime call that may charge fuel: ctx->fuel is kept in sync around it. Returns the fuel before it.
+    llvm::Value* chargingCall(Rt rt, llvm::ArrayRef<llvm::Value*> args, llvm::Value*& result);
+    /// String comparisons charge for the bytes they compare (D34): equal lengths for ==, the shorter for <.
+    void chargeCompare(llvm::Value* a, llvm::Value* b, bool equality, bool nullable);
 
     // Support (FunctionSupport.cpp)
     const std::vector<SlotKind>& kindsOf(ir::Reg r);

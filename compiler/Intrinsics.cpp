@@ -173,6 +173,15 @@ void FunctionCodegen::stringOp(const ir::Inst& in, Intrinsic op) {
         trapIf(B_.CreateIsNull(p), kAlreadySet);
         write1(in.dst, p);
     };
+    auto charged = [&](Rt rt, llvm::ArrayRef<llvm::Value*> args) {
+        llvm::Value* p = nullptr;
+        llvm::Value* before = chargingCall(rt, args, p);
+        checked(p);
+        afterFuelCharge(before);
+    };
+    auto bytes = [&](llvm::Value* s) {
+        return B_.CreateZExt(loadField(U.i32, s, offsetof(vm::Str, len), U.tbaaStr), U.i64);
+    };
     switch (op) {
     case Intrinsic::StrLen:
         write1(in.dst, B_.CreateZExt(loadField(U.i32, arg(0), offsetof(vm::Str, len), U.tbaaStr), U.i64));
@@ -182,19 +191,20 @@ void FunctionCodegen::stringOp(const ir::Inst& in, Intrinsic op) {
         for (std::uint32_t i = 0; i < in.argCount; ++i) {
             storeSlot(s, i, arg(i), SlotKind::Ptr, U.tbaaSlot);
         }
-        checked(B_.CreateCall(U.runtime(Rt::Concat), {ctx_, s, constI32(in.argCount)}));
+        charged(Rt::Concat, {ctx_, s, constI32(in.argCount)});
         return;
     }
     case Intrinsic::StrSlice:
-        checked(B_.CreateCall(U.runtime(Rt::Slice), {ctx_, arg(0), arg(1), arg(2)}));
+        charged(Rt::Slice, {ctx_, arg(0), arg(1), arg(2)});
         return;
     case Intrinsic::StrLower:
     case Intrinsic::StrUpper:
-        checked(B_.CreateCall(U.runtime(Rt::CaseMap), {ctx_, arg(0), constI32(op == Intrinsic::StrUpper ? 1 : 0)}));
+        charged(Rt::CaseMap, {ctx_, arg(0), constI32(op == Intrinsic::StrUpper ? 1 : 0)});
         return;
     case Intrinsic::StrContains:
     case Intrinsic::StrStartsWith:
     case Intrinsic::StrEndsWith: {
+        chargeBytes(op == Intrinsic::StrContains ? B_.CreateAdd(bytes(arg(0)), bytes(arg(1))) : bytes(arg(1)));
         Rt rt = op == Intrinsic::StrContains     ? Rt::StrContains
                 : op == Intrinsic::StrStartsWith ? Rt::StrStarts
                                                  : Rt::StrEnds;
@@ -202,6 +212,7 @@ void FunctionCodegen::stringOp(const ir::Inst& in, Intrinsic op) {
         return;
     }
     case Intrinsic::StrFind: {
+        chargeBytes(B_.CreateAdd(bytes(arg(0)), bytes(arg(1))));
         llvm::Value* at = B_.CreateCall(U.runtime(Rt::StrFind), {arg(0), arg(1)});
         llvm::Value* found = B_.CreateICmpSGE(at, constI64(0));
         write(in.dst, Values{found, B_.CreateSelect(found, at, constI64(0))});
@@ -322,7 +333,11 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         ir::Reg value = fn_.args[in.argBegin + 1];
         llvm::Value* s = scratch(static_cast<std::uint32_t>(kindsOf(value).size()));
         storeSlots(s, 0, read(value), kindsOf(value), U.tbaaSlot);
-        checked(B_.CreateCall(U.runtime(Rt::ListFilled), {ctx_, arg(0), s, constI32(U.T.info(fn_.regs[in.dst]).elem)}));
+        llvm::Value* l = nullptr;
+        llvm::Value* before =
+            chargingCall(Rt::ListFilled, {ctx_, arg(0), s, constI32(U.T.info(fn_.regs[in.dst]).elem)}, l);
+        checked(l);
+        afterFuelCharge(before);
         return;
     }
     case Intrinsic::ListLen:
@@ -352,9 +367,13 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         }
         return;
     }
-    case Intrinsic::ListJoin:
-        checked(B_.CreateCall(U.runtime(Rt::Join), {ctx_, arg(0), arg(1)}));
+    case Intrinsic::ListJoin: {
+        llvm::Value* s = nullptr;
+        llvm::Value* before = chargingCall(Rt::Join, {ctx_, arg(0), arg(1)}, s);
+        checked(s);
+        afterFuelCharge(before);
         return;
+    }
     case Intrinsic::MapNew:
         checked(B_.CreateCall(U.runtime(Rt::MapNew), {ctx_, constI32(fn_.regs[in.dst])}));
         return;

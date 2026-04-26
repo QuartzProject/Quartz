@@ -105,14 +105,25 @@ std::string_view trimmed(std::string_view s, bool start, bool end) {
 bool trimWith(Sandbox& sb, const Slot* a, Slot* out, bool start, bool end) {
     const Str* s = strOf(a[0]);
     std::string_view t = trimmed(s->view(), start, end);
-    if (!Builtins::chargeBytes(sb, s->len)) {
+    bool same = t.size() == s->len;
+    if (!Builtins::chargeBytes(sb, s->len + (same ? 0 : kFuelWriteFactor * t.size()))) {
         return false;
     }
-    if (t.size() == s->len) {
+    if (same) {
         out[0].p = const_cast<Str*>(s);
         return true;
     }
     return setStr(out, copyOf(sb, t));
+}
+
+// A new string in a list costs about this many bytes beyond its own (measured with split, D34).
+constexpr std::uint64_t kPieceBytes = 128;
+// Each replacement costs about this many bytes beyond the text copied (measured with replace, D34).
+constexpr std::uint64_t kMatchBytes = 96;
+
+std::size_t find(std::string_view hay, std::string_view needle, std::size_t from) {
+    std::int64_t at = findBytes(hay.data() + from, hay.size() - from, needle.data(), needle.size());
+    return at < 0 ? std::string_view::npos : from + static_cast<std::size_t>(at);
 }
 
 bool pushStr(Sandbox& sb, List* l, std::string_view piece) {
@@ -168,7 +179,7 @@ bool Builtins::toInt(Sandbox& sb, const Slot* a, Slot* out) {
     std::string_view s = strOf(a[0])->view();
     out[0].u = 0;
     out[1].u = 0;
-    if (!chargeBytes(sb, s.size())) {
+    if (!chargeBytes(sb, kFuelWriteFactor * s.size())) {
         return false;
     }
     std::size_t i = 0;
@@ -201,7 +212,7 @@ bool Builtins::toFloat(Sandbox& sb, const Slot* a, Slot* out) {
     std::string_view s = strOf(a[0])->view();
     out[0].u = 0;
     out[1].u = 0;
-    if (!chargeBytes(sb, s.size())) {
+    if (!chargeBytes(sb, kFuelWriteFactor * s.size())) {
         return false;
     }
     std::size_t i = 0;
@@ -274,7 +285,7 @@ bool Builtins::replace(Sandbox& sb, const Slot* a, Slot* out) {
         return true;
     }
     std::uint64_t count = 0;
-    for (std::size_t at = text.find(from); at != std::string_view::npos; at = text.find(from, at + from.size())) {
+    for (std::size_t at = find(text, from, 0); at != std::string_view::npos; at = find(text, from, at + from.size())) {
         ++count;
     }
     if (count == 0) {
@@ -282,7 +293,7 @@ bool Builtins::replace(Sandbox& sb, const Slot* a, Slot* out) {
         return true;
     }
     std::uint64_t total = text.size() - count * from.size() + count * to.size();
-    if (!chargeBytes(sb, total)) {
+    if (!chargeBytes(sb, kFuelWriteFactor * total + kMatchBytes * count)) {
         return false;
     }
     Str* r = sb.allocStr(total);
@@ -291,7 +302,7 @@ bool Builtins::replace(Sandbox& sb, const Slot* a, Slot* out) {
     }
     char* w = r->data;
     std::size_t last = 0;
-    for (std::size_t at = text.find(from); at != std::string_view::npos; at = text.find(from, at + from.size())) {
+    for (std::size_t at = find(text, from, 0); at != std::string_view::npos; at = find(text, from, at + from.size())) {
         std::memcpy(w, text.data() + last, at - last);
         w += at - last;
         std::memcpy(w, to.data(), to.size());
@@ -316,7 +327,7 @@ bool Builtins::split(Sandbox& sb, const Slot* a, Slot* out) {
         for (std::size_t i = 0; i < text.size();) {
             std::size_t b = i;
             decodeUtf8(text, i);
-            if (!chargeBytes(sb, 16) || !pushStr(sb, l, text.substr(b, i - b))) {
+            if (!chargeBytes(sb, kPieceBytes + kFuelWriteFactor * (i - b)) || !pushStr(sb, l, text.substr(b, i - b))) {
                 return false;
             }
         }
@@ -324,9 +335,10 @@ bool Builtins::split(Sandbox& sb, const Slot* a, Slot* out) {
         return true;
     }
     std::size_t last = 0;
-    for (std::size_t at = text.find(sep);; at = text.find(sep, last)) {
+    for (std::size_t at = find(text, sep, 0);; at = find(text, sep, last)) {
         std::size_t end = at == std::string_view::npos ? text.size() : at;
-        if (!chargeBytes(sb, 16 + end - last) || !pushStr(sb, l, text.substr(last, end - last))) {
+        if (!chargeBytes(sb, kPieceBytes + kFuelWriteFactor * (end - last)) ||
+            !pushStr(sb, l, text.substr(last, end - last))) {
             return false;
         }
         if (at == std::string_view::npos) {
@@ -356,7 +368,7 @@ bool Builtins::repeat(Sandbox& sb, const Slot* a, Slot* out) {
         return sb.fail(ir::TrapCode::OutOfMemory, "string too long");
     }
     std::uint64_t total = static_cast<std::uint64_t>(n) * s->len;
-    if (!chargeBytes(sb, total)) {
+    if (!chargeBytes(sb, kFuelWriteFactor * total)) {
         return false;
     }
     Str* r = sb.allocStr(total);
@@ -392,7 +404,7 @@ bool Builtins::chars(Sandbox& sb, const Slot* a, Slot* out) {
     std::string_view text = strOf(a[0])->view();
     out[0].p = nullptr;
     List* l = sb.newList(ir::kChar);
-    if (l == nullptr || !chargeBytes(sb, text.size() * 8)) {
+    if (l == nullptr || !chargeBytes(sb, text.size() + kFuelWriteFactor * 8 * text.size())) {
         return false;
     }
     for (std::size_t i = 0; i < text.size();) {
