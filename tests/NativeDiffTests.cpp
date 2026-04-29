@@ -298,6 +298,9 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         "return \"abc\".slice(-4, 2).len()",
         "assert(xs().len() > 2, \"short: {xs().len()}\")\n    return 0",
         "let s = \"x\".repeat(4000)\n    var n = 0\n    for i in 0..300 { n += s.replace(s, s).len() }\n    return n",
+        "return [1, 2, 3].map((x) => 10 / (x - 2)).len()",
+        "var s = 0\n    for i in 0..9000 { s += [3, 1, 2].filter((x) => x > 1).len() }\n    return s",
+        "let ps = [(2, 1.0), (1, 2.0), (2, 3.0)]\n    ps.sortWith((a, b) => a.0 - b.0)\n    return ps[2].0",
     };
     for (const char* body : bodies) {
         CAPTURE(body);

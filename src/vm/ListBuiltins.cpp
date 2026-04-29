@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <bit>
 #include <format>
+#include <vector>
 
 namespace quartz::vm {
 
@@ -255,6 +256,37 @@ bool Builtins::insertAll(Sandbox& sb, const Slot* a, Slot*) {
     return true;
 }
 
+namespace {
+
+// Calls `f` with the strict weak order sort() uses for elements of type `t`.
+template <class F>
+void withOrder(const ir::TypeTable& types, ir::TypeId t, F&& f) {
+    if (t == ir::kF64) {
+        f([](Slot x, Slot y) { return floatKey(x.f) < floatKey(y.f); });
+    } else if (t == ir::kF32) {
+        f([](Slot x, Slot y) { return floatKey32(x.f32) < floatKey32(y.f32); });
+    } else if (t == ir::kStr) {
+        f([](Slot x, Slot y) { return compareStr(static_cast<const Str*>(x.p), static_cast<const Str*>(y.p)) < 0; });
+    } else if (types.isInteger(t) && types.isSigned(t)) {
+        f([](Slot x, Slot y) { return x.i < y.i; });
+    } else {
+        f([](Slot x, Slot y) { return x.u < y.u; });
+    }
+}
+
+std::uint64_t sortBytes(const List* l) {
+    std::uint64_t n = l->len;
+    std::uint64_t bytes = n * log2Ceil(n) * 16;
+    if (l->elemType == ir::kStr) {
+        for (std::uint64_t i = 0; i < n; ++i) {
+            bytes += static_cast<const Str*>(l->data[i].p)->len * log2Ceil(n);
+        }
+    }
+    return bytes;
+}
+
+} // namespace
+
 // Stable; floats in IEEE totalOrder (-0.0 before 0.0) with every NaN last; str by bytes.
 bool Builtins::sort(Sandbox& sb, const Slot* a, Slot*) {
     List* l = listOf(a[0]);
@@ -262,13 +294,7 @@ bool Builtins::sort(Sandbox& sb, const Slot* a, Slot*) {
     if (n < 2) {
         return true;
     }
-    std::uint64_t bytes = n * log2Ceil(n) * 16;
-    if (l->elemType == ir::kStr) {
-        for (std::uint64_t i = 0; i < n; ++i) {
-            bytes += static_cast<const Str*>(l->data[i].p)->len * log2Ceil(n);
-        }
-    }
-    if (!chargeBytes(sb, bytes)) {
+    if (!chargeBytes(sb, sortBytes(l))) {
         return false;
     }
     if (l->packed) {
@@ -277,23 +303,43 @@ bool Builtins::sort(Sandbox& sb, const Slot* a, Slot*) {
         std::memset(l->bytes() + (n - ones), 1, ones);
         return true;
     }
-    Slot* first = l->data;
-    Slot* last = l->data + n;
-    const ir::TypeTable& types = sb.program().module->types;
-    ir::TypeId t = l->elemType;
-    if (t == ir::kF64) {
-        std::stable_sort(first, last, [](Slot x, Slot y) { return floatKey(x.f) < floatKey(y.f); });
-    } else if (t == ir::kF32) {
-        std::stable_sort(first, last, [](Slot x, Slot y) { return floatKey32(x.f32) < floatKey32(y.f32); });
-    } else if (t == ir::kStr) {
-        std::stable_sort(first, last, [](Slot x, Slot y) {
-            return compareStr(static_cast<const Str*>(x.p), static_cast<const Str*>(y.p)) < 0;
-        });
-    } else if (types.isInteger(t) && types.isSigned(t)) {
-        std::stable_sort(first, last, [](Slot x, Slot y) { return x.i < y.i; });
-    } else {
-        std::stable_sort(first, last, [](Slot x, Slot y) { return x.u < y.u; });
+    withOrder(sb.program().module->types, l->elemType,
+              [&](auto less) { std::stable_sort(l->data, l->data + n, less); });
+    return true;
+}
+
+// Reorders the list stably by the keys sortBy computed, comparing them as sort() would; the keys stay as they were.
+bool Builtins::sortByKeys(Sandbox& sb, const Slot* a, Slot*) {
+    List* l = listOf(a[0]);
+    const List* keys = listOf(a[1]);
+    std::uint32_t n = l->len;
+    if (keys->len != n) {
+        return sb.fail(ir::TrapCode::IndexOutOfBounds, std::format("{} sort keys for a list of {}", keys->len, n));
     }
+    if (n < 2) {
+        return true;
+    }
+    if (!chargeBytes(sb, sortBytes(keys) + kFuelWriteFactor * std::uint64_t{n} * (l->stride() + 8))) {
+        return false;
+    }
+    std::vector<Slot> k(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        k[i] = keys->packed ? Slot{.u = keys->bytes()[i]} : keys->data[i];
+    }
+    std::vector<std::uint32_t> order(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        order[i] = i;
+    }
+    withOrder(sb.program().module->types, keys->packed ? ir::kBool : keys->elemType, [&](auto less) {
+        std::stable_sort(order.begin(), order.end(),
+                         [&](std::uint32_t x, std::uint32_t y) { return less(k[x], k[y]); });
+    });
+    std::size_t stride = l->stride();
+    std::vector<std::uint8_t> moved(std::size_t{n} * stride);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        std::memcpy(moved.data() + i * stride, at(l, order[i]), stride);
+    }
+    std::memcpy(l->bytes(), moved.data(), moved.size());
     return true;
 }
 

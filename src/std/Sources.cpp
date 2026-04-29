@@ -237,6 +237,114 @@ impl Random {
 }
 )";
 
+// The higher order list methods (`xs.map(f)`): sema calls these with the list as the first argument.
+constexpr std::string_view kListsQz = R"(package org.quartzlang.lists
+
+import org.quartzlang.math.min
+
+pub fn map<T, U>(xs: [T], f: fn(T) -> U) -> [U] {
+    let out = List::<U>()
+    for x in xs {
+        out.push(f(x))
+    }
+    return out
+}
+
+pub fn filter<T>(xs: [T], keep: fn(T) -> bool) -> [T] {
+    let out = List::<T>()
+    for x in xs {
+        if keep(x) {
+            out.push(x)
+        }
+    }
+    return out
+}
+
+pub fn any<T>(xs: [T], test: fn(T) -> bool) -> bool {
+    for x in xs {
+        if test(x) {
+            return true
+        }
+    }
+    return false
+}
+
+pub fn all<T>(xs: [T], test: fn(T) -> bool) -> bool {
+    for x in xs {
+        if !test(x) {
+            return false
+        }
+    }
+    return true
+}
+
+pub fn find<T>(xs: [T], test: fn(T) -> bool) -> T? {
+    for x in xs {
+        if test(x) {
+            return x
+        }
+    }
+    return null
+}
+
+pub fn indexWhere<T>(xs: [T], test: fn(T) -> bool) -> int? {
+    for i, x in xs {
+        if test(x) {
+            return i
+        }
+    }
+    return null
+}
+
+/// Stable; each key is computed once, and the keys are compared like sort() does.
+pub fn sortBy<T, K>(xs: [T], key: fn(T) -> K) {
+    let keys = List::<K>()
+    for x in xs {
+        keys.push(key(x))
+    }
+    xs.sortByKeys(keys)
+}
+
+/// Stable merge sort; cmp(a, b) < 0 puts a first, and equal elements keep their order.
+pub fn sortWith<T>(xs: [T], cmp: fn(T, T) -> int) {
+    let n = xs.len()
+    if n < 2 {
+        return
+    }
+    var src = xs.slice(0, n)
+    var dst = xs.slice(0, n)
+    var width = 1
+    while width < n {
+        var lo = 0
+        while lo < n {
+            let mid = min(lo + width, n)
+            let hi = min(lo + 2 * width, n)
+            var i = lo
+            var j = mid
+            var k = lo
+            while k < hi {
+                if i < mid && (j >= hi || cmp(src[j], src[i]) >= 0) {
+                    dst[k] = src[i]
+                    i += 1
+                } else {
+                    dst[k] = src[j]
+                    j += 1
+                }
+                k += 1
+            }
+            lo = hi
+        }
+        let t = src
+        src = dst
+        dst = t
+        width *= 2
+    }
+    for k in 0..n {
+        xs[k] = src[k]
+    }
+}
+)";
+
 } // namespace
 
 const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
@@ -249,6 +357,7 @@ const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
         {"<std>/zip.qzi", kZipQzi},
         {"<std>/math.qz", kMathQz},
         {"<std>/random.qz", kRandomQz},
+        {"<std>/lists.qz", kListsQz},
     };
     return kSources;
 }

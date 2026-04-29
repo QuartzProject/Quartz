@@ -161,6 +161,7 @@ enum class Intrinsic : std::uint16_t {
     MathFmod,            // dst float, args: x, y
     MathClampI,          // dst int, args: value, lo, hi
     MathClampF,          // dst float, args: value, lo, hi
+    ListSortByKeys,      // args: list, keys (same length, comparable): reorders the list stably by its keys
     Count,
 };
 

@@ -10,6 +10,7 @@
 namespace quartz::sema {
 
 inline constexpr std::string_view kMathPackage = "org.quartzlang.math";
+inline constexpr std::string_view kListsPackage = "org.quartzlang.lists";
 
 /// The math functions added after sqrt..max (CheckBuiltins.cpp).
 bool isExtraMathFunction(std::string_view name);
@@ -99,6 +100,8 @@ public:
     // CheckBuiltins.cpp
     std::optional<BuiltinSig> extraBuiltinMethod(TypeId recv, std::string_view name);
     bool checkExtraBuiltinFunction(CallExpr* call, std::string_view name, TypeId expected, TypeId& result);
+    /// `xs.map(f)` and the other higher order list methods: calls to org.quartzlang.lists with the list first.
+    bool checkListFunctionMethod(CallExpr* call, TypeId recv, Symbol name, TypeId& result);
 
     // Generics.cpp
     void declareTraits();

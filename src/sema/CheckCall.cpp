@@ -498,6 +498,9 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
         diags_.error(callee->span, std::format("'{}' has no method '{}'", typeName(recv), mname));
         return ir::kError;
     }
+    if (TypeId hof = ir::kError; checkListFunctionMethod(call, recv, callee->name, hof)) {
+        return hof;
+    }
     return checkBuiltinMethod(call, recv, callee->name, expected);
 }
 

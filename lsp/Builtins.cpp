@@ -99,6 +99,14 @@ std::vector<BuiltinMethod> builtinMethods(const Analysis& a, std::uint32_t recv)
             add("indexOf", std::format("(value: {}) -> int?", elem));
             add("sort", "()");
         }
+        add("map", std::format("<U>(f: fn({}) -> U) -> [U]", elem));
+        add("filter", std::format("(keep: fn({}) -> bool) -> [{}]", elem, elem));
+        add("any", std::format("(test: fn({}) -> bool) -> bool", elem));
+        add("all", std::format("(test: fn({}) -> bool) -> bool", elem));
+        add("find", std::format("(test: fn({}) -> bool) -> {}?", elem, elem));
+        add("indexWhere", std::format("(test: fn({}) -> bool) -> int?", elem));
+        add("sortBy", std::format("<K>(key: fn({}) -> K)", elem));
+        add("sortWith", std::format("(cmp: fn({}, {}) -> int)", elem, elem));
     } else if (info.kind == ir::TypeKind::Map) {
         std::string key = a.typeName(info.key);
         std::string value = a.typeName(info.elem);

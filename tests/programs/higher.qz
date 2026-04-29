@@ -1,0 +1,42 @@
+// expect: 6 n8 3 5 9
+// expect: true false true false
+// expect: 5 -1 3 -1
+// expect: bob,dan,ann,cid,eve
+// expect: eve,ann,cid,bob,dan
+// expect: eve,ann,cid,bob,dan
+// expect: 3.0 2.5 -0.0 -1.0 nan
+// expect: apple Fig kiwi pear 0 -1
+
+struct P {
+    name: str
+    age: int
+}
+
+fn names(ps: [P]) -> str {
+    return ps.map((p) => p.name).join(",")
+}
+
+fn main() -> int {
+    let xs = [5, 3, 8, 1, 9, 2]
+    let limit = 4
+    let big = xs.filter((x) => x > limit)
+    print("{xs.map((x) => x * x).len()} {xs.map((x) => "n{x}")[2]} {big.len()} {big[0]} {big[2]}")
+    print("{xs.any((x) => x > 8)} {xs.any((x) => x > 9)} {xs.all((x) => x > 0)} {xs.all((x) => x > 1)}")
+    print("{xs.find((x) => x > limit) ?? -1} {xs.find((x) => x > 50) ?? -1} {xs.indexWhere((x) => x == 1) ?? -1} {xs.indexWhere((x) => x < 0) ?? -1}")
+    let ps = [P("ann", 30), P("bob", 25), P("cid", 30), P("dan", 25), P("eve", 41)]
+    ps.sortBy((p) => p.age)
+    print(names(ps))
+    ps.sortWith((a, b) => b.age - a.age)
+    print(names(ps))
+    ps.sortBy((p) => p.name.len() * 100 - p.age)
+    print(names(ps))
+    let fs = [2.5, -1.0, 0.0 / 0.0, 3.0, -0.0]
+    fs.sortBy((f) => -f)
+    print("{fs[0]} {fs[1]} {fs[2]} {fs[3]} {fs[4]}")
+    let words = ["pear", "Fig", "apple", "kiwi"]
+    words.sortBy((w) => w.lower())
+    let empty: [int] = []
+    empty.sortWith((a, b) => a - b)
+    print("{words.join(" ")} {empty.map((x) => x).len()} {empty.find((x) => true) ?? -1}")
+    return 0
+}

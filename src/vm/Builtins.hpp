@@ -46,6 +46,7 @@ struct Builtins {
     static bool slice(Sandbox& sb, const Slot* a, Slot* out);
     static bool insertAll(Sandbox& sb, const Slot* a, Slot* out);
     static bool sort(Sandbox& sb, const Slot* a, Slot* out);
+    static bool sortByKeys(Sandbox& sb, const Slot* a, Slot* out);
 };
 
 /// Offset of the first `needle` in `hay` or -1, the same answer as std::string_view::find (NativeRuntime.cpp).

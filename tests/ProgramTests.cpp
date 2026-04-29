@@ -217,7 +217,7 @@ TEST_CASE("builtin intrinsics given another builtin's operands are rejected") {
             inst.imm = own;
         }
     }
-    CHECK(checked == 2 * 32);
+    CHECK(checked == 2 * 33);
 }
 
 TEST_CASE("invalid programs report the expected diagnostics") {

@@ -87,6 +87,10 @@ std::optional<BuiltinSig> Checker::extraBuiltinMethod(TypeId recv, std::string_v
         if (name == "sort" && comparable) {
             return BuiltinSig{Intrinsic::ListSort, {}, ir::kVoid};
         }
+        // Only sortBy uses it; the validator checks the keys once the generic code has concrete types.
+        if (name == "sortByKeys" && currentFile_ < files_.size() && files_[currentFile_].package == kListsPackage) {
+            return BuiltinSig{Intrinsic::ListSortByKeys, {ir::kError}, ir::kVoid};
+        }
         return std::nullopt;
     }
     if (recv == ir::kF64) {
@@ -109,6 +113,30 @@ std::optional<BuiltinSig> Checker::extraBuiltinMethod(TypeId recv, std::string_v
         }
     }
     return std::nullopt;
+}
+
+bool Checker::checkListFunctionMethod(CallExpr* call, TypeId recv, Symbol name, TypeId& result) {
+    static constexpr std::string_view kNames[] = {"map",  "filter",     "any",    "all",
+                                                  "find", "indexWhere", "sortBy", "sortWith"};
+    std::string_view n = str(name);
+    if (types_->kind(recv) != ir::TypeKind::List ||
+        std::find(std::begin(kNames), std::end(kNames), n) == std::end(kNames)) {
+        return false;
+    }
+    auto* fn = static_cast<FnInfo*>(findIn(std::string(kListsPackage), name, NameKind::Function));
+    if (fn == nullptr || call->receiver == nullptr) {
+        return false;
+    }
+    ir::TypeSubst bindings;
+    unify(fn->params[0], recv, bindings);
+    result = finishGenericCall(call, fn, call->receiver, std::move(bindings));
+    if (n == "sortBy" && result != ir::kError && call->typeArgs.size() == 2 &&
+        !ir::isComparableElement(*types_, call->typeArgs[1])) {
+        diags_.error(call->span, std::format("sortBy needs keys that are numbers, bool, char or str, not '{}'",
+                                             typeName(call->typeArgs[1])));
+        result = ir::kError;
+    }
+    return true;
 }
 
 bool Checker::checkExtraBuiltinFunction(CallExpr* call, std::string_view n, TypeId expected, TypeId& result) {

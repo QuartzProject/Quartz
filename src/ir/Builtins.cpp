@@ -74,6 +74,9 @@ bool builtinSignatureOk(const TypeTable& t, Intrinsic op, std::span<const TypeId
         return is({kI64, kI64, kI64}, kI64);
     case Intrinsic::MathClampF:
         return is({kF64, kF64, kF64}, kF64);
+    case Intrinsic::ListSortByKeys:
+        return list && at.size() == 2 && t.kind(at[1]) == TypeKind::List &&
+               isComparableElement(t, t.info(at[1]).elem) && dst == kVoid;
     default:
         return false;
     }

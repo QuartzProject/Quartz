@@ -42,7 +42,7 @@ const char* intrinsicName(Intrinsic in) {
         "math.asin",     "math.acos",     "math.atan",
         "math.exp",      "math.log",      "math.log10",
         "math.round",    "math.atan2",    "math.fmod",
-        "math.clampi",   "math.clampf",
+        "math.clampi",   "math.clampf",   "list.sortByKeys",
     };
     constexpr std::size_t kBase = sizeof(kNames) / sizeof(kNames[0]);
     static_assert(kBase + sizeof(kExtra) / sizeof(kExtra[0]) == static_cast<std::size_t>(Intrinsic::Count));
