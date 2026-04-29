@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 
-include("quartz-java", "quartz-kotlin")
+include("quartz-java", "quartz-kotlin", "quartz-bench")
