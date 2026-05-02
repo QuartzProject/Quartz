@@ -28,17 +28,26 @@
       "name": "fuzz",
       "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "QUARTZ_SANITIZE": "address,undefined", "QUARTZ_FUZZ": "ON" }
+    },
+    {
+      "name": "wasm",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "QUARTZ_WERROR": "ON", "CMAKE_EXPORT_COMPILE_COMMANDS": "ON" }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "asan", "configurePreset": "asan" },
-    { "name": "fuzz", "configurePreset": "fuzz" }
+    { "name": "fuzz", "configurePreset": "fuzz" },
+    { "name": "wasm", "configurePreset": "wasm" }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
+    { "name": "wasm", "configurePreset": "wasm", "output": { "outputOnFailure": true } }
   ]
 }

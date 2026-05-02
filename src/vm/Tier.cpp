@@ -24,7 +24,7 @@ constexpr std::uint64_t kCallWeight = 32;
 // About 3 ms of interpreter time on the reference machine (D52).
 constexpr std::uint64_t kDefaultThreshold = 200'000;
 
-std::uint64_t envNumber(const char* name, std::uint64_t fallback) {
+[[maybe_unused]] std::uint64_t envNumber(const char* name, std::uint64_t fallback) {
     const char* v = std::getenv(name);
     if (v == nullptr || *v == '\0') {
         return fallback;
@@ -49,6 +49,9 @@ struct Library {
     std::uint64_t threshold = kDefaultThreshold;
 
     Library() {
+#ifdef __EMSCRIPTEN__
+        error = "the native tier is not available on WebAssembly";
+#else
         std::vector<std::string> candidates;
         if (const char* p = std::getenv("QUARTZ_COMPILER_LIB"); p != nullptr && *p != '\0') {
             candidates.emplace_back(p);
@@ -89,6 +92,7 @@ struct Library {
         threshold = envNumber("QUARTZ_TIER_THRESHOLD", kDefaultThreshold);
         // Runs before the library's own static destructors, so no JIT is torn down after LLVM is gone.
         std::atexit([] { gExiting.store(true); });
+#endif
     }
 
     [[nodiscard]] bool ok() const { return create != nullptr; }

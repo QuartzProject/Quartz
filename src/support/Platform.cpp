@@ -8,6 +8,8 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#elif defined(__EMSCRIPTEN__)
+#include <unistd.h>
 #else
 #include <dlfcn.h>
 #include <sys/resource.h>
@@ -67,6 +69,25 @@ std::filesystem::path executablePath() {
 void lowerThreadPriority() { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL); }
 
 unsigned long processId() { return GetCurrentProcessId(); }
+
+#elif defined(__EMSCRIPTEN__)
+
+DynamicLibrary::~DynamicLibrary() = default;
+
+DynamicLibrary DynamicLibrary::open(const std::string& path, std::string& error) {
+    error = path + ": WebAssembly cannot load native libraries";
+    return {};
+}
+
+void* DynamicLibrary::symbol(const char*) const { return nullptr; }
+
+const char* compilerLibraryName() { return "libquartz_compiler.so"; }
+
+std::filesystem::path executablePath() { return {}; }
+
+void lowerThreadPriority() {}
+
+unsigned long processId() { return static_cast<unsigned long>(getpid()); }
 
 #else
 
