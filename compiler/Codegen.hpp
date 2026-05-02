@@ -70,6 +70,7 @@ enum class Rt : std::uint8_t {
     Log10,
     Atan2,
     Charge,
+    Trace,
     Count,
 };
 
@@ -275,6 +276,9 @@ private:
     /// For runtime callbacks that already recorded the trap.
     void failIf(llvm::Value* failed);
     void emitTrap(ir::TrapCode code);
+    /// After a call: on failure the caller adds its frame to the trap's trace, then fails too.
+    void failCallIf(llvm::Value* failed);
+    void traceCall();
     /// Charges one unit; in a suspend fn running out yields at `state` and resumes at `resume`.
     void chargeFuel(std::uint32_t state = 0, llvm::BasicBlock* resume = nullptr);
     void spillFuel();

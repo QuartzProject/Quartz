@@ -84,6 +84,13 @@ void where(NativeCtx* c, std::uint32_t fn, std::uint32_t line) {
     c->trapLine = line;
 }
 
+// A call that failed in a callee: the caller adds itself to the trace; a suspension is not a failure.
+void qzTrace(NativeCtx* c, std::uint32_t, std::uint32_t fn, std::uint32_t line) {
+    if (c->suspending == 0) {
+        sb(c).addCaller(fn, line);
+    }
+}
+
 void qzTrap(NativeCtx* c, std::uint32_t code, std::uint32_t fn, std::uint32_t line) {
     if (code != kTrapAlreadySet) {
         sb(c).fail(static_cast<ir::TrapCode>(code));
@@ -383,6 +390,7 @@ const NativeSymbol kSymbols[] = {
     {"qz_log10", addr(math::log10)},
     {"qz_atan2", addr(math::atan2)},
     {"qz_charge", addr(qzCharge)},
+    {"qz_trace", addr(qzTrace)},
 };
 
 } // namespace

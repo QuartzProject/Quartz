@@ -102,7 +102,9 @@ void checkRun(const std::shared_ptr<const quartz::vm::Program>& program, const s
     std::vector<std::string> traps = directives(text, "trap");
     if (!traps.empty()) {
         REQUIRE_FALSE(r.has_value());
-        CHECK(r.error().describe().find(traps[0]) != std::string::npos);
+        for (const std::string& want : traps) {
+            CHECK_MESSAGE(r.error().describe().find(want) != std::string::npos, want, "\n", r.error().describe());
+        }
     } else {
         REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     }

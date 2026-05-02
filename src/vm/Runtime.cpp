@@ -30,7 +30,12 @@ std::string Trap::describe() const {
     if (line != 0) {
         where += std::format(" at line {}", line);
     }
-    return std::format("trap: {}{}{}", ir::trapName(code), message.empty() ? "" : ": " + message, where);
+    std::string out = std::format("trap: {}{}{}", ir::trapName(code), message.empty() ? "" : ": " + message, where);
+    for (const auto& [fn, at] : callers) {
+        out +=
+            at != 0 ? std::format("\n  called from '{}' at line {}", fn, at) : std::format("\n  called from '{}'", fn);
+    }
+    return out;
 }
 
 bool Sandbox::fail(ir::TrapCode code, std::string message) {
@@ -38,6 +43,7 @@ bool Sandbox::fail(ir::TrapCode code, std::string message) {
         trapped_ = true;
         trap_.code = code;
         trap_.message = std::move(message);
+        trap_.callers.clear();
     }
     return false;
 }

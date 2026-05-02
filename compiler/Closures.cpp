@@ -90,7 +90,7 @@ void FunctionCodegen::callValue(const ir::Inst& in) {
         llvm::CallInst* r = B_.CreateCall(U.function(f), callArgs);
         r->setCallingConv(llvm::CallingConv::Fast);
         reloadFuel();
-        failIf(B_.CreateExtractValue(r, 0));
+        failCallIf(B_.CreateExtractValue(r, 0));
         if (in.dst != ir::kNoReg) {
             Values out;
             for (std::size_t i = 0; i < kindsOf(in.dst).size(); ++i) {

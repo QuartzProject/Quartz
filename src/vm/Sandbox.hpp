@@ -24,6 +24,7 @@ struct Trap {
     std::string message;
     std::string function;
     std::uint32_t line = 0;
+    std::vector<std::pair<std::string, std::uint32_t>> callers{}; // innermost first: function and line of each call
 
     [[nodiscard]] std::string describe() const;
 };
@@ -157,6 +158,8 @@ public:
 
     Trap trap_;
     bool trapped_ = false;
+    void addCaller(std::uint32_t function, std::uint32_t line);
+    void traceCallers(std::size_t entryDepth);
     bool fail(ir::TrapCode code, std::string message = {});
 
 private:

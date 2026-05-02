@@ -152,6 +152,20 @@ void FunctionCodegen::trapIf(llvm::Value* failed, ir::TrapCode code) {
     B_.SetInsertPoint(ok);
 }
 
+void FunctionCodegen::failCallIf(llvm::Value* failed) {
+    llvm::BasicBlock* trace = llvm::BasicBlock::Create(U.C, "call.failed", F_);
+    llvm::BasicBlock* ok = llvm::BasicBlock::Create(U.C, "cont", F_);
+    B_.CreateCondBr(failed, trace, ok, U.cold);
+    B_.SetInsertPoint(trace);
+    traceCall();
+    B_.SetInsertPoint(ok);
+}
+
+void FunctionCodegen::traceCall() {
+    B_.CreateCall(U.runtime(Rt::Trace), {ctx_, constI32(0), constI32(index_), constI32(line_)});
+    B_.CreateBr(failBlock_);
+}
+
 void FunctionCodegen::failIf(llvm::Value* failed) {
     llvm::BasicBlock* ok = llvm::BasicBlock::Create(U.C, "cont", F_);
     B_.CreateCondBr(failed, failBlock_, ok, U.cold);

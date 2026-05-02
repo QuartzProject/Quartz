@@ -1,0 +1,18 @@
+// trap: division by zero in 'inner' at line 7
+// trap: called from 'middle' at line 12
+// trap: called from 'main' at line 17
+// expect: before
+
+fn inner(x: int) -> int {
+    return 10 / x
+}
+
+fn middle(x: int) -> int {
+    let y = x - 1
+    return inner(y) + 1
+}
+
+fn main() -> int {
+    print("before")
+    return middle(1)
+}

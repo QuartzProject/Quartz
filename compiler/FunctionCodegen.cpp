@@ -538,7 +538,10 @@ void FunctionCodegen::call(const ir::Inst& in) {
         B_.CreateCondBr(B_.CreateExtractValue(r, 0), failed, ok, U.cold);
         B_.SetInsertPoint(failed);
         llvm::Value* flag = ctxField(offsetof(vm::NativeCtx, suspending), U.i32);
-        B_.CreateCondBr(B_.CreateICmpNE(flag, constI32(0)), suspended, failBlock_);
+        llvm::BasicBlock* trace = llvm::BasicBlock::Create(U.C, "call.trace", F_);
+        B_.CreateCondBr(B_.CreateICmpNE(flag, constI32(0)), suspended, trace);
+        B_.SetInsertPoint(trace);
+        traceCall();
         B_.SetInsertPoint(suspended);
         std::uint32_t state = ir::resumeState(pc_, ir::ResumeAt::After);
         std::vector<ir::Reg> kept = live_->kept(pc_, ir::ResumeAt::After);
@@ -546,7 +549,7 @@ void FunctionCodegen::call(const ir::Inst& in) {
         addResume(state, std::move(kept), ir::kNoReg, site);
         B_.SetInsertPoint(ok);
     } else {
-        failIf(B_.CreateExtractValue(r, 0));
+        failCallIf(B_.CreateExtractValue(r, 0));
     }
     if (in.dst != ir::kNoReg) {
         Values out;

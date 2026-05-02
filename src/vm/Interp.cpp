@@ -841,6 +841,7 @@ trap:
         auto at = static_cast<std::size_t>(pc - fn->code.data());
         trap_.line = at > 0 && at - 1 < fn->lines.size() ? fn->lines[at - 1] : 0;
     }
+    traceCallers(entryDepth);
     calls_.resize(entryDepth);
     return Status::Trapped;
 }

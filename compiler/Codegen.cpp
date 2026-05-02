@@ -34,11 +34,10 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_scope_in", false, false},  {"qz_scope_out", false, false},   {"qz_persist", false, false},
     {"qz_pow", false, false},       {"qz_sin", false, false},         {"qz_cos", false, false},
     {"qz_task_wait", false, false}, {"qz_task_save", false, false},   {"qz_task_restore", false, false},
-    {"qz_closure", false, false},
-    {"qz_builtin", false, false},   {"qz_tan", false, false},         {"qz_asin", false, false},
-    {"qz_acos", false, false},      {"qz_atan", false, false},        {"qz_exp", false, false},
-    {"qz_log", false, false},       {"qz_log10", false, false},       {"qz_atan2", false, false},
-    {"qz_charge", false, true},
+    {"qz_closure", false, false},   {"qz_builtin", false, false},     {"qz_tan", false, false},
+    {"qz_asin", false, false},      {"qz_acos", false, false},        {"qz_atan", false, false},
+    {"qz_exp", false, false},       {"qz_log", false, false},         {"qz_log10", false, false},
+    {"qz_atan2", false, false},     {"qz_charge", false, true},       {"qz_trace", false, true},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
 
@@ -158,6 +157,7 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
     llvm::FunctionType* ty = nullptr;
     switch (rt) {
     case Rt::Trap:
+    case Rt::Trace:
         ty = llvm::FunctionType::get(v, {ptr, i32, i32, i32}, false);
         break;
     case Rt::Panic:
