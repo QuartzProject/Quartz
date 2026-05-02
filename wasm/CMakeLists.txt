@@ -33,3 +33,24 @@ endforeach()
 # The same programs through quartz.js, the way the playground calls it.
 add_test(NAME quartz_wasm_playground COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/check-programs.mjs
     $<TARGET_FILE:quartz-playground> tests/programs WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+
+# quartz-capi.js and .wasm: every qz_* of quartz.h for JavaScript (i64 as BigInt), and quartz-api.js on top of it.
+file(STRINGS ${PROJECT_SOURCE_DIR}/include/quartz/quartz.h quartz_decls REGEX "^QZ_API ")
+set(quartz_capi_exports _malloc _free)
+foreach(decl IN LISTS quartz_decls)
+    string(REGEX MATCH "(qz_[a-z0-9_]+)\\(" name "${decl}")
+    list(APPEND quartz_capi_exports _${CMAKE_MATCH_1})
+endforeach()
+list(JOIN quartz_capi_exports "," quartz_capi_exports)
+add_executable(quartz-capi Api.c)
+set_target_properties(quartz-capi PROPERTIES SUFFIX .js)
+target_link_libraries(quartz-capi PRIVATE quartz_c)
+target_link_options(quartz-capi PRIVATE -sMODULARIZE=1 -sEXPORT_NAME=createQuartzCApi -sENVIRONMENT=web,worker,node
+    -sALLOW_TABLE_GROWTH=1 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB
+    -sEXPORTED_FUNCTIONS=${quartz_capi_exports}
+    -sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,HEAPU8,HEAP32,UTF8ToString)
+foreach(file quartz-api.js quartz-api.d.ts)
+    configure_file(${file} ${CMAKE_CURRENT_BINARY_DIR}/${file} COPYONLY)
+endforeach()
+add_test(NAME quartz_wasm_api COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/test-api.mjs
+    ${CMAKE_CURRENT_BINARY_DIR}/quartz-api.js)
