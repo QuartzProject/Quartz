@@ -115,6 +115,8 @@ public:
     /// Changes the fuel each call and each task slice gets, so a host can keep a wall-clock budget as the tier changes.
     void setFuelPerCall(std::int64_t fuel) { limits_.fuelPerCall = fuel; }
     [[nodiscard]] std::int64_t fuelPerCall() const { return limits_.fuelPerCall; }
+    /// The slots of the last call's result, for results wider than one slot (structs, tuples, Result).
+    [[nodiscard]] std::span<const Slot> resultSlots(std::size_t count) const { return stack_.first(count); }
     /// Fuel left after the last call.
     [[nodiscard]] std::int64_t fuelLeft() const { return fuel_; }
     /// Outside a call: a string for the next call's arguments, valid until the call after it starts.

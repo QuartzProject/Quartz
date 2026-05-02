@@ -1,6 +1,7 @@
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 #include "quartz/quartz.h"
+#include "std/Std.hpp"
 #include "vm/Layout.hpp"
 
 #include <bit>
@@ -83,7 +84,11 @@ bool trampoline(quartz::vm::HostCall& call, void* user) {
     qz_call c{call, binding->owner, binding->argSlots};
     if (binding->direct != nullptr) {
         const auto* args = std::launder(static_cast<const qz_slot*>(static_cast<const void*>(call.args)));
-        return binding->direct(&c, args, resultSlots(call), binding->user);
+        bool ok = binding->direct(&c, args, resultSlots(call), binding->user);
+        if (call.out != nullptr) {
+            call.result = call.out[0]; // the interpreter copies `result` over the slot the function just wrote
+        }
+        return ok;
     }
     return binding->fn(&c, binding->user);
 }
@@ -531,6 +536,76 @@ char* qz_program_interface(const qz_program* program, const char* manifest, char
         report(error, "out of memory");
         return nullptr;
     }
+}
+
+uint32_t qz_program_function_param_type(const qz_program* program, uint32_t function, uint32_t index) {
+    std::vector<quartz::ir::TypeId> params = callerParams(*program->program, function);
+    return index < params.size() ? params[index] : 0;
+}
+
+uint32_t qz_program_function_result_type(const qz_program* program, uint32_t function) {
+    const quartz::vm::Program& p = *program->program;
+    return function < p.functions.size() ? p.functions[function].result : 0;
+}
+
+uint32_t qz_program_import_param_type(const qz_program* program, uint32_t import, uint32_t index) {
+    const auto& imports = program->program->module->imports;
+    return import < imports.size() && index < imports[import].params.size() ? imports[import].params[index] : 0;
+}
+
+uint32_t qz_program_import_result_type(const qz_program* program, uint32_t import) {
+    const auto& imports = program->program->module->imports;
+    return import < imports.size() ? imports[import].result : 0;
+}
+
+qz_kind qz_type_kind(const qz_program* program, uint32_t type, uint32_t* slots) {
+    if (type == 0 || type >= program->program->module->types.size()) {
+        return QZ_KIND_OTHER;
+    }
+    return describe(*program->program, type, slots);
+}
+
+uint32_t qz_type_elem(const qz_program* program, uint32_t type) {
+    const quartz::ir::TypeTable& types = program->program->module->types;
+    if (type == 0 || type >= types.size()) {
+        return 0;
+    }
+    auto k = types.kind(type);
+    return k == quartz::ir::TypeKind::List || k == quartz::ir::TypeKind::Nullable ? types.info(type).elem : 0;
+}
+
+bool qz_program_import_is_native(const qz_program* program, uint32_t import) {
+    const auto& imports = program->program->module->imports;
+    if (import >= imports.size()) {
+        return false;
+    }
+    for (const quartz::stdlib::Native& n : quartz::stdlib::natives()) {
+        if (n.name == imports[import].name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+qz_status qz_sandbox_call_wide(qz_sandbox* sandbox, uint32_t function, const qz_slot* args, size_t count,
+                               qz_slot* result, size_t slots) {
+    return guarded(sandbox, [&] {
+        sandbox->error.clear();
+        const quartz::vm::Program& p = sandbox->sandbox->program();
+        if (function >= p.functions.size() || slots != p.layouts->slots(p.functions[function].result)) {
+            sandbox->error = function >= p.functions.size() ? "no such function" : "wrong number of result slots";
+            return QZ_ERROR;
+        }
+        auto r = sandbox->sandbox->call(function, ::slots(args, count));
+        if (!r) {
+            return trapped(sandbox, r.error());
+        }
+        std::span<const quartz::vm::Slot> out = sandbox->sandbox->resultSlots(slots);
+        for (std::size_t i = 0; i < slots; ++i) {
+            result[i] = toC(out[i]);
+        }
+        return QZ_OK;
+    });
 }
 
 uint32_t qz_sandbox_wait_type(const qz_sandbox* sandbox, uint32_t task) { return sandbox->sandbox->waitType(task); }

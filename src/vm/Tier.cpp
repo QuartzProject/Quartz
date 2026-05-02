@@ -69,7 +69,7 @@ struct Library {
                 auto size = std::filesystem::file_size(c, ec);
                 auto time = std::filesystem::last_write_time(c, ec);
                 if (!ec) {
-                    identity = c + ":" + std::to_string(size) + ":" + std::to_string(time.time_since_epoch().count());
+                    identity = c + ":" + std::to_string(size) + ":" + std::to_string(static_cast<long long>(time.time_since_epoch().count()));
                 }
                 break;
             }

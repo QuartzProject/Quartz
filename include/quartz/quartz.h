@@ -182,6 +182,20 @@ QZ_API qz_kind qz_program_import_result(const qz_program* program, uint32_t impo
 /* The .qzi other packages compile against, for a program built with a package.toml; NULL with *error otherwise. */
 QZ_API char* qz_program_interface(const qz_program* program, const char* manifest, char** error);
 
+/* Type ids, to build lists for arguments and results and to read nested values; 0 is not a valid type. */
+QZ_API uint32_t qz_program_function_param_type(const qz_program* program, uint32_t function, uint32_t index);
+QZ_API uint32_t qz_program_function_result_type(const qz_program* program, uint32_t function);
+QZ_API uint32_t qz_program_import_param_type(const qz_program* program, uint32_t import, uint32_t index);
+QZ_API uint32_t qz_program_import_result_type(const qz_program* program, uint32_t import);
+QZ_API qz_kind qz_type_kind(const qz_program* program, uint32_t type, uint32_t* slots);
+/* Element of a list or nullable, 0 for other types. */
+QZ_API uint32_t qz_type_elem(const qz_program* program, uint32_t type);
+/* True for imports the runtime binds itself (the standard library); the host binds the others. */
+QZ_API bool qz_program_import_is_native(const qz_program* program, uint32_t import);
+/* Like qz_sandbox_call, for results wider than one slot: copies `slots` result slots into `result`. */
+QZ_API qz_status qz_sandbox_call_wide(qz_sandbox* sandbox, uint32_t function, const qz_slot* args, size_t count,
+                                      qz_slot* result, size_t slots);
+
 /* Lists. A list type is an opaque id; qz_sandbox_wait_type gives the one a waiting task expects. */
 QZ_API uint32_t qz_sandbox_wait_type(const qz_sandbox* sandbox, uint32_t task);
 /* An empty list built like qz_sandbox_str (or in a host function, its result); 0 slot when the type is not a list. */
