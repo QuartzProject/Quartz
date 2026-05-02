@@ -106,6 +106,7 @@ public:
         }
         out.code = std::move(code_);
         out.lines = std::move(lines_);
+        out.file = fn_.file;
         out.loopLines = std::move(loopLines_);
         out.resumeRecords = std::move(resumeRecords_);
         if (tooBig_) {

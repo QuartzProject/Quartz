@@ -434,6 +434,7 @@ std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, Slot r
     if (status != 0) {
         trap_.function =
             ctx.trapFunction < program_->functions.size() ? program_->functions[ctx.trapFunction].name : "";
+        trap_.file = ctx.trapFunction < program_->functions.size() ? program_->functions[ctx.trapFunction].file : "";
         trap_.line = ctx.trapLine;
         return std::unexpected(trap_);
     }

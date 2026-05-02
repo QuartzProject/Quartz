@@ -15,6 +15,9 @@ Lowerer::Lowerer(sema::Program& prog, const SourceManager& sources, Diagnostics&
 void Lowerer::setLine(Span span) {
     if (span.file < sources_.size()) {
         line_ = sources_.file(span.file).lineCol(span.begin).line;
+        if (fn_ != nullptr && fn_->file.empty()) {
+            fn_->file = sources_.file(span.file).name();
+        }
     }
 }
 

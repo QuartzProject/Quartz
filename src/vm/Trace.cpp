@@ -11,7 +11,8 @@ constexpr std::size_t kMaxCallers = 64;
 
 void Sandbox::addCaller(std::uint32_t function, std::uint32_t line) {
     if (function < program_->functions.size() && trap_.callers.size() < kMaxCallers) {
-        trap_.callers.emplace_back(program_->functions[function].name, line);
+        const CompiledFunction& f = program_->functions[function];
+        trap_.callers.push_back({f.name, f.file, line});
     }
 }
 
@@ -20,7 +21,7 @@ void Sandbox::traceCallers(std::size_t entryDepth) {
         const CallRecord& r = calls_[i - 1];
         auto at = static_cast<std::size_t>(r.pc - r.fn->code.data());
         std::uint32_t line = at > 0 && at - 1 < r.fn->lines.size() ? r.fn->lines[at - 1] : 0;
-        trap_.callers.emplace_back(r.fn->name, line);
+        trap_.callers.push_back({r.fn->name, r.fn->file, line});
     }
 }
 

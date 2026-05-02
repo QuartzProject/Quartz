@@ -1,6 +1,6 @@
-// trap: division by zero in 'inner' at line 7
-// trap: called from 'middle' at line 12
-// trap: called from 'main' at line 17
+// trap: division by zero in 'inner' at tests/programs/trace.qz:7
+// trap: called from 'middle' at tests/programs/trace.qz:12
+// trap: called from 'main' at tests/programs/trace.qz:17
 // expect: before
 
 fn inner(x: int) -> int {

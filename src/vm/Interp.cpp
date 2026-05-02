@@ -837,6 +837,7 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
 trap:
     fuel_ = fuel;
     trap_.function = fn->name;
+    trap_.file = fn->file;
     {
         auto at = static_cast<std::size_t>(pc - fn->code.data());
         trap_.line = at > 0 && at - 1 < fn->lines.size() ? fn->lines[at - 1] : 0;

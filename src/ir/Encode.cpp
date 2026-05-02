@@ -1,6 +1,7 @@
 #include "ir/ByteIo.hpp"
 #include "ir/Serialize.hpp"
 
+#include <algorithm>
 #include <bit>
 
 namespace quartz::ir {
@@ -243,7 +244,19 @@ std::vector<std::uint8_t> encodePayload(const Module& m, WriteOptions options) {
 
     if (options.lines) {
         w.out.clear();
+        std::vector<std::string> files;
         for (const Function& f : m.functions) {
+            if (!f.file.empty() && std::find(files.begin(), files.end(), f.file) == files.end()) {
+                files.push_back(f.file);
+            }
+        }
+        w.u32(static_cast<std::uint32_t>(files.size()));
+        for (const std::string& name : files) {
+            w.str(name);
+        }
+        for (const Function& f : m.functions) {
+            auto at = std::find(files.begin(), files.end(), f.file);
+            w.u32(f.file.empty() ? 0 : static_cast<std::uint32_t>(at - files.begin()) + 1);
             std::uint32_t prev = 0;
             for (const Inst& in : f.code) {
                 w.i64(static_cast<std::int64_t>(in.line) - static_cast<std::int64_t>(prev));

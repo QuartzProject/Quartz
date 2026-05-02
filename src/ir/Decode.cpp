@@ -121,7 +121,18 @@ public:
     }
 
     void lines(Reader& r) {
+        std::uint32_t n = r.count(kMaxElements);
+        std::vector<std::string> files;
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i) {
+            files.push_back(r.str());
+        }
         for (Function& f : m_.functions) {
+            std::uint32_t file = r.u32();
+            if (r.failed() || file > files.size()) {
+                r.fail("bad file index in the line table");
+                return;
+            }
+            f.file = file == 0 ? std::string() : files[file - 1];
             std::int64_t line = 0;
             for (Inst& in : f.code) {
                 std::int64_t delta = r.i64();

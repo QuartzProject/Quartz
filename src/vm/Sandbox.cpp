@@ -83,6 +83,7 @@ bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
     fuel_ = ctx.fuel;
     if (status != 0) {
         trap_.function = ctx.trapFunction < program_->functions.size() ? program_->functions[ctx.trapFunction].name : "";
+        trap_.file = ctx.trapFunction < program_->functions.size() ? program_->functions[ctx.trapFunction].file : "";
         trap_.line = ctx.trapLine;
         return false;
     }

@@ -116,6 +116,7 @@ static_assert(sizeof(Ins) == 8);
 
 struct CompiledFunction {
     std::string name;
+    std::string file;
     std::vector<Ins> code;
     std::uint32_t paramSlots = 0;
     std::uint32_t frameSlots = 0; // registers plus the outgoing argument area

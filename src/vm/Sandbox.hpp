@@ -22,9 +22,16 @@ namespace quartz::vm {
 struct Trap {
     ir::TrapCode code = ir::TrapCode::Unreachable;
     std::string message;
+
+    struct Frame {
+        std::string function;
+        std::string file;
+        std::uint32_t line = 0;
+    };
     std::string function;
     std::uint32_t line = 0;
-    std::vector<std::pair<std::string, std::uint32_t>> callers{}; // innermost first: function and line of each call
+    std::vector<Frame> callers{}; // the calls that led here, innermost first
+    std::string file{};
 
     [[nodiscard]] std::string describe() const;
 };

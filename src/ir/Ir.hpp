@@ -191,6 +191,7 @@ enum class Inlining : std::uint8_t { Default, Always, Never };
 
 struct Function {
     std::string name;
+    std::string file;           // source file of the code, for trap traces; empty when lines are stripped
     std::vector<TypeId> regs;   // regs[0 .. paramCount) are the parameters
     std::uint32_t paramCount = 0;
     TypeId result = kVoid;

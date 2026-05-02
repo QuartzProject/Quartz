@@ -25,15 +25,23 @@ std::uint64_t mix64(std::uint64_t x) {
 
 } // namespace
 
+namespace {
+
+std::string place(std::string_view file, std::uint32_t line) {
+    if (line == 0) {
+        return "";
+    }
+    return file.empty() ? std::format(" at line {}", line) : std::format(" at {}:{}", file, line);
+}
+
+} // namespace
+
 std::string Trap::describe() const {
     std::string where = function.empty() ? "" : std::format(" in '{}'", function);
-    if (line != 0) {
-        where += std::format(" at line {}", line);
-    }
+    where += place(file, line);
     std::string out = std::format("trap: {}{}{}", ir::trapName(code), message.empty() ? "" : ": " + message, where);
-    for (const auto& [fn, at] : callers) {
-        out +=
-            at != 0 ? std::format("\n  called from '{}' at line {}", fn, at) : std::format("\n  called from '{}'", fn);
+    for (const Frame& f : callers) {
+        out += std::format("\n  called from '{}'{}", f.function, place(f.file, f.line));
     }
     return out;
 }
