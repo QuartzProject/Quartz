@@ -2,6 +2,7 @@
 #include "vm/Builtins.hpp"
 #include "vm/Sandbox.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -121,9 +122,14 @@ constexpr std::uint64_t kPieceBytes = 128;
 // Each replacement costs about this many bytes beyond the text copied (measured with replace, D34).
 constexpr std::uint64_t kMatchBytes = 96;
 
-std::size_t find(std::string_view hay, std::string_view needle, std::size_t from) {
+std::size_t findFrom(std::string_view hay, std::string_view needle, std::size_t from) {
     std::int64_t at = findBytes(hay.data() + from, hay.size() - from, needle.data(), needle.size());
     return at < 0 ? std::string_view::npos : from + static_cast<std::size_t>(at);
+}
+
+// A length past what a str holds traps in allocStr; clamping first keeps a 32-bit size_t from wrapping it small.
+Str* allocLength(Sandbox& sb, std::uint64_t len) {
+    return sb.allocStr(static_cast<std::size_t>(std::min<std::uint64_t>(len, 0x80000000ULL)));
 }
 
 bool pushStr(Sandbox& sb, List* l, std::string_view piece) {
@@ -285,7 +291,8 @@ bool Builtins::replace(Sandbox& sb, const Slot* a, Slot* out) {
         return true;
     }
     std::uint64_t count = 0;
-    for (std::size_t at = find(text, from, 0); at != std::string_view::npos; at = find(text, from, at + from.size())) {
+    for (std::size_t at = findFrom(text, from, 0); at != std::string_view::npos;
+         at = findFrom(text, from, at + from.size())) {
         ++count;
     }
     if (count == 0) {
@@ -296,13 +303,14 @@ bool Builtins::replace(Sandbox& sb, const Slot* a, Slot* out) {
     if (!chargeBytes(sb, kFuelWriteFactor * total + kMatchBytes * count)) {
         return false;
     }
-    Str* r = sb.allocStr(total);
+    Str* r = allocLength(sb, total);
     if (r == nullptr) {
         return false;
     }
     char* w = r->data;
     std::size_t last = 0;
-    for (std::size_t at = find(text, from, 0); at != std::string_view::npos; at = find(text, from, at + from.size())) {
+    for (std::size_t at = findFrom(text, from, 0); at != std::string_view::npos;
+         at = findFrom(text, from, at + from.size())) {
         std::memcpy(w, text.data() + last, at - last);
         w += at - last;
         std::memcpy(w, to.data(), to.size());
@@ -335,7 +343,7 @@ bool Builtins::split(Sandbox& sb, const Slot* a, Slot* out) {
         return true;
     }
     std::size_t last = 0;
-    for (std::size_t at = find(text, sep, 0);; at = find(text, sep, last)) {
+    for (std::size_t at = findFrom(text, sep, 0);; at = findFrom(text, sep, last)) {
         std::size_t end = at == std::string_view::npos ? text.size() : at;
         if (!chargeBytes(sb, kPieceBytes + kFuelWriteFactor * (end - last)) ||
             !pushStr(sb, l, text.substr(last, end - last))) {
@@ -371,14 +379,14 @@ bool Builtins::repeat(Sandbox& sb, const Slot* a, Slot* out) {
     if (!chargeBytes(sb, kFuelWriteFactor * total)) {
         return false;
     }
-    Str* r = sb.allocStr(total);
+    Str* r = allocLength(sb, total);
     if (r == nullptr) {
         return false;
     }
     std::memcpy(r->data, s->data, s->len);
     for (std::uint64_t done = s->len; done < total;) {
         std::uint64_t chunk = std::min(done, total - done);
-        std::memcpy(r->data + done, r->data, chunk);
+        std::memcpy(r->data + done, r->data, static_cast<std::size_t>(chunk));
         done += chunk;
     }
     out[0].p = r;

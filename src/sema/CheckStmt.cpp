@@ -1,5 +1,6 @@
 #include "sema/SemaImpl.hpp"
 
+#include <algorithm>
 #include <format>
 
 namespace quartz::sema {

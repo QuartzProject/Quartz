@@ -290,7 +290,7 @@ std::uint64_t sortBytes(const List* l) {
 // Stable; floats in IEEE totalOrder (-0.0 before 0.0) with every NaN last; str by bytes.
 bool Builtins::sort(Sandbox& sb, const Slot* a, Slot*) {
     List* l = listOf(a[0]);
-    std::uint64_t n = l->len;
+    std::size_t n = l->len;
     if (n < 2) {
         return true;
     }

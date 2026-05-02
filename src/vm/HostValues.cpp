@@ -45,7 +45,7 @@ bool Sandbox::hostListPush(List* l, std::span<const Slot> element) {
         if (cap * l->stride() > (1ULL << 31)) {
             return false;
         }
-        std::size_t bytes = std::max<std::size_t>(cap * l->stride(), sizeof(Slot));
+        std::size_t bytes = std::max<std::size_t>(static_cast<std::size_t>(cap * l->stride()), sizeof(Slot));
         auto* data = static_cast<Slot*>(hostArena(inCall_, cur_, hostArenas_, hostArena_).allocate(bytes));
         if (data == nullptr) {
             return false;

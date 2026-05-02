@@ -376,7 +376,7 @@ bool Sandbox::growList(List* l, std::uint32_t need) {
     if (cap * l->stride() > (1ULL << 31)) {
         return fail(ir::TrapCode::OutOfMemory, "list too large");
     }
-    std::size_t bytes = std::max<std::size_t>(cap * l->stride(), sizeof(Slot));
+    std::size_t bytes = std::max<std::size_t>(static_cast<std::size_t>(cap * l->stride()), sizeof(Slot));
     auto* data = static_cast<Slot*>(l->owner == Owner::State ? allocFor(l->owner, bytes)
                                                               : regionFor(l->owner, l->level)->allocate(bytes));
     if (data == nullptr && l->owner != Owner::State) {

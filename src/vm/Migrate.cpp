@@ -599,7 +599,7 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
             return bad("expected an enum value");
         }
         for (std::uint64_t tag = 0; tag < info.variants.size(); ++tag) {
-            const ir::VariantInfo& var = info.variants[tag];
+            const ir::VariantInfo& var = info.variants[static_cast<std::size_t>(tag)];
             if (var.name != name->text) {
                 continue;
             }
