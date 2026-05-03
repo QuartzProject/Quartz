@@ -16,6 +16,13 @@ constexpr std::pair<std::string_view, Intrinsic> kUnaryFloat[] = {
     {"log10", Intrinsic::MathLog10}, {"round", Intrinsic::MathRound},
 };
 
+constexpr std::pair<std::string_view, Intrinsic> kIntArithmetic[] = {
+    {"checkedAdd", Intrinsic::IntCheckedAdd},       {"checkedSub", Intrinsic::IntCheckedSub},
+    {"checkedMul", Intrinsic::IntCheckedMul},       {"checkedDiv", Intrinsic::IntCheckedDiv},
+    {"saturatingAdd", Intrinsic::IntSaturatingAdd}, {"saturatingSub", Intrinsic::IntSaturatingSub},
+    {"saturatingMul", Intrinsic::IntSaturatingMul},
+};
+
 } // namespace
 
 bool isExtraMathFunction(std::string_view name) {
@@ -103,6 +110,14 @@ std::optional<BuiltinSig> Checker::extraBuiltinMethod(TypeId recv, std::string_v
             return BuiltinSig{Intrinsic::MathClampF, {ir::kF64, ir::kF64}, ir::kF64};
         }
         return std::nullopt;
+    }
+    if (types_->isInteger(recv)) {
+        for (const auto& [n, op] : kIntArithmetic) {
+            if (n == name) {
+                bool checked = op < Intrinsic::IntSaturatingAdd;
+                return BuiltinSig{op, {recv}, checked ? types_->nullable(recv) : recv};
+            }
+        }
     }
     if (recv == ir::kI64) {
         if (name == "clamp") {

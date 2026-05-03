@@ -47,6 +47,15 @@ struct Builtins {
     static bool insertAll(Sandbox& sb, const Slot* a, Slot* out);
     static bool sort(Sandbox& sb, const Slot* a, Slot* out);
     static bool sortByKeys(Sandbox& sb, const Slot* a, Slot* out);
+
+    // IntBuiltins.cpp: a, b and the type id of their integer type
+    static bool checkedAdd(Sandbox& sb, const Slot* a, Slot* out);
+    static bool checkedSub(Sandbox& sb, const Slot* a, Slot* out);
+    static bool checkedMul(Sandbox& sb, const Slot* a, Slot* out);
+    static bool checkedDiv(Sandbox& sb, const Slot* a, Slot* out);
+    static bool saturatingAdd(Sandbox& sb, const Slot* a, Slot* out);
+    static bool saturatingSub(Sandbox& sb, const Slot* a, Slot* out);
+    static bool saturatingMul(Sandbox& sb, const Slot* a, Slot* out);
 };
 
 /// Offset of the first `needle` in `hay` or -1, the same answer as std::string_view::find (NativeRuntime.cpp).

@@ -172,9 +172,10 @@ bool Builtins::chargeBytes(Sandbox& sb, std::uint64_t bytes) {
 
 bool Builtins::run(Sandbox& sb, std::uint32_t index, const Slot* args, Slot* out) {
     static constexpr Fn kTable[] = {
-        toInt,   toFloat,          replace, split,       trim,   trimStart,  trimEnd,
-        repeat,  equalsIgnoreCase, chars,   charFromInt, insert, removeAt,   contains,
-        indexOf, reverse,          slice,   insertAll,   sort,   sortByKeys,
+        toInt,      toFloat,          replace,    split,         trim,          trimStart,     trimEnd,
+        repeat,     equalsIgnoreCase, chars,      charFromInt,   insert,        removeAt,      contains,
+        indexOf,    reverse,          slice,      insertAll,     sort,          sortByKeys,    checkedAdd,
+        checkedSub, checkedMul,       checkedDiv, saturatingAdd, saturatingSub, saturatingMul,
     };
     static_assert(std::size(kTable) == ir::kRuntimeBuiltins);
     return index < std::size(kTable) && kTable[index](sb, args, out);

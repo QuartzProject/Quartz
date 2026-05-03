@@ -7,17 +7,30 @@
 namespace quartz::ir {
 
 /// Intrinsics run by a shared runtime function (vm/Builtins.hpp) in both tiers.
-inline bool isRuntimeBuiltin(Intrinsic op) {
-    return (op >= Intrinsic::StrToInt && op <= Intrinsic::ListSort) || op == Intrinsic::ListSortByKeys;
+inline bool isIntArithmetic(Intrinsic op) {
+    return op >= Intrinsic::IntCheckedAdd && op <= Intrinsic::IntSaturatingMul;
 }
 
-inline constexpr std::uint32_t kRuntimeBuiltins =
-    static_cast<std::uint32_t>(Intrinsic::ListSort) - static_cast<std::uint32_t>(Intrinsic::StrToInt) + 2;
+inline bool isRuntimeBuiltin(Intrinsic op) {
+    return (op >= Intrinsic::StrToInt && op <= Intrinsic::ListSort) || op == Intrinsic::ListSortByKeys ||
+           isIntArithmetic(op);
+}
+
+inline constexpr std::uint32_t kFirstRuntimeRange =
+    static_cast<std::uint32_t>(Intrinsic::ListSort) - static_cast<std::uint32_t>(Intrinsic::StrToInt) + 1;
+inline constexpr std::uint32_t kRuntimeBuiltins = kFirstRuntimeRange + 1 +
+                                                  static_cast<std::uint32_t>(Intrinsic::IntSaturatingMul) -
+                                                  static_cast<std::uint32_t>(Intrinsic::IntCheckedAdd) + 1;
 
 inline std::uint32_t runtimeBuiltinIndex(Intrinsic op) {
-    return op == Intrinsic::ListSortByKeys
-               ? kRuntimeBuiltins - 1
-               : static_cast<std::uint32_t>(op) - static_cast<std::uint32_t>(Intrinsic::StrToInt);
+    if (op == Intrinsic::ListSortByKeys) {
+        return kFirstRuntimeRange;
+    }
+    if (isIntArithmetic(op)) {
+        return kFirstRuntimeRange + 1 + static_cast<std::uint32_t>(op) -
+               static_cast<std::uint32_t>(Intrinsic::IntCheckedAdd);
+    }
+    return static_cast<std::uint32_t>(op) - static_cast<std::uint32_t>(Intrinsic::StrToInt);
 }
 
 /// True for the intrinsics that may change a list's length, so counted loops over that list stay checked.

@@ -32,17 +32,20 @@ const char* intrinsicName(Intrinsic in) {
         "panic",
     };
     static const char* const kExtra[] = {
-        "str.toInt",     "str.toFloat",   "str.replace",
-        "str.split",     "str.trim",      "str.trimStart",
-        "str.trimEnd",   "str.repeat",    "str.equalsIgnoreCase",
-        "str.chars",     "char.fromInt",  "list.insert",
-        "list.removeAt", "list.contains", "list.indexOf",
-        "list.reverse",  "list.slice",    "list.insertAll",
-        "list.sort",     "char.code",     "math.tan",
-        "math.asin",     "math.acos",     "math.atan",
-        "math.exp",      "math.log",      "math.log10",
-        "math.round",    "math.atan2",    "math.fmod",
-        "math.clampi",   "math.clampf",   "list.sortByKeys",
+        "str.toInt",         "str.toFloat",       "str.replace",
+        "str.split",         "str.trim",          "str.trimStart",
+        "str.trimEnd",       "str.repeat",        "str.equalsIgnoreCase",
+        "str.chars",         "char.fromInt",      "list.insert",
+        "list.removeAt",     "list.contains",     "list.indexOf",
+        "list.reverse",      "list.slice",        "list.insertAll",
+        "list.sort",         "char.code",         "math.tan",
+        "math.asin",         "math.acos",         "math.atan",
+        "math.exp",          "math.log",          "math.log10",
+        "math.round",        "math.atan2",        "math.fmod",
+        "math.clampi",       "math.clampf",       "list.sortByKeys",
+        "int.checkedAdd",    "int.checkedSub",    "int.checkedMul",
+        "int.checkedDiv",    "int.saturatingAdd", "int.saturatingSub",
+        "int.saturatingMul",
     };
     constexpr std::size_t kBase = sizeof(kNames) / sizeof(kNames[0]);
     static_assert(kBase + sizeof(kExtra) / sizeof(kExtra[0]) == static_cast<std::size_t>(Intrinsic::Count));

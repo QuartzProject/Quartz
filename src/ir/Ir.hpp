@@ -162,6 +162,13 @@ enum class Intrinsic : std::uint16_t {
     MathClampI,          // dst int, args: value, lo, hi
     MathClampF,          // dst float, args: value, lo, hi
     ListSortByKeys,      // args: list, keys (same length, comparable): reorders the list stably by its keys
+    IntCheckedAdd,       // dst T?, args: a, b, the type id of T (an integer type): null on overflow
+    IntCheckedSub,
+    IntCheckedMul,
+    IntCheckedDiv,       // also null when dividing by zero
+    IntSaturatingAdd,    // dst T, args: a, b, the type id of T: clamped to T's range
+    IntSaturatingSub,
+    IntSaturatingMul,
     Count,
 };
 

@@ -1,0 +1,22 @@
+// expect: null null 12 null null
+// expect: 127 true 127 127 -128
+// expect: 255 0 true 255
+// expect: true 18446744073709551615 9223372036854775807 -9223372036854775808 9223372036854775807
+
+import org.quartzlang.math.{MAX_INT, MIN_INT}
+
+fn show(v: int?) -> str {
+    return if let x = v { "{x}" } else { "null" }
+}
+
+fn main() -> int {
+    let a: i8 = 100
+    let b: i8 = 27
+    let c: u8 = 200
+    print("{show(MAX_INT.checkedAdd(1))} {show(MIN_INT.checkedSub(1))} {show(3.checkedMul(4))} {show(MIN_INT.checkedDiv(-1))} {show(7.checkedDiv(0))}")
+    print("{a.checkedAdd(b) ?? 0} {a.checkedAdd(28) == null} {a.saturatingAdd(100)} {a.saturatingSub(-100)} {(-a).saturatingSub(100)}")
+    print("{c.saturatingAdd(100)} {c.saturatingSub(250)} {c.checkedMul(2) == null} {c.saturatingMul(2)}")
+    let big: u64 = 18446744073709551615
+    print("{big.checkedAdd(1) == null} {big.saturatingAdd(5)} {big.checkedDiv(2) ?? 0} {MAX_INT.saturatingMul(-2)} {MIN_INT.saturatingMul(-1)}")
+    return 0
+}

@@ -121,10 +121,19 @@ std::vector<BuiltinMethod> builtinMethods(const Analysis& a, std::uint32_t recv)
             add(n, "() -> float");
         }
         add("clamp", "(lo: float, hi: float) -> float");
-    } else if (recv == ir::kI64) {
-        add("abs", "() -> int");
-        add("clamp", "(lo: int, hi: int) -> int");
-        add("toChar", "() -> char?");
+    } else if (p->types.isInteger(recv)) {
+        std::string t = a.typeName(recv);
+        for (std::string_view n : {"checkedAdd", "checkedSub", "checkedMul", "checkedDiv"}) {
+            add(n, std::format("(other: {}) -> {}?", t, t));
+        }
+        for (std::string_view n : {"saturatingAdd", "saturatingSub", "saturatingMul"}) {
+            add(n, std::format("(other: {}) -> {}", t, t));
+        }
+        if (recv == ir::kI64) {
+            add("abs", "() -> int");
+            add("clamp", "(lo: int, hi: int) -> int");
+            add("toChar", "() -> char?");
+        }
     } else if (p->types.isResult(recv) && !info.variants.empty() && !info.variants[0].payload.empty()) {
         std::string inner = a.typeName(info.variants[0].payload[0]);
         add("isOk", "() -> bool");

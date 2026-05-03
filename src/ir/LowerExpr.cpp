@@ -1,3 +1,4 @@
+#include "ir/Builtins.hpp"
 #include "ir/LowerImpl.hpp"
 
 #include <format>
@@ -391,6 +392,9 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
                 r = c;
             }
             args.push_back(r);
+        }
+        if (isIntArithmetic(op)) {
+            args.push_back(constInt(static_cast<std::int64_t>(T(e->receiver->type)), kI64));
         }
         emitArgs(Op::Intrinsic, dst, e->builtin, args);
         if (op == Intrinsic::Panic) {
