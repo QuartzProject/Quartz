@@ -1,0 +1,62 @@
+// expect: sha a9993e364706816aba3e25717850c26c9cd0d89d ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+// expect: sha512 ddaf35a193617abacc417349ae204131 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+// expect: chain 9ae30442eaafb370 d637368889df700e
+// expect: hmac f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8
+// expect: blake ba80a53f981c4d0d6a2797b69f12f6e9 bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319 6858b7b52110e28dc8e99bd7c341f05e
+// expect: pk d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
+// expect: sig e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b
+// expect: verify true false false true
+// expect: argon $argon2id$v=19$m=64,t=2,p=1$c2FsdHNhbHRzYWx0c2FsdA$1NgjwvvedDC1OBAMxOhp3aj+JyQ7TXR7im/QulKppnQ
+// expect: check true false
+// expect: other true true
+// expect: refuse true true true true
+// expect: ct true false false
+
+import org.quartzlang.crypto
+import org.quartzlang.encoding.hexDecode
+
+fn chain() -> str {
+    var hex: [str] = []
+    for i in 0..300 {
+        let b = (i * 7 + 3) % 256
+        let digits = "0123456789abcdef"
+        hex.push("{digits.slice(b / 16, b / 16 + 1)}{digits.slice(b % 16, b % 16 + 1)}")
+    }
+    let data = hexDecode(hex.join("")).unwrap()
+    var d = "".toBytes()
+    var d1 = "".toBytes()
+    for n in 0..140 {
+        d = crypto.sha256(hexDecode("{d.hex()}{data.slice(0, n).hex()}").unwrap())
+        d1 = crypto.sha1(hexDecode("{d1.hex()}{data.slice(0, n).hex()}").unwrap())
+    }
+    return "{d.hex().slice(0, 16)} {d1.hex().slice(0, 16)}"
+}
+
+fn main() -> int {
+    let abc = "abc".toBytes()
+    print("sha {crypto.sha1(abc).hex()} {crypto.sha256(abc).hex()}")
+    print("sha512 {crypto.sha512(abc).hex().slice(0, 32)} {crypto.sha256("".toBytes()).hex()}")
+    print("chain {chain()}")
+    print("hmac {crypto.hmacSha256("key".toBytes(), "The quick brown fox jumps over the lazy dog".toBytes()).hex()}")
+    print("blake {crypto.blake2b(abc).hex().slice(0, 32)} {crypto.blake2b(abc, 32).hex()} {crypto.blake2bKeyed("k".toBytes(), abc, 16).hex()}")
+
+    let seed = hexDecode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60").unwrap()
+    let pk = crypto.publicKey(seed).unwrap()
+    let sig = crypto.sign(seed, "".toBytes()).unwrap()
+    print("pk {pk.hex()}")
+    print("sig {sig.hex()}")
+    print("verify {crypto.verify(pk, "".toBytes(), sig)} {crypto.verify(pk, abc, sig)} {crypto.verify(abc, abc, sig)} {crypto.publicKey(abc).isErr()}")
+
+    let h = crypto.hashPassword("hunter2", "saltsaltsaltsalt".toBytes(), 64, 2).unwrap()
+    print("argon {h}")
+    print("check {crypto.verifyPassword("hunter2", h).unwrap()} {crypto.verifyPassword("hunter3", h).unwrap()}")
+    let lanes = crypto.verifyPassword("pw", "$argon2id$v=19$m=70,t=1,p=2$MDEyMzQ1Njc4OWFiY2RlZg$zs3ylwGrPS5CXUOIbpPCYCnq4SLIG6lVcb0fjBkeijU")
+    let argon2i = crypto.verifyPassword("pw", "$argon2i$v=19$m=32,t=3,p=1$MDEyMzQ1Njc4OWFiY2RlZg$hM8Xet5JiP/ZcnhDeEHgvgtoZqEUHfvfzAepCCRI8OA")
+    print("other {lanes.unwrap()} {argon2i.unwrap()}")
+    let huge = crypto.verifyPassword("x", "$argon2id$v=19$m=999999999,t=1,p=1$c2FsdHNhbHQ$aaaaaaaaaaa")
+    let short = crypto.hashPassword("x", "salt".toBytes())
+    let garbage = crypto.verifyPassword("x", "$argon2id$v=19$m=64,t=1$c2FsdHNhbHQ$aaaaaaaaaaa")
+    print("refuse {huge.isErr()} {short.isErr()} {garbage.isErr()} {crypto.verifyPassword("x", "").isErr()}")
+    print("ct {crypto.constantTimeEquals(abc, "abc".toBytes())} {crypto.constantTimeEquals(abc, "abd".toBytes())} {crypto.constantTimeEquals(abc, "ab".toBytes())}")
+    return 0
+}

@@ -1,4 +1,5 @@
 #include "std/Builder.hpp"
+#include "std/Natives.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -445,6 +446,8 @@ const std::vector<Native>& natives() {
             {"org.quartzlang.data.parseYaml", parseYaml},
         };
         addBinaryNatives(v);
+        addCryptoNatives(v);
+        addEncodingNatives(v);
         return v;
     }();
     return kNatives;

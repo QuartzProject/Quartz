@@ -1,0 +1,46 @@
+// expect: b64 [] [Zg==] [Zm8=] [Zm9v] [Zm9vYg==] [Zm9vYmE=] [Zm9vYmFy]
+// expect: raw [] [Zg] [Zm8] [Zm9v] [Zm9vYg] [Zm9vYmE] [Zm9vYmFy]
+// expect: back foobar foobar fooba
+// expect: alphabets -_-_ +/+/ fbffbf true true
+// expect: errors true true true true true true
+// expect: hex 00ff10 true true
+// expect: uuid 886313e1-3b8a-5372-9b90-0c9aee199e5d 5 4f97bffc-863e-50c9-afd0-0cdb8a5a72f0
+// expect: v4 00010203-0405-4607-8809-0a0b0c0d0e0f 4 true true
+// expect: order -1 1 0 true
+// expect: bad true true true true
+
+import org.quartzlang.bytes.bytesOf
+import org.quartzlang.encoding.*
+
+fn main() -> int {
+    let words = ["", "f", "fo", "foo", "foob", "fooba", "foobar"]
+    var padded: [str] = []
+    var raw: [str] = []
+    for w in words {
+        padded.push("[{base64Encode(w.toBytes())}]")
+        raw.push("[{base64Encode(w.toBytes(), padding = false)}]")
+    }
+    print("b64 {padded.join(" ")}")
+    print("raw {raw.join(" ")}")
+    let back = base64Decode("Zm9vYmFy").unwrap().toStr() ?? "?"
+    print("back {back} {base64Decode("Zm9vYmFy", true).unwrap().toStr() ?? "?"} {base64Decode("Zm9vYmE").unwrap().toStr() ?? "?"}")
+    let odd = bytesOf([251, 255, 191])
+    let url = base64Encode(odd, true)
+    print("alphabets {url} {base64Encode(odd)} {base64Decode(url, true).unwrap().hex()} {base64Decode(url).isErr()} {base64Decode("+/+/", true).isErr()}")
+    let bads = ["Zm9=v", "Zm9vY", "Zm9vYh==", "Zm8==", "Zm9 v", "Zm9vYg="]
+    var errs: [str] = []
+    for b in bads {
+        errs.push("{base64Decode(b).isErr()}")
+    }
+    print("errors {errs.join(" ")}")
+    print("hex {hexDecode("00fF10").unwrap().hex()} {hexDecode("abc").isErr()} {hexDecode("zz").isErr()}")
+
+    let u = uuidV5(NAMESPACE_DNS, "python.org")
+    print("uuid {u.toStr()} {u.version()} {uuidV5(NAMESPACE_URL, "https://quartzlang.org/").toStr()}")
+    let v4 = uuidV4(hexDecode("000102030405060708090a0b0c0d0e0f").unwrap())
+    let parsed = parseUuid(v4.toStr().upper()).unwrap()
+    print("v4 {v4.toStr()} {v4.version()} {parsed.equals(v4)} {uuidFromBytes(v4.toBytes()).unwrap().equals(v4)}")
+    print("order {NIL_UUID.compareTo(u)} {u.compareTo(v4)} {u.compareTo(u)} {parseUuid("ffffffff-ffff-ffff-ffff-ffffffffffff").unwrap().compareTo(u) > 0}")
+    print("bad {parseUuid("886313e1-3b8a-5372-9b90-0c9aee199e5").isErr()} {parseUuid("886313e1x3b8a-5372-9b90-0c9aee199e5d").isErr()} {parseUuid("g86313e1-3b8a-5372-9b90-0c9aee199e5d").isErr()} {uuidFromBytes(bytesOf([1])).isErr()}")
+    return 0
+}

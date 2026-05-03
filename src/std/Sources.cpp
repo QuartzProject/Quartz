@@ -1,4 +1,5 @@
 #include "std/Std.hpp"
+#include "std/lib/Library.hpp"
 
 namespace quartz::stdlib {
 
@@ -359,7 +360,12 @@ const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
         {"<std>/random.qz", kRandomQz},
         {"<std>/lists.qz", kListsQz},
     };
-    return kSources;
+    static const auto kAll = [] {
+        auto all = kSources;
+        addLibrarySources(all);
+        return all;
+    }();
+    return kAll;
 }
 
 } // namespace quartz::stdlib

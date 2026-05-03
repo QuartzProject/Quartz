@@ -111,6 +111,7 @@ public:
     /// A call runs in the provider, on its budget; scalars and str are copied both ways (spec 8.3).
     std::expected<void, std::string> link(std::string_view package, Sandbox& provider);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
+    [[nodiscard]] std::size_t memoryLimit() const { return quota_.limit; }
     [[nodiscard]] TierMode tierMode() const { return tierMode_; }
     /// Changes the fuel each call and each task slice gets, so a host can keep a wall-clock budget as the tier changes.
     void setFuelPerCall(std::int64_t fuel) { limits_.fuelPerCall = fuel; }
