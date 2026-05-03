@@ -27,6 +27,8 @@ bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text,
 
 /// Native implementations of the `org.quartzlang.*` interface functions.
 const std::vector<Native>& natives();
+/// True for the name of a native import of the standard library.
+bool isNative(std::string_view name);
 
 /// Type ids the data natives need, found from the program's own `org.quartzlang.data` declarations.
 struct DataTypes {

@@ -26,16 +26,32 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
 void Sandbox::bindNatives() {
     const ir::Module& m = *program_->module;
     dataTypes_ = std::make_unique<stdlib::DataTypes>();
-    for (const ir::HostImport& imp : m.imports) {
-        if (imp.name == "org.quartzlang.data.parseJson" && m.types.isResult(imp.result)) {
-            ir::TypeId value = m.types.info(imp.result).variants[0].payload[0];
-            const ir::TypeInfo& vi = m.types.info(value);
-            if (vi.variants.size() == 7) {
-                dataTypes_->value = value;
-                dataTypes_->list = vi.variants[5].payload[0];
-                dataTypes_->table = vi.variants[6].payload[0];
-                dataTypes_->valueSlots = program_->layouts->slots(value);
-            }
+    // Found by shape, not through an import: unused library imports are pruned (ir::pruneLibrary).
+    static constexpr std::string_view kVariants[] = {"Null", "Bool", "Int", "Float", "Str", "List", "Table"};
+    for (ir::TypeId t = 0; t < m.types.size() && dataTypes_->value == 0; ++t) {
+        const ir::TypeInfo& vi = m.types.info(t);
+        if (vi.kind != ir::TypeKind::Enum || vi.name != "Value" || vi.variants.size() != 7) {
+            continue;
+        }
+        bool shaped = true;
+        for (std::size_t k = 0; k < 7; ++k) {
+            shaped = shaped && vi.variants[k].name == kVariants[k] && vi.variants[k].payload.size() == (k == 0 ? 0 : 1);
+        }
+        static constexpr ir::TypeId kScalars[] = {ir::kBool, ir::kI64, ir::kF64, ir::kStr};
+        for (std::size_t k = 1; shaped && k < 5; ++k) {
+            shaped = vi.variants[k].payload[0] == kScalars[k - 1];
+        }
+        if (!shaped) {
+            continue;
+        }
+        const ir::TypeInfo& list = m.types.info(vi.variants[5].payload[0]);
+        const ir::TypeInfo& table = m.types.info(vi.variants[6].payload[0]);
+        if (list.kind == ir::TypeKind::List && list.elem == t && table.kind == ir::TypeKind::Map &&
+            table.key == ir::kStr && table.elem == t) {
+            dataTypes_->value = t;
+            dataTypes_->list = vi.variants[5].payload[0];
+            dataTypes_->table = vi.variants[6].payload[0];
+            dataTypes_->valueSlots = program_->layouts->slots(t);
         }
     }
     for (const ir::HostImport& imp : m.imports) {

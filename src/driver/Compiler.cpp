@@ -1,5 +1,6 @@
 #include "ir/Lower.hpp"
 #include "ir/Optimize.hpp"
+#include "ir/Prune.hpp"
 #include "ir/Validator.hpp"
 #include "quartz/Quartz.hpp"
 #include "sema/Sema.hpp"
@@ -54,6 +55,7 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     if (diags.hasErrors()) {
         return out;
     }
+    ir::pruneLibrary(*mod, "<std>/", stdlib::isNative);
     if (options.optimize) {
         ir::optimize(*mod);
     }

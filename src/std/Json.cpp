@@ -450,4 +450,9 @@ const std::vector<Native>& natives() {
     return kNatives;
 }
 
+bool isNative(std::string_view name) {
+    const auto& all = natives();
+    return std::any_of(all.begin(), all.end(), [&](const Native& n) { return n.name == name; });
+}
+
 } // namespace quartz::stdlib
