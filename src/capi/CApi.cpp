@@ -224,6 +224,8 @@ extern "C" {
 
 uint32_t qz_abi_version(void) { return QZ_ABI_VERSION; }
 
+uint32_t qz_api_level(void) { return QZ_API_LEVEL; }
+
 void qz_free(void* memory) { std::free(memory); }
 
 qz_program* qz_compile(const qz_source* sources, size_t count, const qz_compile_options* options, char** diagnostics) {
@@ -682,5 +684,106 @@ void qz_sandbox_drop_handle(qz_sandbox* sandbox, uint64_t handle) { sandbox->san
 size_t qz_sandbox_live_tasks(const qz_sandbox* sandbox) { return sandbox->sandbox->liveTasks(); }
 
 int64_t qz_sandbox_fuel_per_call(const qz_sandbox* sandbox) { return sandbox->sandbox->fuelPerCall(); }
+
+namespace {
+
+const quartz::ir::TypeInfo* infoOf(const qz_program* program, uint32_t type) {
+    const quartz::ir::TypeTable& types = program->program->module->types;
+    return type != 0 && type < types.size() ? &types.info(type) : nullptr;
+}
+
+} // namespace
+
+uint32_t qz_type_field_count(const qz_program* program, uint32_t type) {
+    const quartz::ir::TypeInfo* info = infoOf(program, type);
+    if (info == nullptr) {
+        return 0;
+    }
+    if (info->kind == quartz::ir::TypeKind::Struct) {
+        return static_cast<uint32_t>(info->fields.size());
+    }
+    return info->kind == quartz::ir::TypeKind::Tuple ? static_cast<uint32_t>(info->elems.size()) : 0;
+}
+
+uint32_t qz_type_field(const qz_program* program, uint32_t type, uint32_t index, uint32_t* offset) {
+    if (index >= qz_type_field_count(program, type)) {
+        return 0;
+    }
+    const quartz::ir::TypeInfo* info = infoOf(program, type);
+    if (offset != nullptr) {
+        *offset = program->program->layouts->fieldOffset(type, index);
+    }
+    return info->kind == quartz::ir::TypeKind::Struct ? info->fields[index].type : info->elems[index];
+}
+
+const char* qz_type_field_name(const qz_program* program, uint32_t type, uint32_t index) {
+    const quartz::ir::TypeInfo* info = infoOf(program, type);
+    if (info == nullptr || info->kind != quartz::ir::TypeKind::Struct || index >= info->fields.size()) {
+        return "";
+    }
+    return info->fields[index].name.c_str();
+}
+
+uint32_t qz_type_variant_count(const qz_program* program, uint32_t type) {
+    const quartz::ir::TypeInfo* info = infoOf(program, type);
+    return info != nullptr && info->kind == quartz::ir::TypeKind::Enum ? static_cast<uint32_t>(info->variants.size())
+                                                                       : 0;
+}
+
+const char* qz_type_variant_name(const qz_program* program, uint32_t type, uint32_t variant) {
+    return variant < qz_type_variant_count(program, type) ? infoOf(program, type)->variants[variant].name.c_str() : "";
+}
+
+uint32_t qz_type_variant_payload_count(const qz_program* program, uint32_t type, uint32_t variant) {
+    return variant < qz_type_variant_count(program, type)
+               ? static_cast<uint32_t>(infoOf(program, type)->variants[variant].payload.size())
+               : 0;
+}
+
+uint32_t qz_type_variant_payload(const qz_program* program, uint32_t type, uint32_t variant, uint32_t index,
+                                 uint32_t* offset) {
+    if (index >= qz_type_variant_payload_count(program, type, variant)) {
+        return 0;
+    }
+    const auto& payload = infoOf(program, type)->variants[variant].payload;
+    if (offset != nullptr) {
+        uint32_t at = 1;
+        for (uint32_t k = 0; k < index; ++k) {
+            at += static_cast<uint32_t>(program->program->layouts->slots(payload[k]));
+        }
+        *offset = at;
+    }
+    return payload[index];
+}
+
+bool qz_type_nullable_is_pointer(const qz_program* program, uint32_t type) {
+    const quartz::ir::TypeInfo* info = infoOf(program, type);
+    return info != nullptr && info->kind == quartz::ir::TypeKind::Nullable &&
+           program->program->layouts->nullableIsPointer(type);
+}
+
+const char* qz_str_at(const qz_slot* value, size_t* length) { return qz_str(*value, length); }
+
+size_t qz_list_length_at(const qz_slot* list) { return qz_list_length(*list); }
+
+bool qz_list_get_at(const qz_slot* list, size_t index, qz_slot* out, size_t slots) {
+    return qz_list_get(*list, index, out, slots);
+}
+
+bool qz_list_push_at(qz_sandbox* sandbox, const qz_slot* list, const qz_slot* element, size_t slots) {
+    return qz_list_push(sandbox, *list, element, slots);
+}
+
+qz_status qz_sandbox_resume_at(qz_sandbox* sandbox, uint32_t task, const qz_slot* value, qz_task_outcome* outcome) {
+    return qz_sandbox_resume(sandbox, task, value != nullptr ? *value : qz_slot{}, outcome);
+}
+
+void qz_call_str_into(qz_call* call, const char* utf8, size_t length, qz_slot* out) {
+    *out = qz_call_str(call, utf8, length);
+}
+
+void qz_sandbox_str_into(qz_sandbox* sandbox, const char* utf8, size_t length, qz_slot* out) {
+    *out = qz_sandbox_str(sandbox, utf8, length);
+}
 
 } // extern "C"

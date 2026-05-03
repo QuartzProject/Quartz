@@ -22,6 +22,8 @@ extern "C" {
 
 /* Bumped on any incompatible change to this header; compare with qz_abi_version() at run time. */
 #define QZ_ABI_VERSION 1
+/* Raised when functions are added; a host needing newer ones checks qz_api_level() before looking them up. */
+#define QZ_API_LEVEL 2
 
 typedef struct qz_program qz_program;
 typedef struct qz_sandbox qz_sandbox;
@@ -79,6 +81,7 @@ typedef struct qz_task_outcome {
 typedef bool (*qz_host_fn)(qz_call* call, void* user);
 
 QZ_API uint32_t qz_abi_version(void);
+QZ_API uint32_t qz_api_level(void);
 /* Frees memory this library returned (messages, binaries, exported state). */
 QZ_API void qz_free(void* memory);
 
@@ -192,6 +195,19 @@ QZ_API qz_kind qz_type_kind(const qz_program* program, uint32_t type, uint32_t* 
 QZ_API uint32_t qz_type_elem(const qz_program* program, uint32_t type);
 /* True for imports the runtime binds itself (the standard library); the host binds the others. */
 QZ_API bool qz_program_import_is_native(const qz_program* program, uint32_t import);
+/* Fields of a struct or elements of a tuple: count, then each one's type id and slot offset (and a struct field's
+ * name). */
+QZ_API uint32_t qz_type_field_count(const qz_program* program, uint32_t type);
+QZ_API uint32_t qz_type_field(const qz_program* program, uint32_t type, uint32_t index, uint32_t* offset);
+QZ_API const char* qz_type_field_name(const qz_program* program, uint32_t type, uint32_t index);
+/* Enums: slot 0 is the variant index and the payload follows from slot 1. */
+QZ_API uint32_t qz_type_variant_count(const qz_program* program, uint32_t type);
+QZ_API const char* qz_type_variant_name(const qz_program* program, uint32_t type, uint32_t variant);
+QZ_API uint32_t qz_type_variant_payload_count(const qz_program* program, uint32_t type, uint32_t variant);
+QZ_API uint32_t qz_type_variant_payload(const qz_program* program, uint32_t type, uint32_t variant, uint32_t index,
+                                        uint32_t* offset);
+/* A nullable of a reference type is one slot, null when 0; otherwise slot 0 is 1 when present and the value follows. */
+QZ_API bool qz_type_nullable_is_pointer(const qz_program* program, uint32_t type);
 /* Like qz_sandbox_call, for results wider than one slot: copies `slots` result slots into `result`. */
 QZ_API qz_status qz_sandbox_call_wide(qz_sandbox* sandbox, uint32_t function, const qz_slot* args, size_t count,
                                       qz_slot* result, size_t slots);
@@ -205,6 +221,17 @@ QZ_API bool qz_list_push(qz_sandbox* sandbox, qz_slot list, const qz_slot* eleme
 QZ_API size_t qz_list_length(qz_slot list);
 /* Copies element `index` (its slots) into `out`; false out of range. */
 QZ_API bool qz_list_get(qz_slot list, size_t index, qz_slot* out, size_t slots);
+
+/* The same functions taking slots by pointer, for FFIs where passing a union by value is awkward (wasm32, some JITs).
+ */
+QZ_API const char* qz_str_at(const qz_slot* value, size_t* length);
+QZ_API size_t qz_list_length_at(const qz_slot* list);
+QZ_API bool qz_list_get_at(const qz_slot* list, size_t index, qz_slot* out, size_t slots);
+QZ_API bool qz_list_push_at(qz_sandbox* sandbox, const qz_slot* list, const qz_slot* element, size_t slots);
+QZ_API qz_status qz_sandbox_resume_at(qz_sandbox* sandbox, uint32_t task, const qz_slot* value,
+                                      qz_task_outcome* outcome);
+QZ_API void qz_call_str_into(qz_call* call, const char* utf8, size_t length, qz_slot* out);
+QZ_API void qz_sandbox_str_into(qz_sandbox* sandbox, const char* utf8, size_t length, qz_slot* out);
 
 /* Trap codes, for hosts that react to the kind of failure. */
 typedef enum qz_trap {

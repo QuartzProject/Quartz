@@ -73,7 +73,11 @@ int main(void) {
     uint32_t pairFn = qz_program_function(loaded, "pair");
     uint32_t pairSlots = 0;
     CHECK(qz_program_function_result(loaded, pairFn, &pairSlots) == QZ_KIND_TUPLE && pairSlots == 2);
-    CHECK(qz_type_kind(loaded, qz_program_function_result_type(loaded, pairFn), NULL) == QZ_KIND_TUPLE);
+    uint32_t pairType = qz_program_function_result_type(loaded, pairFn);
+    CHECK(qz_type_kind(loaded, pairType, NULL) == QZ_KIND_TUPLE && qz_type_field_count(loaded, pairType) == 2);
+    uint32_t second = 0;
+    CHECK(qz_type_kind(loaded, qz_type_field(loaded, pairType, 1, &second), NULL) == QZ_KIND_I64 && second == 1);
+    CHECK(qz_api_level() >= 2);
     CHECK(hello != UINT32_MAX && qz_program_function(loaded, "missing") == UINT32_MAX);
     uint32_t slots = 0;
     CHECK(qz_program_function_arity(loaded, hello) == 1);
@@ -98,7 +102,7 @@ int main(void) {
     CHECK(qz_sandbox_call(sb, hello, &arg, 1, &result) == QZ_OK);
     CHECK(qz_sandbox_call(sb, hello, &arg, 1, &result) == QZ_OK);
     size_t len = 0;
-    const char* text = qz_str(result, &len);
+    const char* text = qz_str_at(&result, &len);
     CHECK(len == 6 && memcmp(text, "hi n10", 6) == 0);
     CHECK(calls == 2);
     char* state = qz_sandbox_export_state(sb);
