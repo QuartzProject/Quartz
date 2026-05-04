@@ -9,7 +9,7 @@ quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/Lo
     ir/TypeGraph.cpp ir/ValidateModule.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp ir/Builtins.cpp ir/Prune.cpp DEPS quartz_sema quartz_monocypher)
 quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/HostValues.cpp vm/Link.cpp vm/Trace.cpp vm/Migrate.cpp vm/Math.cpp vm/ReprC.cpp vm/Interp.cpp vm/StrBuiltins.cpp vm/ListBuiltins.cpp vm/IntBuiltins.cpp
     std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Binary.cpp
-    std/Sha.cpp std/Crypto.cpp std/Encoding.cpp std/lib/Sources.cpp std/lib/CryptoQz.cpp std/lib/EncodingQz.cpp
+    std/Sha.cpp std/Crypto.cpp std/Encoding.cpp std/lib/Sources.cpp std/lib/CryptoQz.cpp std/lib/EncodingQz.cpp std/lib/TimeQz.cpp
     DEPS quartz_ir quartz_zstd quartz_monocypher)
 # Suspension-point liveness, shared with the native compiler (D69).
 target_sources(quartz_ir PRIVATE ir/Liveness.cpp)

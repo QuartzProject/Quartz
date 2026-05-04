@@ -1,0 +1,60 @@
+// expect: parse 5400000000000=1h30m 1500000000=1.5s 250000000=250ms 187200000000000=2d4h -90000000000=-1m30s 0=0s 3600000000360=1h0.00000036s 604800000000000=7d 1250=1.25us 3000=3us 500000000=500ms 9223372036854775807=106751d23h47m16.854775807s
+// expect: errors E E E E E E
+// expect: math 2h15m 1h15m 3h30m 20m -45m 45m -1 true 8100 135 2.5
+// expect: instants 2025-11-19T14:40:00Z 3 1969-12-31T23:59:59.999Z 1970-01-01T00:00:00.123456789Z
+// expect: limits 1677-09-21T00:12:43.145224192Z 2262-04-11T23:47:16.854775807Z 2 951782400
+// expect: rfc3339 2026-11-19T13:10:00.250Z 1795093800250 -1 true true true
+// expect: since 3d9h19m59.75s true
+// expect: cron 2025-11-20T04:00:00Z 2025-11-19T14:45:00Z 2025-11-23T12:00:00Z 2026-01-01T00:05:00Z
+// expect: cron 2026-01-01T02:30:00Z 2025-11-21T00:00:00Z 2025-12-01T00:00:00Z 2026-12-31T23:59:00Z 2026-01-01T00:00:00Z
+// expect: cron 2028-02-29T00:00:00Z none 2025-11-23T00:00:00Z true false
+// expect: cron errors true true true true true true
+
+import org.quartzlang.time
+import org.quartzlang.time.{Cron, parseCron, parseDuration, parseInstant}
+
+fn d(s: str) -> str {
+    return match parseDuration(s) {
+        Ok(v) => "{v.toNanos()}={v.toStr()}"
+        Err(e) => "E"
+    }
+}
+
+fn next(expr: str, after: int) -> str {
+    return parseCron(expr).unwrap().next(time.fromEpochSeconds(after))?.toStr() ?? "none"
+}
+
+fn main() -> int {
+    var out: [str] = []
+    for s in ["1h30m", "1.5s", "250ms", "2d 4h", "-90s", "0", "1.0000000001h", "1w", "1.25us", "3µs", ".5s", "106751d23h47m16.854775807s"] {
+        out.push(d(s))
+    }
+    print("parse {out.join(" ")}")
+    out.clear()
+    for s in ["", "5", "1x", "h", "106751d23h47m16.854775808s", "1h-2m"] {
+        out.push(d(s))
+    }
+    print("errors {out.join(" ")}")
+    let a = time.hours(2).plus(time.minutes(15))
+    let b = time.minutes(75)
+    print("math {a.toStr()} {b.toStr()} {a.plus(b).toStr()} {time.hours(1).div(3).toStr()} {b.negate().plus(time.minutes(30)).toStr()} {b.negate().plus(time.minutes(30)).abs().toStr()} {b.compareTo(a)} {a.equals(parseDuration("135m").unwrap())} {a.toSeconds()} {a.toMinutes()} {parseDuration("2.5s").unwrap().toFloatSeconds()}")
+
+    let t = time.fromEpochSeconds(1763563200)
+    print("instants {t.toStr()} {t.utc().weekday} {time.fromEpochMillis(-1).toStr()} {time.fromEpochNanos(123456789).toStr()}")
+    let leap = time.instantOf(2000, 2, 29).unwrap()
+    print("limits {time.fromEpochNanos(-9223372036854775807 - 1).toStr()} {time.fromEpochNanos(9223372036854775807).toStr()} {leap.utc().weekday} {leap.epochSeconds()}")
+    let p = parseInstant("2026-11-19T14:40:00.25+01:30").unwrap()
+    print("rfc3339 {p.toStr()} {p.epochMillis()} {parseInstant("1969-12-31T23:59:59Z").unwrap().epochSeconds()} {parseInstant("2026-02-29T00:00:00Z").isErr()} {parseInstant("2026-11-19 14:40:00z").unwrap().equals(t.plus(time.days(365)))} {parseInstant("2026-11-19T14:40:00").isErr()}")
+    print("since {p.since(t.plus(time.days(361)).plus(time.hours(13)).plus(time.minutes(10)).plus(time.millis(500))).toStr()} {t.isBefore(p)}")
+
+    print("cron {next("0 4 * * *", 1763563200)} {next("*/15 9-17 * * mon-fri", 1763563200)} {next("0 12 1 * 0", 1763563200)} {next("5,10-12/2 */6 1-7 jan,jun-aug 1", 1763563200)}")
+    print("cron {next("30 2 */3 * *", 1767225599)} {next("0 0 13 * 5", 1763563200)} {next("0 0 */2 * 1", 1763563200)} {next("59 23 31 12 *", 1767225600)} {next("@hourly", 1767225599)}")
+    let weekly = parseCron("@WEEKLY").unwrap()
+    print("cron {next("0 0 29 2 *", 1763563200)} {next("0 0 30 2 *", 1763563200)} {next("0 0 * * 7", 1763563200)} {weekly.matches(time.instantOf(2025, 11, 23).unwrap())} {weekly.matches(t)}")
+    out.clear()
+    for bad in ["* * * *", "60 * * * *", "* 24 * * *", "* * 0 * *", "5-1 * * * *", "*/0 * * * *"] {
+        out.push("{parseCron(bad).isErr()}")
+    }
+    print("cron errors {out.join(" ")}")
+    return 0
+}

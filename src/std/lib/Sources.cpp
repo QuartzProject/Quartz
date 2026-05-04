@@ -7,6 +7,7 @@ void addLibrarySources(std::vector<std::pair<std::string_view, std::string_view>
                               {"<std>/crypto.qzi", kCryptoQzi},
                               {"<std>/encoding.qz", kEncodingQz},
                               {"<std>/encoding.qzi", kEncodingQzi},
+                              {"<std>/time.qz", kTimeQz},
                           });
 }
 

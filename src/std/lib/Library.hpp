@@ -13,5 +13,6 @@ void addLibrarySources(std::vector<std::pair<std::string_view, std::string_view>
 extern const std::string_view kCryptoQzi;
 extern const std::string_view kEncodingQz;
 extern const std::string_view kEncodingQzi;
+extern const std::string_view kTimeQz;
 
 } // namespace quartz::stdlib
