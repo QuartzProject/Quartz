@@ -71,5 +71,6 @@ bool base64Decode(std::string_view text, bool url, std::vector<std::uint8_t>& ou
 
 void addCryptoNatives(std::vector<Native>& out);
 void addEncodingNatives(std::vector<Native>& out);
+void addDecimalNatives(std::vector<Native>& out);
 
 } // namespace quartz::stdlib
