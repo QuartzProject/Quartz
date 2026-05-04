@@ -38,9 +38,12 @@ bool mulDivPow10(vm::HostCall& call, void*) {
     i128 q = tiny ? 0 : n / d;
     i128 r = tiny ? n : n % d;
     if (r != 0) {
-        i128 twice = r < 0 ? -2 * r : 2 * r;
-        i128 whole = tiny ? i128{1} << 126 : d < 0 ? -d : d;
-        int half = tiny ? -1 : twice < whole ? -1 : twice > whole ? 1 : 0;
+        int half = -1;
+        if (!tiny) {
+            i128 twice = r < 0 ? -2 * r : 2 * r;
+            i128 whole = d < 0 ? -d : d;
+            half = twice < whole ? -1 : twice > whole ? 1 : 0;
+        }
         bool away = false;
         switch (mode) {
         case Rounding::Down:
