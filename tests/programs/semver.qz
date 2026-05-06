@@ -1,0 +1,17 @@
+// expect: 1.4.2 2.0.0 0.3.0 true true true true
+// expect: true true false true false true true false false true false true
+// expect: -1 1 true
+
+import org.quartzlang.semver.*
+
+fn main() -> int {
+    let v = parseSemver("1.4.2").unwrap()
+    print("{v.toStr()} {parseSemver("2").unwrap().toStr()} {parseSemver("0.3").unwrap().toStr()} {parseSemver("1.x").isErr()} {parseSemver("").isErr()} {parseSemver("1.2.3.4").isErr()} {parseSemver("4294967296.0.0").isErr()}")
+    var r: [str] = []
+    for range in ["^1.2", "~1.4", "~1.3", ">=1.4.2, <2", "<1.4.2", "*", "=1.4.2", "1.5", "^0.1"] {
+        r.push("{v.satisfies(range).unwrap()}")
+    }
+    print("{r.join(" ")} {parseSemver("0.1.9").unwrap().satisfies("^0.1.2").unwrap()} {parseSemver("0.2.0").unwrap().satisfies("^0.1.2").unwrap()} {v.satisfies(">=x").isErr()}")
+    print("{v.compareTo(parseSemver("1.10.0").unwrap())} {v.compareTo(parseSemver("1.4.1").unwrap())} {v.equals(parseSemver("1.4.2").unwrap())}")
+    return 0
+}
