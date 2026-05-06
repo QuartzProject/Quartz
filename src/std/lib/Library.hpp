@@ -21,5 +21,7 @@ extern const std::string_view kTextQzi;
 extern const std::string_view kFormatsQzi;
 extern const std::string_view kBytesQz;
 extern const std::string_view kBitsQzi;
+extern const std::string_view kGeometryQz;
+extern const std::string_view kNoiseQz;
 
 } // namespace quartz::stdlib

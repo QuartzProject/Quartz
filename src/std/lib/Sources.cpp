@@ -15,6 +15,8 @@ void addLibrarySources(std::vector<std::pair<std::string_view, std::string_view>
                               {"<std>/formats.qzi", kFormatsQzi},
                               {"<std>/bytes.qz", kBytesQz},
                               {"<std>/bits.qzi", kBitsQzi},
+                              {"<std>/geometry.qz", kGeometryQz},
+                              {"<std>/noise.qz", kNoiseQz},
                           });
 }
 
