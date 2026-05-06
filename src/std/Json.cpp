@@ -321,7 +321,15 @@ void escapeTo(std::string& out, std::string_view s) {
     out += '"';
 }
 
-void writeJson(std::string& out, const vm::Slot* v, std::int64_t indent, int depth) {
+// Fuel per value and a depth limit: a list may hold itself, or the same list many times over.
+bool writeJson(vm::HostCall& call, std::string& out, const vm::Slot* v, std::int64_t indent, int depth) {
+    if (depth > 256) {
+        call.error = "toJson: the value nests deeper than 256 (or contains itself)";
+        return false;
+    }
+    if (!call.charge(1)) {
+        return false;
+    }
     auto newline = [&](int d) {
         if (indent > 0) {
             out += '\n';
@@ -329,13 +337,13 @@ void writeJson(std::string& out, const vm::Slot* v, std::int64_t indent, int dep
         }
     };
     switch (static_cast<Tag>(v[0].u)) {
-    case Tag::Null: out += "null"; return;
-    case Tag::Bool: out += v[1].u != 0 ? "true" : "false"; return;
-    case Tag::Int: out += std::to_string(v[1].i); return;
+    case Tag::Null: out += "null"; return true;
+    case Tag::Bool: out += v[1].u != 0 ? "true" : "false"; return true;
+    case Tag::Int: out += std::to_string(v[1].i); return true;
     case Tag::Float: {
         if (!std::isfinite(v[1].f)) {
             out += "null";
-            return;
+            return true;
         }
         char buf[40];
         auto r = std::to_chars(buf, buf + sizeof buf, v[1].f);
@@ -344,9 +352,9 @@ void writeJson(std::string& out, const vm::Slot* v, std::int64_t indent, int dep
         if (text.find_first_of(".e") == std::string_view::npos) {
             out += ".0";
         }
-        return;
+        return true;
     }
-    case Tag::Str: escapeTo(out, static_cast<const vm::Str*>(v[1].p)->view()); return;
+    case Tag::Str: escapeTo(out, static_cast<const vm::Str*>(v[1].p)->view()); return true;
     case Tag::List: {
         const auto* l = static_cast<const vm::List*>(v[1].p);
         out += '[';
@@ -355,13 +363,15 @@ void writeJson(std::string& out, const vm::Slot* v, std::int64_t indent, int dep
                 out += indent > 0 ? "," : ", ";
             }
             newline(depth + 1);
-            writeJson(out, l->data + static_cast<std::size_t>(i) * l->elemSlots, indent, depth + 1);
+            if (!writeJson(call, out, l->data + static_cast<std::size_t>(i) * l->elemSlots, indent, depth + 1)) {
+                return false;
+            }
         }
         if (l->len > 0) {
             newline(depth);
         }
         out += ']';
-        return;
+        return true;
     }
     case Tag::Table: {
         const auto* m = static_cast<const vm::Map*>(v[1].p);
@@ -384,15 +394,18 @@ void writeJson(std::string& out, const vm::Slot* v, std::int64_t indent, int dep
             newline(depth + 1);
             escapeTo(out, static_cast<const vm::Str*>(entries[i][0].p)->view());
             out += ": ";
-            writeJson(out, entries[i] + 1, indent, depth + 1);
+            if (!writeJson(call, out, entries[i] + 1, indent, depth + 1)) {
+                return false;
+            }
         }
         if (!entries.empty()) {
             newline(depth);
         }
         out += '}';
-        return;
+        return true;
     }
     }
+    return true;
 }
 
 bool parseJson(vm::HostCall& call, void* user) {
@@ -412,7 +425,9 @@ bool parseJson(vm::HostCall& call, void* user) {
 bool toJson(vm::HostCall& call, void*) {
     std::string out;
     std::int64_t indent = std::clamp<std::int64_t>(call.args[2].i, 0, 16);
-    writeJson(out, call.args, indent, 0);
+    if (!writeJson(call, out, call.args, indent, 0)) {
+        return false;
+    }
     if (!call.charge(static_cast<std::int64_t>(out.size() / 4 + 1))) {
         return false;
     }
