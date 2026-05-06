@@ -3,23 +3,17 @@
 namespace quartz::stdlib {
 
 void addLibrarySources(std::vector<std::pair<std::string_view, std::string_view>>& out) {
-    out.insert(out.end(), {
-                              {"<std>/crypto.qzi", kCryptoQzi},
-                              {"<std>/encoding.qz", kEncodingQz},
-                              {"<std>/encoding.qzi", kEncodingQzi},
-                              {"<std>/time.qz", kTimeQz},
-                              {"<std>/decimal.qz", kDecimalQz},
-                              {"<std>/decimal.qzi", kDecimalQzi},
-                              {"<std>/text.qz", kTextQz},
-                              {"<std>/text.qzi", kTextQzi},
-                              {"<std>/formats.qzi", kFormatsQzi},
-                              {"<std>/bytes.qz", kBytesQz},
-                              {"<std>/bits.qzi", kBitsQzi},
-                              {"<std>/geometry.qz", kGeometryQz},
-                              {"<std>/noise.qz", kNoiseQz},
-                              {"<std>/semver.qz", kSemverQz},
-                              {"<std>/semver.qzi", kSemverQzi},
-                          });
+    out.insert(
+        out.end(),
+        {
+            {"<std>/crypto.qzi", kCryptoQzi}, {"<std>/encoding.qz", kEncodingQz}, {"<std>/encoding.qzi", kEncodingQzi},
+            {"<std>/time.qz", kTimeQz},       {"<std>/decimal.qz", kDecimalQz},   {"<std>/decimal.qzi", kDecimalQzi},
+            {"<std>/text.qz", kTextQz},       {"<std>/text.qzi", kTextQzi},       {"<std>/formats.qzi", kFormatsQzi},
+            {"<std>/bytes.qz", kBytesQz},     {"<std>/bits.qzi", kBitsQzi},       {"<std>/geometry.qz", kGeometryQz},
+            {"<std>/noise.qz", kNoiseQz},     {"<std>/semver.qz", kSemverQz},     {"<std>/semver.qzi", kSemverQzi},
+            {"<std>/http.qz", kHttpQz},       {"<std>/http.qzi", kHttpQzi},       {"<std>/log.qz", kLogQz},
+            {"<std>/log.qzi", kLogQzi},
+        });
 }
 
 } // namespace quartz::stdlib

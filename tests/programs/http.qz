@@ -1,0 +1,47 @@
+// expect: https|User:pw|example.com|8443|/a/b%20c|x=1&y=two|frag => https://User:pw@example.com:8443/a/b%20c?x=1&y=two#frag
+// expect: http|-|[::1]|25565|/|-|- => http://[::1]:25565/
+// expect: mailto|-|-|-1|ada@example.org|-|- => mailto:ada@example.org
+// expect: http|-|host|-1||q|- => http://host?q
+// expect: ERR bad port in 'http://h:99999/'
+// expect: ERR URL character at 2 must be percent-encoded
+// expect: ERR URL character at 10 must be percent-encoded
+// expect: ERR bad percent escape at 9
+// expect: file|-||-1|/etc/hosts|-|- => file:///etc/hosts
+// expect: name=Ada+Lovelace&tags=a%26b%3Dc&%C3%A9=%7E* a%20b%2F%C3%A9~ a b/é true
+// expect: name=Ada Lovelace;tags=a&b=c;é=~* 3
+// expect: https://quartzlang.org/search?q=1%2B1 1+1
+// expect: POST 1 true
+// expect: false true player,ada
+
+import org.quartzlang.http
+import org.quartzlang.http.{Request, Url, parseUrl}
+import org.quartzlang.log
+
+fn show(r: Result<Url, str>) -> str {
+    return match r {
+        Ok(u) => "{u.scheme}|{u.userInfo ?? "-"}|{u.host ?? "-"}|{u.port ?? -1}|{u.path}|{u.query ?? "-"}|{u.fragment ?? "-"} => {u.toStr()}"
+        Err(e) => "ERR {e}"
+    }
+}
+
+fn main() -> int {
+    for t in ["HTTPS://User:pw@Example.COM:8443/a/b%20c?x=1&y=two#frag", "http://[::1]:25565/", "mailto:ada@example.org", "http://host?q", "http://h:99999/", "no scheme", "http://bad host/", "http://h/%zz", "file:///etc/hosts"] {
+        print(show(parseUrl(t)))
+    }
+    let q = http.encodeQuery([("name", "Ada Lovelace"), ("tags", "a&b=c"), ("é", "~*")])
+    print("{q} {http.percentEncode("a b/é~")} {http.percentDecode("a%20b%2F%C3%A9").unwrap()} {http.percentDecode("%ff").isErr()}")
+    var pairs: [str] = []
+    for p in http.decodeQuery(q).unwrap() {
+        pairs.push("{p.0}={p.1}")
+    }
+    print("{pairs.join(";")} {http.decodeQuery("a&=b&&c=%41+").unwrap().len()}")
+    let u = parseUrl("https://quartzlang.org/search").unwrap().withQuery([("q", "1+1")])
+    print("{u.toStr()} {u.queryParams().unwrap()[0].1}")
+    let req = Request("https://quartzlang.org/", method = "POST").withHeader("Accept", "application/json")
+    print("{req.method} {req.headers.len()} {http.send(req).isErr()}")
+    let lg = log.logger("shop").with("player", "ada").atLevel(log.Level.Debug)
+    lg.info("bought")
+    lg.trace("hidden")
+    print("{lg.isEnabled(log.Level.Trace)} {lg.isEnabled(log.Level.Warn)} {lg.fields.join(",")}")
+    return 0
+}

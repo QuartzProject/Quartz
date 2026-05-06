@@ -5,6 +5,7 @@
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <expected>
 #include <filesystem>
@@ -26,6 +27,20 @@ bool hostPrint(quartz::vm::HostCall& call, void*) {
     std::string_view s = static_cast<const quartz::vm::Str*>(call.args[0].p)->view();
     std::fwrite(s.data(), 1, s.size(), stdout);
     std::fputc('\n', stdout);
+    return true;
+}
+
+// `quartz run` is a host like any other: it grants the log capability by binding the standard sink to stderr.
+bool hostLog(quartz::vm::HostCall& call, void*) {
+    static constexpr const char* kLevels[] = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR"};
+    auto text = [&](const quartz::vm::Slot& s) { return static_cast<const quartz::vm::Str*>(s.p)->view(); };
+    std::string line = std::string("[") + kLevels[std::clamp<std::int64_t>(call.args[0].i, 0, 4)] + "] ";
+    line.append(text(call.args[1])).append(": ").append(text(call.args[2]));
+    const auto* fields = static_cast<const quartz::vm::List*>(call.args[3].p);
+    for (std::uint32_t i = 0; i + 1 < fields->len; i += 2) {
+        line.append(" ").append(text(fields->data[i])).append("=").append(text(fields->data[i + 1]));
+    }
+    std::fprintf(stderr, "%s\n", line.c_str());
     return true;
 }
 
@@ -127,6 +142,7 @@ int keygen(const char* path) {
 void bindHost(quartz::vm::Sandbox& sb) {
     sb.bind("print", hostPrint);
     sb.bind("int.ticks", hostTicks);
+    sb.bind("org.quartzlang.log.emit", hostLog);
 }
 
 int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry,
