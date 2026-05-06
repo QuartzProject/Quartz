@@ -1,0 +1,51 @@
+// expect: [<a>,<b>,<c>][<1>,<x,y>,<he said "hi">][][<>,<multi~line>,<>][<last>]
+// expect: [<a>,<b>][<5" screen>,<z>]
+// expect: ERR csv: line 1: unterminated quoted field
+// expect: ERR csv: line 1: unexpected character after a quoted field
+// expect: name,note|Ada,"likes, commas"|Bo,"says ""hi"""|""||"line~break", |
+// expect: [<name>,<note>][<Ada>,<likes, commas>][<Bo>,<says "hi">][<>][][<line~break>,< >]
+// expect: empty=|key1=value1|key2=value2|key3=value3|noval=|spaced\ key=with continuation|tabs\tand\=eq=a\:b\\c|unicode=é😀|
+// expect: true true
+// expect: 82a1619d01ffccc8d1ff38ce00011170d2fffeee90cf000000012a05f200d3fffffffed5fa0e00cb3ff8000000000000c3c2c0a368c3a9a16282a179a178a17a01
+// expect: {"a": [1, -1, 200, -200, 70000, -70000, 5000000000, -5000000000, 1.5, true, false, null, "hé"], "b": {"y": "x", "z": 1}}
+// expect: 18446744073709551616.0 1.5 true true true true true true
+
+import org.quartzlang.bytes.bytesOf
+import org.quartzlang.data.*
+import org.quartzlang.formats.*
+
+fn rows(r: Result<[[str]], str>) -> str {
+    return match r {
+        Ok(rs) => rs.map((row) => "[" + row.map((f) => "<{f}>").join(",") + "]").join("")
+        Err(e) => "ERR {e}"
+    }
+}
+
+fn show(s: str) {
+    print(s.replace("\n", "~"))
+}
+
+fn main() -> int {
+    show(rows(parseCsv("a,b,c\r\n1,\"x,y\",\"he said \"\"hi\"\"\"\n\n,\"multi\nline\",\nlast")))
+    show(rows(parseCsv("a;b\n5\" screen;z\n", ";")))
+    show(rows(parseCsv("\"unterminated\n")))
+    show(rows(parseCsv("\"a\"b\n")))
+    let data = [["name", "note"], ["Ada", "likes, commas"], ["Bo", "says \"hi\""], [""], [], ["line\nbreak", " "]]
+    let csv = toCsv(data)
+    show(csv.replace("\r\n", "|"))
+    show(rows(parseCsv(csv)))
+    let p = parseProperties("# comment\n! another\nkey1 = value1\nkey2:value2\nkey3 value3\n  spaced\\ key = with \\\n    continuation\nunicode=\\u00e9\\uD83D\\uDE00\nempty\ntabs\\tand\\=eq=a\\:b\\\\c\nnoval   \n")
+    match p {
+        Ok(m) => show(toProperties(m).replace("\n", "|"))
+        Err(e) => show("ERR {e}")
+    }
+    show("{parseProperties("bad=\\u12").isErr()} {parseProperties("lone=\\uD800x").isErr()}")
+    let v = parseJson("\{\"a\": [1, -1, 200, -200, 70000, -70000, 5000000000, -5000000000, 1.5, true, false, null, \"hé\"], \"b\": \{\"z\": 1, \"y\": \"x\"}}").unwrap()
+    let packed = toMsgPack(v)
+    show(packed.hex())
+    show(toJson(parseMsgPack(packed).unwrap()))
+    let big = toJson(parseMsgPack(bytesOf([207, 255, 255, 255, 255, 255, 255, 255, 255])).unwrap())
+    let single = toJson(parseMsgPack(bytesOf([202, 63, 192, 0, 0])).unwrap())
+    show("{big} {single} {parseMsgPack(bytesOf([146, 1])).isErr()} {parseMsgPack(bytesOf([212, 1, 2])).isErr()} {parseMsgPack(bytesOf([129, 1, 2])).isErr()} {parseMsgPack(bytesOf([192, 192])).isErr()} {parseMsgPack(bytesOf([196, 2, 255, 254])).isErr()} {parseMsgPack(bytesOf([221, 255, 255, 255, 255])).isErr()}")
+    return 0
+}

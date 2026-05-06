@@ -450,6 +450,7 @@ const std::vector<Native>& natives() {
         addEncodingNatives(v);
         addDecimalNatives(v);
         addTextNatives(v);
+        addFormatNatives(v);
         return v;
     }();
     return kNatives;

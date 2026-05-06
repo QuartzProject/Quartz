@@ -73,5 +73,6 @@ void addCryptoNatives(std::vector<Native>& out);
 void addEncodingNatives(std::vector<Native>& out);
 void addDecimalNatives(std::vector<Native>& out);
 void addTextNatives(std::vector<Native>& out);
+void addFormatNatives(std::vector<Native>& out);
 
 } // namespace quartz::stdlib
