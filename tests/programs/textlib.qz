@@ -1,0 +1,169 @@
+// expect: * 11 11 11 11 11 11 11 11 11 11 11 11 10 10 10 11 10 10 10 11 11 11
+// expect: a* 00 11 11 11 00 00 00 00 00 00 11 11 00 00 00 00 10 00 10 00 00 00
+// expect: *.txt 00 00 00 00 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+// expect: a?c 00 00 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+// expect: [abc]x 00 00 00 00 00 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+// expect: [!abc]x 00 00 00 00 00 00 11 00 00 00 00 00 00 00 00 00 00 00 00 11 00 00
+// expect: [a-c]*[0-9] 00 00 00 00 00 00 00 11 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+// expect: essentials.* 00 00 00 00 00 00 00 00 11 11 00 00 00 00 00 00 00 00 00 00 00 00
+// expect: *.*.* 00 00 00 00 00 00 00 00 00 11 11 00 00 00 00 00 00 00 00 00 00 00
+// expect: a*b*c 00 00 11 00 00 00 00 00 00 00 11 11 00 00 00 00 00 00 00 00 00 00
+// expect: ** 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11 11
+// expect: src/**/*.cpp 00 00 00 00 00 00 00 00 00 00 00 00 01 11 00 00 00 00 00 00 00 00
+// expect: src/*.cpp 00 00 00 00 00 00 00 00 00 00 00 00 11 10 00 00 00 00 00 00 00 00
+// expect: **/x 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 11 11 00 00 00 00
+// expect: a/** 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 11 00 11 00 00 00
+// expect: ? 00 11 00 00 00 00 00 00 00 00 00 00 00 00 00 11 00 00 00 00 00 00
+// expect: []]x 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 11 00 00
+// expect: [^a] 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 11 00 00 00 00 00 00
+// expect: é*ß 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 11 00
+// expect: *é? 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 11
+// expect: 1 point
+// expect: 7 points
+// expect: no points
+// expect: Ada has Ada and 2 others
+// expect: Ada has Ada and 1 other
+// expect: Ada has only Ada
+// expect: She left
+// expect: They left
+// expect: It's {literal} and '#' # is 5
+// expect: x12true
+// expect: Price: 42
+// expect: -1
+// expect: don't { and 'x' ' end
+// expect: en other one other other other other other other other other other other other other other other other other other other other other one other other other other other other other other other other other
+// expect: es other one other other other other other other other other other other other other other other other other other many many other one other other other other other one other other other other other
+// expect: fr one one other other other other other other other other other other other other other other other other other many many other one other other one one other one other other one other other
+// expect: de other one other other other other other other other other other other other other other other other other other other other other one other other other other other other other other other other other
+// expect: ru many one few few few many many many many many one few many many one few few many many many many one one few one other other other other other other other other other
+// expect: ar zero one two few few few few many many many many many many other other other few many many other other other one two many other other two one other many zero other other
+// expect: pt-BR other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other
+// expect: lev 3 3 2 1 2 1 3
+// expect: closest help warp none tp none
+// expect: errors true true true true true true true
+
+import org.quartzlang.data.Value
+import org.quartzlang.text.*
+
+fn b(x: bool) -> str {
+    return if x { "1" } else { "0" }
+}
+
+fn globs() {
+    let pats = ["*", "a*", "*.txt", "a?c", "[abc]x", "[!abc]x", "[a-c]*[0-9]", "essentials.*", "*.*.*", "a*b*c", "**", "src/**/*.cpp", "src/*.cpp", "**/x", "a/**", "?", "[]]x", "[^a]", "é*ß", "*é?"]
+    let texts = ["", "a", "abc", "abcx", "x.txt", "bx", "dx", "b7", "essentials.home", "essentials.home.others", "a.b.c", "aXbYc", "src/a.cpp", "src/x/y/a.cpp", "src/x/a.h", "x", "a/x", "q/r/x", "a/", "]x", "éaaß", "zéz"]
+    for p in pats {
+        var row: [str] = []
+        for t in texts {
+            row.push(b(globMatch(p, t)) + b(globMatch(p, t, "/")))
+        }
+        print("{p} {row.join(" ")}")
+    }
+}
+
+fn messages() {
+    {
+        let args: Map<str, Value> = Map()
+        args["n"] = Value.Int(1)
+        print(formatMessage("\{n, plural, one \{# point} other \{# points}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["n"] = Value.Int(7)
+        print(formatMessage("\{n, plural, one \{# point} other \{# points}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["n"] = Value.Int(0)
+        print(formatMessage("\{n, plural, =0 \{no points} one \{# point} other \{# points}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["who"] = Value.Str("Ada")
+        args["n"] = Value.Int(3)
+        print(formatMessage("\{who} has \{n, plural, offset:1 =0 \{nobody} =1 \{only \{who}} one \{\{who} and # other} other \{\{who} and # others}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["who"] = Value.Str("Ada")
+        args["n"] = Value.Int(2)
+        print(formatMessage("\{who} has \{n, plural, offset:1 =0 \{nobody} =1 \{only \{who}} one \{\{who} and # other} other \{\{who} and # others}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["who"] = Value.Str("Ada")
+        args["n"] = Value.Int(1)
+        print(formatMessage("\{who} has \{n, plural, offset:1 =0 \{nobody} =1 \{only \{who}} one \{\{who} and # other} other \{\{who} and # others}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["g"] = Value.Str("female")
+        print(formatMessage("\{g, select, female \{She} male \{He} other \{They}} left", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["g"] = Value.Str("x")
+        print(formatMessage("\{g, select, female \{She} male \{He} other \{They}} left", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["n"] = Value.Int(5)
+        print(formatMessage("It''s '\{'literal'}' and '#' \{n, plural, other \{'#' is #}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["a"] = Value.Str("x")
+        args["b"] = Value.Int(12)
+        args["c"] = Value.Bool(true)
+        print(formatMessage("\{a}\{b}\{c}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["p"] = Value.Int(42)
+        print(formatMessage("Price: \{p, number}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        args["n"] = Value.Int(-1)
+        print(formatMessage("\{n,plural,one\{#}other\{many #}}", args).unwrap())
+    }
+    {
+        let args: Map<str, Value> = Map()
+        print(formatMessage("don't '\{' and 'x' '' end", args).unwrap())
+    }
+}
+
+fn plurals() {
+    let nums = [0, 1, 2, 3, 4, 5, 10, 11, 12, 14, 21, 22, 25, 100, 101, 102, 103, 111, 112, 1000000, 2000000, 1000001, -1, -2, -21]
+    let floats = [0.5, 1.5, 2.0, 1.0, 3.25, 21.0, 0.0, 1000000.0, 100.5]
+    for l in ["en", "es", "fr", "de", "ru", "ar", "pt-BR"] {
+        var row: [str] = []
+        for n in nums {
+            row.push(pluralCategory(l, n))
+        }
+        for f in floats {
+            let args: Map<str, Value> = Map()
+            args["x"] = Value.Float(f)
+            row.push(formatMessage("\{x, plural, zero \{zero} one \{one} two \{two} few \{few} many \{many} other \{other}}", args, l).unwrap())
+        }
+        print("{l} {row.join(" ")}")
+    }
+}
+
+fn main() -> int {
+    globs()
+    messages()
+    plurals()
+    print("lev {levenshtein("kitten", "sitting")} {levenshtein("", "abc")} {levenshtein("flaw", "lawn")} {levenshtein("héllo", "hello")} {levenshtein("gumbo", "gambol")} {levenshtein("teleport", "telport")} {levenshtein("xyz", "")}")
+    let commands = ["help", "home", "warp", "tpa", "tp"]
+    print("closest {closest("hepl", commands) ?? "none"} {closest("wrap", commands) ?? "none"} {closest("zzzzzz", commands) ?? "none"} {closest("tp", commands) ?? "none"} {closest("hlep", commands, 1) ?? "none"}")
+    let args: Map<str, Value> = Map()
+    args["n"] = Value.Str("x")
+    args["l"] = Value.List([])
+    var errs: [str] = []
+    for t in ["\{n", "n}", "\{missing}", "\{n, plural, one \{a}}", "\{n, plural, other \{a}}", "\{l}", "\{n, date}"] {
+        errs.push("{formatMessage(t, args).isErr()}")
+    }
+    print("errors {errs.join(" ")}")
+    return 0
+}

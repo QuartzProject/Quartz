@@ -449,6 +449,7 @@ const std::vector<Native>& natives() {
         addCryptoNatives(v);
         addEncodingNatives(v);
         addDecimalNatives(v);
+        addTextNatives(v);
         return v;
     }();
     return kNatives;
