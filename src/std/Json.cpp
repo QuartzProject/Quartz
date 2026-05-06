@@ -466,6 +466,7 @@ const std::vector<Native>& natives() {
         addDecimalNatives(v);
         addTextNatives(v);
         addFormatNatives(v);
+        addBitsNatives(v);
         return v;
     }();
     return kNatives;

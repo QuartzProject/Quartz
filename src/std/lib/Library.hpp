@@ -19,5 +19,7 @@ extern const std::string_view kDecimalQzi;
 extern const std::string_view kTextQz;
 extern const std::string_view kTextQzi;
 extern const std::string_view kFormatsQzi;
+extern const std::string_view kBytesQz;
+extern const std::string_view kBitsQzi;
 
 } // namespace quartz::stdlib
