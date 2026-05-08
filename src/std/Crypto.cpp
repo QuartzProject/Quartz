@@ -12,11 +12,12 @@ namespace quartz::stdlib {
 namespace {
 
 // Fuel per byte or per operation, measured so that one unit costs about what a backward jump does (D109).
+constexpr std::size_t kSha256BytesPerUnit = 1;
 constexpr std::size_t kShaBytesPerUnit = 2;
 constexpr std::size_t kBlakeBytesPerUnit = 4;
-constexpr std::int64_t kSignUnits = 4'000;
-constexpr std::int64_t kVerifyUnits = 8'000;
-constexpr std::int64_t kArgonUnitsPerBlock = 120;
+constexpr std::int64_t kSignUnits = 8'000;
+constexpr std::int64_t kVerifyUnits = 22'000;
+constexpr std::int64_t kArgonUnitsPerBlock = 200;
 
 constexpr std::int64_t kArgonMaxLanes = 16;
 constexpr std::int64_t kArgonMaxPasses = 1'000;
@@ -38,7 +39,7 @@ bool sha1(vm::HostCall& call, void*) {
 
 bool sha256(vm::HostCall& call, void*) {
     auto in = bytesArg(call.args[0]);
-    if (!chargeRead(call, in.size(), kShaBytesPerUnit)) {
+    if (!chargeRead(call, in.size(), kSha256BytesPerUnit)) {
         return false;
     }
     Sha256 h;
@@ -59,7 +60,7 @@ bool sha512(vm::HostCall& call, void*) {
 bool hmac256(vm::HostCall& call, void*) {
     auto key = bytesArg(call.args[0]);
     auto in = bytesArg(call.args[1]);
-    if (!chargeRead(call, key.size() + in.size() + 256, kShaBytesPerUnit)) {
+    if (!chargeRead(call, key.size() + in.size() + 256, kSha256BytesPerUnit)) {
         return false;
     }
     return putBytes(call, hmacSha256(key, in), &call.result);

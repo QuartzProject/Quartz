@@ -21,7 +21,7 @@ bool separatorOf(vm::HostCall& call, const vm::Slot& arg, char& sep) {
 bool parseCsv(vm::HostCall& call, void* user) {
     std::string_view text = strArg(call.args[0]);
     char sep = ',';
-    if (!separatorOf(call, call.args[1], sep) || !call.charge(static_cast<std::int64_t>(text.size() / 4 + 1))) {
+    if (!separatorOf(call, call.args[1], sep) || !call.charge(static_cast<std::int64_t>(text.size() + 1))) {
         return false;
     }
     const auto* ctx = static_cast<const NativeCtx*>(user);

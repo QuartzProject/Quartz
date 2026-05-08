@@ -77,30 +77,25 @@ bool decodeHex(vm::HostCall& call, void*) {
 } // namespace
 
 std::string base64Encode(std::span<const std::uint8_t> data, bool url, bool pad) {
-    std::string_view alphabet = url ? kUrl : kStandard;
-    std::string out;
-    out.reserve((data.size() + 2) / 3 * 4);
-    std::size_t i = 0;
-    for (; i + 3 <= data.size(); i += 3) {
-        std::uint32_t v = (static_cast<std::uint32_t>(data[i]) << 16) | (data[i + 1] << 8) | data[i + 2];
-        out += alphabet[v >> 18];
-        out += alphabet[(v >> 12) & 63];
-        out += alphabet[(v >> 6) & 63];
-        out += alphabet[v & 63];
+    const char* alphabet = url ? kUrl.data() : kStandard.data();
+    std::size_t whole = data.size() / 3;
+    std::size_t rest = data.size() - whole * 3;
+    std::string out(whole * 4 + (rest == 0 ? 0 : pad ? 4 : rest + 1), '=');
+    char* o = out.data();
+    const std::uint8_t* in = data.data();
+    for (std::size_t g = 0; g < whole; ++g, in += 3, o += 4) {
+        std::uint32_t v = (static_cast<std::uint32_t>(in[0]) << 16) | (in[1] << 8) | in[2];
+        o[0] = alphabet[v >> 18];
+        o[1] = alphabet[(v >> 12) & 63];
+        o[2] = alphabet[(v >> 6) & 63];
+        o[3] = alphabet[v & 63];
     }
-    std::size_t rest = data.size() - i;
     if (rest > 0) {
-        std::uint32_t v = static_cast<std::uint32_t>(data[i]) << 16;
+        std::uint32_t v = static_cast<std::uint32_t>(in[0]) << 16 | (rest == 2 ? in[1] << 8 : 0);
+        o[0] = alphabet[v >> 18];
+        o[1] = alphabet[(v >> 12) & 63];
         if (rest == 2) {
-            v |= static_cast<std::uint32_t>(data[i + 1]) << 8;
-        }
-        out += alphabet[v >> 18];
-        out += alphabet[(v >> 12) & 63];
-        if (rest == 2) {
-            out += alphabet[(v >> 6) & 63];
-        }
-        if (pad) {
-            out.append(3 - rest, '=');
+            o[2] = alphabet[(v >> 6) & 63];
         }
     }
     return out;
@@ -120,11 +115,30 @@ bool base64Decode(std::string_view text, bool url, std::vector<std::uint8_t>& ou
         error = "truncated input";
         return false;
     }
-    out.clear();
-    out.reserve(body / 4 * 3 + 2);
+    out.resize(body / 4 * 3);
+    std::size_t full = body / 4 * 4;
+    for (std::size_t i = 0; i < full; i += 4) {
+        std::uint32_t a = table[static_cast<unsigned char>(text[i])];
+        std::uint32_t b = table[static_cast<unsigned char>(text[i + 1])];
+        std::uint32_t c = table[static_cast<unsigned char>(text[i + 2])];
+        std::uint32_t d = table[static_cast<unsigned char>(text[i + 3])];
+        if ((a | b | c | d) >= 64) {
+            std::size_t bad = i;
+            while (table[static_cast<unsigned char>(text[bad])] != 0xFF) {
+                ++bad;
+            }
+            error = std::format("unexpected character at {}", bad);
+            return false;
+        }
+        std::uint32_t v = a << 18 | b << 12 | c << 6 | d;
+        std::size_t o = i / 4 * 3;
+        out[o] = static_cast<std::uint8_t>(v >> 16);
+        out[o + 1] = static_cast<std::uint8_t>(v >> 8);
+        out[o + 2] = static_cast<std::uint8_t>(v);
+    }
     std::uint32_t acc = 0;
     int bits = 0;
-    for (std::size_t i = 0; i < body; ++i) {
+    for (std::size_t i = full; i < body; ++i) {
         std::uint8_t d = table[static_cast<unsigned char>(text[i])];
         if (d == 0xFF) {
             error = std::format("unexpected character at {}", i);
