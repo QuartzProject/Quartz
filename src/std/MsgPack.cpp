@@ -162,7 +162,7 @@ private:
         case 0xC4:
         case 0xC5:
         case 0xC6:
-            return take(std::size_t{1} << (t - 0xC4), v) && text(v, out, true);
+            return take(std::size_t{1} << (t - 0xC4), v) && text(static_cast<std::size_t>(v), out, true);
         case 0xCA:
             if (!take(4, v)) {
                 return false;
@@ -203,13 +203,13 @@ private:
         case 0xD9:
         case 0xDA:
         case 0xDB:
-            return take(std::size_t{1} << (t - 0xD9), v) && text(v, out, false);
+            return take(std::size_t{1} << (t - 0xD9), v) && text(static_cast<std::size_t>(v), out, false);
         case 0xDC:
         case 0xDD:
-            return take(t == 0xDC ? 2 : 4, v) && array(v, out, depth);
+            return take(t == 0xDC ? 2 : 4, v) && array(static_cast<std::size_t>(v), out, depth);
         case 0xDE:
         case 0xDF:
-            return take(t == 0xDE ? 2 : 4, v) && map(v, out, depth);
+            return take(t == 0xDE ? 2 : 4, v) && map(static_cast<std::size_t>(v), out, depth);
         default:
             return fail(std::format("unsupported type byte 0x{:02x} (extension types are not supported)", t));
         }
