@@ -348,7 +348,9 @@ pub fn sortWith<T>(xs: [T], cmp: fn(T, T) -> int) {
 
 } // namespace
 
-const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
+namespace {
+
+const std::vector<std::pair<std::string_view, std::string_view>>& coreSources() {
     static const std::vector<std::pair<std::string_view, std::string_view>> kSources = {
         {"<std>/data.qz", kDataQz},
         {"<std>/data.qzi", kDataQzi},
@@ -360,12 +362,25 @@ const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
         {"<std>/random.qz", kRandomQz},
         {"<std>/lists.qz", kListsQz},
     };
+    return kSources;
+}
+
+} // namespace
+
+const std::vector<std::pair<std::string_view, std::string_view>>& sources() {
     static const auto kAll = [] {
-        auto all = kSources;
+        auto all = coreSources();
         addLibrarySources(all);
         return all;
     }();
     return kAll;
+}
+
+std::size_t coreSourceCount() { return coreSources().size(); }
+
+std::string_view packageOf(std::string_view source) {
+    std::string_view line = source.substr(0, source.find('\n'));
+    return line.starts_with("package ") ? line.substr(8) : std::string_view{};
 }
 
 } // namespace quartz::stdlib

@@ -10,6 +10,10 @@ namespace quartz::stdlib {
 
 /// Embedded sources of the standard library: (file name, text). Compiled with every program.
 const std::vector<std::pair<std::string_view, std::string_view>>& sources();
+/// The first sources, compiled with every program; the others only when their package is imported.
+std::size_t coreSourceCount();
+/// The package a source declares on its first line.
+std::string_view packageOf(std::string_view source);
 
 struct Native {
     std::string_view name;

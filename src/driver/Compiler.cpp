@@ -37,9 +37,41 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
             dropAttribute(*modules.back(), test);
         }
     }
-    for (const auto& [name, text] : stdlib::sources()) {
-        const SourceFile& file = sources.add(std::string(name), std::string(text));
-        modules.push_back(syntax::parseModule(file, arena, names, diags));
+    // The packages added after the first ones are parsed only when something imports them: they cost every compile.
+    std::vector<std::string> imported;
+    auto noteImports = [&](const syntax::Module* m) {
+        for (const syntax::Import& imp : m != nullptr ? m->imports : std::span<syntax::Import>{}) {
+            std::string path;
+            for (Symbol part : imp.path) {
+                path += path.empty() ? "" : ".";
+                path += names.name(part);
+            }
+            imported.push_back(std::move(path));
+        }
+    };
+    for (const syntax::Module* m : modules) {
+        noteImports(m);
+    }
+    auto isImported = [&](std::string_view package) {
+        return std::any_of(imported.begin(), imported.end(), [&](const std::string& p) {
+            return p == package || (p.starts_with(package) && p.size() > package.size() && p[package.size()] == '.');
+        });
+    };
+    const auto& library = stdlib::sources();
+    std::vector<bool> taken(library.size(), false);
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (std::size_t i = 0; i < library.size(); ++i) {
+            std::string_view package = stdlib::packageOf(library[i].second);
+            if (taken[i] || (i >= stdlib::coreSourceCount() && !isImported(package))) {
+                continue;
+            }
+            taken[i] = true;
+            changed = true;
+            const SourceFile& file = sources.add(std::string(library[i].first), std::string(library[i].second));
+            modules.push_back(syntax::parseModule(file, arena, names, diags));
+            noteImports(modules.back());
+        }
     }
     if (diags.hasErrors()) {
         out.diagnostics = diags.render();
