@@ -301,6 +301,8 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         "return [1, 2, 3].map((x) => 10 / (x - 2)).len()",
         "var s = 0\n    for i in 0..9000 { s += [3, 1, 2].filter((x) => x > 1).len() }\n    return s",
         "let ps = [(2, 1.0), (1, 2.0), (2, 3.0)]\n    ps.sortWith((a, b) => a.0 - b.0)\n    return ps[2].0",
+        "var s = 0\n    for i in 0..100000 { s = s.saturatingAdd(i * 99999999999) }\n    return s",
+        "let b: i8 = 100\n    return (b.checkedMul(2) ?? 1 as i8) as int / ([0][0] + b.saturatingSub(-100) as int - 127)",
     };
     for (const char* body : bodies) {
         CAPTURE(body);
@@ -331,6 +333,26 @@ TEST_CASE("fuel charged by host functions inside a counted loop matches the inte
                        "}\n";
     auto p = withStd("charge.qz", text);
     for (std::int64_t fuel : {1'000, 2'399, 2'400, 2'401, 100'000}) {
+        CAPTURE(fuel);
+        CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
+    }
+}
+
+TEST_CASE("standard library packages charge the same fuel and trap the same way in both tiers") {
+    std::string text = "import org.quartzlang.decimal.*\n"
+                       "import org.quartzlang.text.levenshtein\n"
+                       "import org.quartzlang.time.parseDuration\n"
+                       "fn main() -> int {\n"
+                       "    var total = decimalOf(0)\n"
+                       "    var n = 0\n"
+                       "    for i in 0..200 {\n"
+                       "        total = total.plus(parseDecimal(\"{i}.25\").unwrap()).div(decimalOf(3), 4)\n"
+                       "        n += parseDuration(\"{i}m30s\").unwrap().toSeconds() + levenshtein(\"{i}\", \"x{i}\")\n"
+                       "    }\n"
+                       "    return n + total.unscaled\n"
+                       "}\n";
+    auto p = withStd("stdlib.qz", text);
+    for (std::int64_t fuel : {500, 5'000, 20'000, 60'000, 10'000'000}) {
         CAPTURE(fuel);
         CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
     }

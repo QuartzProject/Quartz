@@ -10,8 +10,9 @@
 
 namespace quartz::fuzz {
 
-/// Feeds the input as a `str` to `run` in a sandbox built once, so the natives see it the way a plugin would.
-inline int runStd(const char* program, const std::uint8_t* data, std::size_t size) {
+/// Feeds the input as a `str` to `run` in a sandbox built once, so the natives see it the way a plugin would. With
+/// `checks`, a failed `assert` in the program (a broken round trip) aborts the fuzzer.
+inline int runStd(const char* program, const std::uint8_t* data, std::size_t size, bool checks = false) {
     static vm::Sandbox* sb = [&] {
         SourceInput in[] = {{"fuzz.qz", program}};
         CompileOutput out = compile(in);
@@ -30,7 +31,11 @@ inline int runStd(const char* program, const std::uint8_t* data, std::size_t siz
     vm::Slot arg{};
     arg.p = sb->newStr(std::string_view(reinterpret_cast<const char*>(data), size));
     if (arg.p != nullptr) {
-        (void)sb->call(sb->program().findFunction("run"), std::span<const vm::Slot>(&arg, 1));
+        auto r = sb->call(sb->program().findFunction("run"), std::span<const vm::Slot>(&arg, 1));
+        if (checks && !r && r.error().code == ir::TrapCode::Panic) {
+            std::fprintf(stderr, "%s\n", r.error().describe().c_str());
+            std::abort();
+        }
     }
     return 0;
 }
