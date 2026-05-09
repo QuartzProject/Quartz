@@ -302,7 +302,8 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
         "var s = 0\n    for i in 0..9000 { s += [3, 1, 2].filter((x) => x > 1).len() }\n    return s",
         "let ps = [(2, 1.0), (1, 2.0), (2, 3.0)]\n    ps.sortWith((a, b) => a.0 - b.0)\n    return ps[2].0",
         "var s = 0\n    for i in 0..100000 { s = s.saturatingAdd(i * 99999999999) }\n    return s",
-        "let b: i8 = 100\n    return (b.checkedMul(2) ?? 1 as i8) as int / ([0][0] + b.saturatingSub(-100) as int - 127)",
+        "let b: i8 = 100\n    return (b.checkedMul(2) ?? 1 as i8) as int / ([0][0] + b.saturatingSub(-100) as int - "
+        "127)",
     };
     for (const char* body : bodies) {
         CAPTURE(body);
