@@ -204,8 +204,9 @@ int Checker::headCtor(const Pattern* p, TypeId t, std::vector<const Pattern*>& a
         args.push_back(p);
         return 1;
     case ir::TypeKind::Enum:
-        if (p->kind != PatternKind::Variant) {
-            return -2;
+        if (p->kind != PatternKind::Variant || p->variantIndex >= info.variants.size() ||
+            p->sub.size() != info.variants[p->variantIndex].payload.size()) {
+            return -2; // already reported by checkPattern
         }
         args.assign(p->sub.begin(), p->sub.end());
         return static_cast<int>(p->variantIndex);
@@ -216,7 +217,8 @@ int Checker::headCtor(const Pattern* p, TypeId t, std::vector<const Pattern*>& a
         return -2;
     case ir::TypeKind::Tuple:
     case ir::TypeKind::Struct:
-        if (p->kind != PatternKind::Tuple && p->kind != PatternKind::Struct) {
+        if ((p->kind != PatternKind::Tuple && p->kind != PatternKind::Struct) ||
+            p->sub.size() != (info.kind == ir::TypeKind::Tuple ? info.elems.size() : info.fields.size())) {
             return -2;
         }
         args.assign(p->sub.begin(), p->sub.end());
@@ -353,9 +355,12 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
     }
     TypeId result = ir::kNever;
     std::vector<const Pattern*> unguarded;
+    bool badPatterns = false;
     for (MatchArm& arm : m->arms) {
         pushScope();
+        std::size_t errors = diags_.errorCount();
         checkPattern(arm.pattern, subject);
+        badPatterns = badPatterns || diags_.errorCount() != errors;
         if (arm.guard != nullptr) {
             expectAssignable(checkValue(arm.guard, ir::kBool), ir::kBool, arm.guard->span);
         } else {
@@ -379,7 +384,7 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
         }
         popScope();
     }
-    if (subject != ir::kError) {
+    if (subject != ir::kError && !badPatterns) {
         std::vector<std::string> missing = missingCases(unguarded, subject);
         if (missing.size() == 1 && missing[0] == "_") {
             diags_.error(m->span, "match is not exhaustive; add a '_' arm");
@@ -437,9 +442,10 @@ void Checker::checkLetPattern(LetStmt* s) {
         t = declared;
     }
     patternMutable_ = s->mutable_;
+    std::size_t errors = diags_.errorCount();
     checkPattern(s->pattern, t);
     patternMutable_ = false;
-    if (t == ir::kError) {
+    if (t == ir::kError || diags_.errorCount() != errors) {
         return;
     }
     std::vector<std::string> missing = missingCases({s->pattern}, t);
