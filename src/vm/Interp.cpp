@@ -666,12 +666,12 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
                 const Map* m = MAP(RB);
                 const Slot* e = mapFind(m, &RC);
                 if (m->valuePtrNullable) {
-                    RA.p = e != nullptr ? e[1].p : nullptr;
+                    RA.p = e != nullptr ? e[m->keySlots].p : nullptr;
                 } else if (e == nullptr) {
                     RA.u = 0;
                 } else {
                     RA.u = 1;
-                    std::memcpy(&RA + 1, e + 1, m->valueSlots * sizeof(Slot));
+                    std::memcpy(&RA + 1, e + m->keySlots, m->valueSlots * sizeof(Slot));
                 }
                 NEXT();
             }

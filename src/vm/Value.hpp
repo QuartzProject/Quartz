@@ -47,21 +47,43 @@ struct List {
     [[nodiscard]] std::uint8_t* bytes() const { return reinterpret_cast<std::uint8_t*>(data); }
 };
 
+inline constexpr std::uint8_t kMapKeyRaw = 0;    // one slot compared bit for bit
+inline constexpr std::uint8_t kMapKeyStr = 1;    // a `str`, compared by content
+inline constexpr std::uint8_t kMapKeyFields = 2; // a struct, tuple or enum, hashed and compared field by field
+
+/// Open addressing over buckets; `order` keeps the buckets in insertion order, which is the iteration order.
 struct Map {
-    std::uint64_t* hashes; // 0 empty, 1 tombstone, otherwise hash | 2
-    Slot* entries;         // per entry: key slot then value slots
+    std::uint64_t* hashes; // per bucket: 0 empty, 1 tombstone, otherwise hash | 2
+    Slot* entries;         // per bucket: key slots then value slots
+    std::uint32_t* order;  // bucket + 1 of each inserted entry in insertion order, 0 once removed
+    std::uint32_t* place;  // per bucket: its position in `order` (allocated with it)
     std::uint32_t count;
     std::uint32_t used;    // live + tombstones
     std::uint32_t cap;     // power of two
+    std::uint32_t ordered; // positions of `order` in use
     std::uint32_t keyType;
     std::uint32_t valueType;
+    std::uint32_t version; // changes when a key is added or removed: a `for` over the map checks it
     std::uint16_t valueSlots;
-    bool strKeys;
+    std::uint16_t keySlots;
+    std::uint8_t keyKind;
+    bool keyHasRefs;
     bool valueHasRefs;
     bool valuePtrNullable; // Map.get returns a single pointer slot instead of flag plus payload
     Owner owner;
     std::uint16_t level;
 };
+
+/// Calls `f` with each live entry (key slots then value slots) in insertion order.
+template <class F>
+void forEachEntry(const Map* m, F&& f) {
+    std::size_t es = static_cast<std::size_t>(m->keySlots) + m->valueSlots;
+    for (std::uint32_t p = 0; p < m->ordered; ++p) {
+        if (std::uint32_t b = m->order[p]; b != 0) {
+            f(m->entries + (b - 1) * es);
+        }
+    }
+}
 
 /// A function value: the function and the values it captured, which fill its last parameters.
 struct Closure {

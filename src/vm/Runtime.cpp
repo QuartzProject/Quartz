@@ -14,19 +14,6 @@ using ir::TypeKind;
 
 namespace {
 
-std::uint64_t mix64(std::uint64_t x) {
-    x ^= x >> 30;
-    x *= 0xbf58476d1ce4e5b9ULL;
-    x ^= x >> 27;
-    x *= 0x94d049bb133111ebULL;
-    x ^= x >> 31;
-    return x;
-}
-
-} // namespace
-
-namespace {
-
 std::string place(std::string_view file, std::uint32_t line) {
     if (line == 0) {
         return "";
@@ -525,165 +512,6 @@ Str* Sandbox::join(const List* l, const Str* sep) {
     return s;
 }
 
-Map* Sandbox::newMap(TypeId mapType) {
-    const ir::TypeInfo& info = program_->module->types.info(mapType);
-    auto* m = static_cast<Map*>(cur_->allocate(sizeof(Map)));
-    if (m == nullptr) {
-        fail(ir::TrapCode::OutOfMemory);
-        return nullptr;
-    }
-    std::memset(m, 0, sizeof(Map));
-    m->keyType = info.key;
-    m->valueType = info.elem;
-    m->valueSlots = static_cast<std::uint16_t>(program_->layouts->slots(info.elem));
-    m->strKeys = info.key == ir::kStr;
-    m->valueHasRefs = program_->module->types.hasRefs(info.elem);
-    m->valuePtrNullable = program_->module->types.isRefKind(info.elem) ||
-                          program_->module->types.kind(info.elem) == TypeKind::Handle;
-    m->owner = Owner::Arena;
-    m->level = static_cast<std::uint16_t>(curLevel_);
-    return m;
-}
-
-namespace {
-
-std::uint64_t keyHash(const Map* m, const Slot* key) {
-    std::uint64_t h = m->strKeys ? strHash(static_cast<Str*>(key->p)) : mix64(key->u ^ hashKey().k0);
-    return h | 2;
-}
-
-bool keyEq(const Map* m, const Slot* a, const Slot* b) {
-    return m->strKeys ? strEq(static_cast<const Str*>(a->p), static_cast<const Str*>(b->p)) : a->u == b->u;
-}
-
-} // namespace
-
-Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
-    if (m->cap == 0) {
-        return nullptr;
-    }
-    std::uint64_t h = keyHash(m, key);
-    std::uint32_t mask = m->cap - 1;
-    std::uint32_t es = 1u + m->valueSlots;
-    for (std::uint32_t i = static_cast<std::uint32_t>(h) & mask;; i = (i + 1) & mask) {
-        std::uint64_t tag = m->hashes[i];
-        if (tag == 0) {
-            return nullptr;
-        }
-        Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-        if (tag == h && keyEq(m, e, key)) {
-            return e;
-        }
-    }
-}
-
-bool Sandbox::growMap(Map* m) {
-    std::uint32_t cap = m->cap == 0 ? 8 : m->cap * 2;
-    if (cap > (1u << 26)) {
-        return fail(ir::TrapCode::OutOfMemory, "map too large");
-    }
-    std::uint32_t es = 1u + m->valueSlots;
-    InvocationArena* region = regionFor(m->owner, m->level);
-    InvocationArena* savedCur = cur_;
-    if (m->owner == Owner::Arena) {
-        cur_ = region;
-    }
-    auto* hashes = static_cast<std::uint64_t*>(allocFor(m->owner, sizeof(std::uint64_t) * cap));
-    auto* entries = static_cast<Slot*>(allocFor(m->owner, sizeof(Slot) * es * cap));
-    cur_ = savedCur;
-    if (hashes == nullptr || entries == nullptr) {
-        return false;
-    }
-    std::memset(hashes, 0, sizeof(std::uint64_t) * cap);
-    for (std::uint32_t i = 0; i < m->cap; ++i) {
-        std::uint64_t tag = m->hashes[i];
-        if (tag < 2) {
-            continue;
-        }
-        std::uint32_t j = static_cast<std::uint32_t>(tag) & (cap - 1);
-        while (hashes[j] != 0) {
-            j = (j + 1) & (cap - 1);
-        }
-        hashes[j] = tag;
-        std::memcpy(entries + static_cast<std::size_t>(j) * es, m->entries + static_cast<std::size_t>(i) * es,
-                    es * sizeof(Slot));
-    }
-    if (m->owner == Owner::State) {
-        heap_.release(m->hashes);
-        heap_.release(m->entries);
-    }
-    m->hashes = hashes;
-    m->entries = entries;
-    m->cap = cap;
-    m->used = m->count;
-    return true;
-}
-
-bool Sandbox::mapSet(Map* m, const Slot* key, const Slot* value) {
-    bool state = m->owner == Owner::State;
-    bool promote = !state && m->owner == Owner::Arena && m->level < curLevel_;
-    if (Slot* e = mapFind(m, key)) {
-        if (state && m->valueHasRefs) {
-            return storeState(m->valueType, value, e + 1);
-        }
-        std::memcpy(e + 1, value, m->valueSlots * sizeof(Slot));
-        return !(promote && m->valueHasRefs) || promoteInto(m->valueType, e + 1, m->level);
-    }
-    if ((static_cast<std::uint64_t>(m->used) + 1) * 4 > static_cast<std::uint64_t>(m->cap) * 3 && !growMap(m)) {
-        return false;
-    }
-    std::uint64_t h = keyHash(m, key);
-    std::uint32_t mask = m->cap - 1;
-    std::uint32_t i = static_cast<std::uint32_t>(h) & mask;
-    while (m->hashes[i] >= 2) {
-        i = (i + 1) & mask;
-    }
-    if (m->hashes[i] == 0) {
-        ++m->used;
-    }
-    Slot* e = m->entries + static_cast<std::size_t>(i) * (1u + m->valueSlots);
-    if (state && m->strKeys) {
-        if (!copyIntoState(ir::kStr, key, e)) {
-            return false;
-        }
-    } else {
-        e[0] = *key;
-    }
-    if (state && m->valueHasRefs) {
-        if (!copyIntoState(m->valueType, value, e + 1)) {
-            return false;
-        }
-    } else {
-        std::memcpy(e + 1, value, m->valueSlots * sizeof(Slot));
-    }
-    if (promote && ((m->strKeys && !promoteInto(ir::kStr, e, m->level)) ||
-                    (m->valueHasRefs && !promoteInto(m->valueType, e + 1, m->level)))) {
-        return false;
-    }
-    m->hashes[i] = h;
-    ++m->count;
-    return true;
-}
-
-bool Sandbox::mapRemove(Map* m, const Slot* key) {
-    Slot* e = mapFind(m, key);
-    if (e == nullptr) {
-        return false;
-    }
-    auto i = static_cast<std::uint32_t>((e - m->entries) / (1 + m->valueSlots));
-    if (m->owner == Owner::State) {
-        if (m->strKeys) {
-            releaseState(ir::kStr, e);
-        }
-        if (m->valueHasRefs) {
-            releaseState(m->valueType, e + 1);
-        }
-    }
-    m->hashes[i] = 1;
-    --m->count;
-    return true;
-}
-
 bool Sandbox::storeState(TypeId type, const Slot* src, Slot* dst) {
     releaseState(type, dst);
     return copyIntoState(type, src, dst);
@@ -758,20 +586,16 @@ bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {
         out->owner = Owner::State;
         out->hashes = nullptr;
         out->entries = nullptr;
+        out->order = nullptr;
+        out->place = nullptr;
         out->cap = 0;
         out->count = 0;
         out->used = 0;
+        out->ordered = 0;
         dst->p = out;
-        std::uint32_t es = 1u + m->valueSlots;
-        for (std::uint32_t i = 0; i < m->cap; ++i) {
-            if (m->hashes[i] >= 2) {
-                const Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                if (!mapSet(out, e, e + 1)) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        bool ok = true;
+        forEachEntry(m, [&](const Slot* e) { ok = ok && mapSet(out, e, e + m->keySlots); });
+        return ok;
     }
     case TypeKind::Nullable: {
         if (lay.nullableIsPointer(type)) {
@@ -848,20 +672,21 @@ void Sandbox::releaseState(TypeId type, Slot* slots) {
         if (m == nullptr || m->owner != Owner::State) {
             return;
         }
-        std::uint32_t es = 1u + m->valueSlots;
+        std::uint32_t es = m->keySlots + m->valueSlots;
         for (std::uint32_t i = 0; i < m->cap; ++i) {
             if (m->hashes[i] >= 2) {
                 Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                if (m->strKeys) {
-                    releaseState(ir::kStr, e);
+                if (m->keyHasRefs) {
+                    releaseState(m->keyType, e);
                 }
                 if (m->valueHasRefs) {
-                    releaseState(m->valueType, e + 1);
+                    releaseState(m->valueType, e + m->keySlots);
                 }
             }
         }
         heap_.release(m->hashes);
         heap_.release(m->entries);
+        heap_.release(m->order);
         heap_.release(m);
         return;
     }

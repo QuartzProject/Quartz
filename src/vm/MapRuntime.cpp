@@ -1,0 +1,295 @@
+#include "vm/Sandbox.hpp"
+
+#include <cstring>
+
+namespace quartz::vm {
+
+using ir::TypeId;
+using ir::TypeKind;
+
+namespace {
+
+inline std::uint64_t mix64(std::uint64_t x) {
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
+}
+
+std::uint64_t combine(std::uint64_t h, std::uint64_t part) { return mix64(h + 0x9e3779b97f4a7c15ULL + part); }
+
+inline std::size_t entrySlots(const Map* m) { return static_cast<std::size_t>(m->keySlots) + m->valueSlots; }
+
+} // namespace
+
+Map* Sandbox::newMap(TypeId mapType) {
+    const ir::TypeTable& types = program_->module->types;
+    const ir::TypeInfo& info = types.info(mapType);
+    auto* m = static_cast<Map*>(cur_->allocate(sizeof(Map)));
+    if (m == nullptr) {
+        fail(ir::TrapCode::OutOfMemory);
+        return nullptr;
+    }
+    std::memset(m, 0, sizeof(Map));
+    m->keyType = info.key;
+    m->valueType = info.elem;
+    m->valueSlots = static_cast<std::uint16_t>(program_->layouts->slots(info.elem));
+    m->keySlots = static_cast<std::uint16_t>(program_->layouts->slots(info.key));
+    TypeKind kk = types.kind(info.key);
+    m->keyKind = info.key == ir::kStr                                                      ? kMapKeyStr
+                 : kk == TypeKind::Struct || kk == TypeKind::Tuple || kk == TypeKind::Enum ? kMapKeyFields
+                                                                                           : kMapKeyRaw;
+    m->keyHasRefs = types.hasRefs(info.key);
+    m->valueHasRefs = types.hasRefs(info.elem);
+    m->valuePtrNullable = types.isRefKind(info.elem) || types.kind(info.elem) == TypeKind::Handle;
+    m->owner = Owner::Arena;
+    m->level = static_cast<std::uint16_t>(curLevel_);
+    return m;
+}
+
+// Equal values hash equal: both walk the same fields, and only the payload of the variant the tag names.
+std::uint64_t Sandbox::valueHash(TypeId type, const Slot* v) const {
+    const ir::TypeInfo& info = program_->module->types.info(type);
+    const Layouts& lay = *program_->layouts;
+    switch (info.kind) {
+    case TypeKind::Str:
+        return strHash(static_cast<Str*>(v->p));
+    case TypeKind::Struct:
+    case TypeKind::Tuple: {
+        std::uint64_t h = info.kind == TypeKind::Tuple ? 1 : 0;
+        std::size_t n = info.kind == TypeKind::Tuple ? info.elems.size() : info.fields.size();
+        for (std::uint32_t i = 0; i < n; ++i) {
+            TypeId ft = info.kind == TypeKind::Tuple ? info.elems[i] : info.fields[i].type;
+            h = combine(h, valueHash(ft, v + lay.fieldOffset(type, i)));
+        }
+        return h;
+    }
+    case TypeKind::Enum: {
+        std::uint64_t h = combine(2, v[0].u);
+        if (v[0].u < info.variants.size()) {
+            std::uint32_t off = 1;
+            for (TypeId p : info.variants[v[0].u].payload) {
+                h = combine(h, valueHash(p, v + off));
+                off += lay.slots(p);
+            }
+        }
+        return h;
+    }
+    default:
+        return mix64(v->u ^ hashKey().k0);
+    }
+}
+
+bool Sandbox::valueEq(TypeId type, const Slot* a, const Slot* b) const {
+    const ir::TypeInfo& info = program_->module->types.info(type);
+    const Layouts& lay = *program_->layouts;
+    switch (info.kind) {
+    case TypeKind::Str:
+        return strEq(static_cast<const Str*>(a->p), static_cast<const Str*>(b->p));
+    case TypeKind::Struct:
+    case TypeKind::Tuple: {
+        std::size_t n = info.kind == TypeKind::Tuple ? info.elems.size() : info.fields.size();
+        for (std::uint32_t i = 0; i < n; ++i) {
+            TypeId ft = info.kind == TypeKind::Tuple ? info.elems[i] : info.fields[i].type;
+            std::uint32_t off = lay.fieldOffset(type, i);
+            if (!valueEq(ft, a + off, b + off)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    case TypeKind::Enum: {
+        if (a[0].u != b[0].u || a[0].u >= info.variants.size()) {
+            return a[0].u == b[0].u;
+        }
+        std::uint32_t off = 1;
+        for (TypeId p : info.variants[a[0].u].payload) {
+            if (!valueEq(p, a + off, b + off)) {
+                return false;
+            }
+            off += lay.slots(p);
+        }
+        return true;
+    }
+    default:
+        return a->u == b->u;
+    }
+}
+
+std::uint64_t Sandbox::keyHash(const Map* m, const Slot* key) const {
+    if (m->keyKind == kMapKeyRaw) {
+        return mix64(key->u ^ hashKey().k0) | 2;
+    }
+    return (m->keyKind == kMapKeyStr ? strHash(static_cast<Str*>(key->p)) : valueHash(m->keyType, key)) | 2;
+}
+
+bool Sandbox::keyEq(const Map* m, const Slot* a, const Slot* b) const {
+    if (m->keyKind == kMapKeyRaw) {
+        return a->u == b->u;
+    }
+    if (m->keyKind == kMapKeyStr) {
+        return strEq(static_cast<const Str*>(a->p), static_cast<const Str*>(b->p));
+    }
+    return valueEq(m->keyType, a, b);
+}
+
+// Buckets work as before insertion order existed; `order` lists the buckets in insertion order beside them.
+Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
+    if (m->cap == 0) {
+        return nullptr;
+    }
+    std::uint64_t h = keyHash(m, key);
+    std::uint32_t mask = m->cap - 1;
+    std::size_t es = entrySlots(m);
+    for (std::uint32_t i = static_cast<std::uint32_t>(h) & mask;; i = (i + 1) & mask) {
+        std::uint64_t tag = m->hashes[i];
+        if (tag == 0) {
+            return nullptr;
+        }
+        Slot* e = m->entries + i * es;
+        if (tag == h && keyEq(m, e, key)) {
+            return e;
+        }
+    }
+}
+
+// Drops removed entries from `order`; only an insertion calls it, and that already ends any `for` over the map.
+void Sandbox::compactOrder(Map* m) {
+    std::uint32_t n = 0;
+    for (std::uint32_t p = 0; p < m->ordered; ++p) {
+        if (std::uint32_t b = m->order[p]; b != 0) {
+            m->order[n] = b;
+            m->place[b - 1] = n++;
+        }
+    }
+    m->ordered = n;
+}
+
+bool Sandbox::growMap(Map* m) {
+    std::uint32_t cap = m->cap == 0 ? 8 : m->cap * 2;
+    if (cap > (1u << 26)) {
+        return fail(ir::TrapCode::OutOfMemory, "map too large");
+    }
+    std::size_t es = entrySlots(m);
+    InvocationArena* region = regionFor(m->owner, m->level);
+    InvocationArena* savedCur = cur_;
+    if (m->owner == Owner::Arena) {
+        cur_ = region;
+    }
+    auto* hashes = static_cast<std::uint64_t*>(allocFor(m->owner, sizeof(std::uint64_t) * cap));
+    auto* entries = static_cast<Slot*>(allocFor(m->owner, sizeof(Slot) * es * cap));
+    auto* order = static_cast<std::uint32_t*>(allocFor(m->owner, sizeof(std::uint32_t) * cap * 2));
+    cur_ = savedCur;
+    if (hashes == nullptr || entries == nullptr || order == nullptr) {
+        return false;
+    }
+    std::memset(hashes, 0, sizeof(std::uint64_t) * cap);
+    std::uint32_t* place = order + cap;
+    std::uint32_t n = 0;
+    for (std::uint32_t p = 0; p < m->ordered; ++p) {
+        std::uint32_t b = m->order[p];
+        if (b == 0) {
+            continue;
+        }
+        std::uint64_t tag = m->hashes[b - 1];
+        std::uint32_t j = static_cast<std::uint32_t>(tag) & (cap - 1);
+        while (hashes[j] != 0) {
+            j = (j + 1) & (cap - 1);
+        }
+        hashes[j] = tag;
+        std::memcpy(entries + j * es, m->entries + (b - 1) * es, es * sizeof(Slot));
+        order[n] = j + 1;
+        place[j] = n++;
+    }
+    if (m->owner == Owner::State) {
+        heap_.release(m->hashes);
+        heap_.release(m->entries);
+        heap_.release(m->order);
+    }
+    m->hashes = hashes;
+    m->entries = entries;
+    m->order = order;
+    m->place = place;
+    m->cap = cap;
+    m->used = n;
+    m->ordered = n;
+    return true;
+}
+
+bool Sandbox::mapSet(Map* m, const Slot* key, const Slot* value) {
+    bool state = m->owner == Owner::State;
+    bool promote = !state && m->owner == Owner::Arena && m->level < curLevel_;
+    std::uint32_t ks = m->keySlots;
+    if (Slot* e = mapFind(m, key)) {
+        if (state && m->valueHasRefs) {
+            return storeState(m->valueType, value, e + ks);
+        }
+        std::memcpy(e + ks, value, m->valueSlots * sizeof(Slot));
+        return !(promote && m->valueHasRefs) || promoteInto(m->valueType, e + ks, m->level);
+    }
+    if ((static_cast<std::uint64_t>(m->used) + 1) * 4 > static_cast<std::uint64_t>(m->cap) * 3 && !growMap(m)) {
+        return false;
+    }
+    if (m->ordered == m->cap) {
+        compactOrder(m);
+    }
+    std::uint64_t h = keyHash(m, key);
+    std::uint32_t mask = m->cap - 1;
+    std::uint32_t i = static_cast<std::uint32_t>(h) & mask;
+    while (m->hashes[i] >= 2) {
+        i = (i + 1) & mask;
+    }
+    if (m->hashes[i] == 0) {
+        ++m->used;
+    }
+    Slot* e = m->entries + i * entrySlots(m);
+    if (state && m->keyHasRefs) {
+        if (!copyIntoState(m->keyType, key, e)) {
+            return false;
+        }
+    } else {
+        std::memcpy(e, key, ks * sizeof(Slot));
+    }
+    if (state && m->valueHasRefs) {
+        if (!copyIntoState(m->valueType, value, e + ks)) {
+            return false;
+        }
+    } else {
+        std::memcpy(e + ks, value, m->valueSlots * sizeof(Slot));
+    }
+    if (promote && ((m->keyHasRefs && !promoteInto(m->keyType, e, m->level)) ||
+                    (m->valueHasRefs && !promoteInto(m->valueType, e + ks, m->level)))) {
+        return false;
+    }
+    m->hashes[i] = h;
+    m->order[m->ordered] = i + 1;
+    m->place[i] = m->ordered++;
+    ++m->count;
+    ++m->version;
+    return true;
+}
+
+bool Sandbox::mapRemove(Map* m, const Slot* key) {
+    Slot* e = mapFind(m, key);
+    if (e == nullptr) {
+        return false;
+    }
+    auto i = static_cast<std::uint32_t>((e - m->entries) / entrySlots(m));
+    if (m->owner == Owner::State) {
+        if (m->keyHasRefs) {
+            releaseState(m->keyType, e);
+        }
+        if (m->valueHasRefs) {
+            releaseState(m->valueType, e + m->keySlots);
+        }
+    }
+    m->hashes[i] = 1;
+    m->order[m->place[i]] = 0;
+    --m->count;
+    ++m->version;
+    return true;
+}
+
+} // namespace quartz::vm

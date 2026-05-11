@@ -136,7 +136,8 @@ void FunctionCodegen::listPush(const ir::Inst& in) {
 void FunctionCodegen::mapGet(const ir::Inst& in) {
     ir::Reg mapReg = fn_.args[in.argBegin];
     ir::Reg keyReg = fn_.args[in.argBegin + 1];
-    llvm::Value* s = scratch(1);
+    auto ks = static_cast<std::uint32_t>(kindsOf(keyReg).size());
+    llvm::Value* s = scratch(ks);
     storeSlots(s, 0, read(keyReg), kindsOf(keyReg), U.tbaaSlot);
     llvm::Value* e = B_.CreateCall(U.runtime(Rt::MapFind), {ctx_, read1(mapReg), s});
     const std::vector<SlotKind>& k = kindsOf(in.dst);
@@ -148,11 +149,11 @@ void FunctionCodegen::mapGet(const ir::Inst& in) {
     B_.SetInsertPoint(found);
     Values hit;
     if (pointer) {
-        hit.push_back(loadSlot(e, 1, k[0], U.tbaaSlot));
+        hit.push_back(loadSlot(e, ks, k[0], U.tbaaSlot));
     } else {
         hit.push_back(llvm::ConstantInt::getTrue(U.C));
         for (std::size_t i = 1; i < k.size(); ++i) {
-            hit.push_back(loadSlot(e, i, k[i], U.tbaaSlot));
+            hit.push_back(loadSlot(e, ks + i - 1, k[i], U.tbaaSlot));
         }
     }
     B_.CreateBr(done);
@@ -319,9 +320,11 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         trapIf(B_.CreateIsNull(p), kAlreadySet);
         write1(in.dst, p);
     };
+    ir::Reg mapKey = in.argCount > 1 ? fn_.args[in.argBegin + 1] : ir::kNoReg;
+    auto ks = static_cast<std::uint32_t>(mapKey != ir::kNoReg ? kindsOf(mapKey).size() : 0);
     auto keyScratch = [&](std::uint32_t extra) {
-        ir::Reg key = fn_.args[in.argBegin + 1];
-        llvm::Value* s = scratch(1 + extra);
+        ir::Reg key = mapKey;
+        llvm::Value* s = scratch(ks + extra);
         storeSlots(s, 0, read(key), kindsOf(key), U.tbaaSlot);
         return s;
     };
@@ -387,8 +390,8 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         ir::Reg value = fn_.args[in.argBegin + 2];
         auto n = static_cast<std::uint32_t>(kindsOf(value).size());
         llvm::Value* s = keyScratch(n);
-        storeSlots(s, 1, read(value), kindsOf(value), U.tbaaSlot);
-        llvm::Value* ok = B_.CreateCall(U.runtime(Rt::MapSet), {ctx_, arg(0), s, gep(s, 8)});
+        storeSlots(s, ks, read(value), kindsOf(value), U.tbaaSlot);
+        llvm::Value* ok = B_.CreateCall(U.runtime(Rt::MapSet), {ctx_, arg(0), s, gep(s, 8 * ks)});
         trapIf(B_.CreateICmpEQ(ok, constI32(0)), kAlreadySet);
         return;
     }

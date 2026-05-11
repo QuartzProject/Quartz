@@ -1,0 +1,55 @@
+// expect: 15 6 false 2
+// expect: 1 false 2
+// expect: 19 false cell 4 18 -1 7
+// expect: 68 98 false
+@derive(Eq, Hash, Show)
+struct Pos {
+    x: int
+    y: int
+}
+
+@derive(Eq, Hash, Show)
+enum Key {
+    Named(str)
+    Id(int)
+    Nobody
+}
+
+state Hub {
+    cells: Map<Pos, str> = Map()
+    owners: Map<Key, int> = Map()
+}
+
+fn fill(hub: Hub) {
+    for i in 0..20 {
+        hub.cells[Pos(i, i * 2)] = "cell {i}"
+        hub.owners[Key.Named("p{i % 5}")] = i
+    }
+    hub.cells.remove(Pos(3, 6))
+    hub.owners[Key.Nobody] = -1
+    hub.owners[Key.Id(7)] = 7
+}
+
+fn main(hub: Hub) -> int {
+    var m: Map<Pos, int> = Map()
+    m[Pos(1, 2)] = 5
+    m[Pos(2, 1)] = 6
+    m[Pos(1, 2)] += 10
+    print("{m[Pos(1, 2)]} {m.get(Pos(2, 1)) ?? 0} {m.has(Pos(9, 9))} {m.len()}")
+    var t: Map<(int, str), int> = Map()
+    t[(1, "a")] = 1
+    t[(1, "b")] = 2
+    let k = "a"
+    print("{t[(1, k)]} {t.has((2, "a"))} {t.len()}")
+    fill(hub)
+    let n = "p3"
+    print("{hub.cells.len()} {hub.cells.has(Pos(3, 6))} {hub.cells[Pos(4, 8)]} {hub.owners[Key.Named(n)]} {hub.owners[Key.Nobody]} {hub.owners.len()}")
+    for i in 0..100 {
+        m[Pos(i, -i)] = i
+        if i % 3 == 0 {
+            m.remove(Pos(i, -i))
+        }
+    }
+    print("{m.len()} {m[Pos(98, -98)]} {m.has(Pos(99, -99))}")
+    return 0
+}

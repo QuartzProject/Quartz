@@ -130,7 +130,7 @@ public:
     /// The type a suspended task's `wait` produces, so the host can build a list of it.
     [[nodiscard]] ir::TypeId waitType(std::uint32_t task) const;
 
-    // Runtime.cpp (used by the interpreter)
+    // Runtime.cpp and MapRuntime.cpp (used by the interpreter)
     Str* allocStr(std::size_t len);
     Str* concat(const Slot* parts, std::uint32_t count);
     Str* sliceStr(const Str* s, std::int64_t begin, std::int64_t end);
@@ -150,6 +150,8 @@ public:
     Slot* mapFind(const Map* m, const Slot* key) const;
     bool mapSet(Map* m, const Slot* key, const Slot* value);
     bool mapRemove(Map* m, const Slot* key);
+    [[nodiscard]] std::uint64_t valueHash(ir::TypeId type, const Slot* v) const;
+    [[nodiscard]] bool valueEq(ir::TypeId type, const Slot* a, const Slot* b) const;
     Closure* newClosure(std::uint32_t function, std::uint32_t captures, std::uint32_t slots, const Slot* values);
     bool storeState(ir::TypeId type, const Slot* src, Slot* dst);
     /// Charges fuel for work done natively (spec 9.2); false, with an out of fuel trap, once the budget is gone.
@@ -211,6 +213,9 @@ private:
     bool copyIntoState(ir::TypeId type, const Slot* src, Slot* dst);
     bool growList(List* l, std::uint32_t need);
     bool growMap(Map* m);
+    [[nodiscard]] std::uint64_t keyHash(const Map* m, const Slot* key) const;
+    void compactOrder(Map* m);
+    [[nodiscard]] bool keyEq(const Map* m, const Slot* a, const Slot* b) const;
     void* allocFor(Owner owner, std::size_t bytes);
 
     struct Binding {

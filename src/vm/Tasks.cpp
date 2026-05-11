@@ -97,7 +97,8 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
             dst->p = nullptr;
             return true;
         }
-        std::uint32_t es = 1u + m->valueSlots;
+        std::uint32_t es = m->keySlots + m->valueSlots;
+        std::uint32_t ks = m->keySlots;
         if (mode == Copy::NewerThan && (m->owner != Owner::Arena || m->level <= level)) {
             dst->p = m;
             return true;
@@ -107,8 +108,8 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
             for (std::uint32_t i = 0; i < m->cap; ++i) {
                 if (m->hashes[i] >= 2) {
                     Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                    if ((m->strKeys && !copyToArena(ir::kStr, e, e, mode, level)) ||
-                        (m->valueHasRefs && !copyToArena(m->valueType, e + 1, e + 1, mode, level))) {
+                    if ((m->keyHasRefs && !copyToArena(m->keyType, e, e, mode, level)) ||
+                        (m->valueHasRefs && !copyToArena(m->valueType, e + ks, e + ks, mode, level))) {
                         return false;
                     }
                 }
@@ -122,15 +123,14 @@ bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, st
             return false;
         }
         std::vector<Slot> tmp(es);
-        for (std::uint32_t i = 0; i < m->cap; ++i) {
-            if (m->hashes[i] >= 2) {
-                const Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                if (!copyToArena(m->keyType, e, tmp.data(), mode, level) ||
-                    !copyToArena(m->valueType, e + 1, tmp.data() + 1, mode, level) ||
-                    !mapSet(out, tmp.data(), tmp.data() + 1)) {
-                    return false;
-                }
-            }
+        bool ok = true;
+        forEachEntry(m, [&](const Slot* e) {
+            ok = ok && copyToArena(m->keyType, e, tmp.data(), mode, level) &&
+                 copyToArena(m->valueType, e + ks, tmp.data() + ks, mode, level) &&
+                 mapSet(out, tmp.data(), tmp.data() + ks);
+        });
+        if (!ok) {
+            return false;
         }
         dst->p = out;
         return true;

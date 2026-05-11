@@ -290,31 +290,25 @@ void Sandbox::exportValue(std::string& out, TypeId type, const Slot* v) {
         return;
     }
     case TypeKind::Map: {
+        // Insertion order, which is the iteration order and the same in every process; struct keys go as pairs.
         const auto* m = static_cast<const Map*>(v->p);
-        // Sorted by key: the hash order depends on the per-process hash key (D56).
-        std::vector<std::pair<std::string, const Slot*>> entries;
-        std::uint32_t es = 1u + m->valueSlots;
-        for (std::uint32_t i = 0; i < m->cap; ++i) {
-            if (m->hashes[i] < 2) {
-                continue;
-            }
-            const Slot* e = m->entries + static_cast<std::size_t>(i) * es;
+        bool pairs = m->keyKind == kMapKeyFields;
+        out += pairs ? '[' : '{';
+        bool first = true;
+        forEachEntry(m, [&](const Slot* e) {
+            out += first ? (pairs ? "[" : "") : (pairs ? ",[" : ",");
+            first = false;
             std::string key;
             exportValue(key, m->keyType, e);
-            if (key.empty() || key.front() != '"') {
+            if (!pairs && (key.empty() || key.front() != '"')) {
                 key = "\"" + key + "\"";
             }
-            entries.emplace_back(std::move(key), e);
-        }
-        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        out += '{';
-        for (std::size_t i = 0; i < entries.size(); ++i) {
-            out += i > 0 ? "," : "";
-            out += entries[i].first;
-            out += ':';
-            exportValue(out, m->valueType, entries[i].second + 1);
-        }
-        out += '}';
+            out += key;
+            out += pairs ? ',' : ':';
+            exportValue(out, m->valueType, e + m->keySlots);
+            out += pairs ? "]" : "";
+        });
+        out += pairs ? ']' : '}';
         return;
     }
     case TypeKind::Nullable:
@@ -529,30 +523,34 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
         return true;
     }
     case TypeKind::Map: {
-        if (node.kind != JNode::Kind::Obj) {
-            return bad("expected a map");
-        }
-        Map* m = newMap(type);
+        std::uint32_t ks = lay.slots(info.key);
+        TypeKind kk = types.kind(info.key);
+        bool pairs = kk == TypeKind::Struct || kk == TypeKind::Tuple || kk == TypeKind::Enum;
+        Map* m = node.kind == (pairs ? JNode::Kind::Arr : JNode::Kind::Obj) ? newMap(type) : nullptr;
         if (m == nullptr) {
-            return false;
+            return trapped_ ? false : bad(pairs ? "expected [key, value] pairs" : "expected a map");
         }
-        std::vector<Slot> tmp(1 + std::max<std::uint32_t>(lay.slots(info.elem), 1));
-        for (std::size_t idx = 0; idx < node.keys.size(); ++idx) {
-            const std::string& k = node.keys[idx];
-            const JNode& v = node.values[idx];
+        std::vector<Slot> tmp(ks + std::max<std::uint32_t>(lay.slots(info.elem), 1));
+        for (std::size_t idx = 0; idx < (pairs ? node.items.size() : node.keys.size()); ++idx) {
             JNode key;
-            if (info.key == ir::kStr) {
-                key.kind = JNode::Kind::Str;
-                key.text = k;
-            } else if (info.key == ir::kBool) {
-                key.kind = JNode::Kind::Bool;
-                key.b = k == "true";
+            const JNode* kn = &key;
+            const JNode* v = pairs ? nullptr : &node.values[idx];
+            std::string where = pairs ? std::format("[{}]", idx) : "." + node.keys[idx];
+            if (pairs && (node.items[idx].kind != JNode::Kind::Arr || node.items[idx].items.size() != 2)) {
+                return bad("expected [key, value] pairs");
+            } else if (pairs) {
+                kn = &node.items[idx].items[0];
+                v = &node.items[idx].items[1];
             } else {
-                key.kind = JNode::Kind::Num;
-                key.text = k;
+                key.kind = info.key == ir::kStr    ? JNode::Kind::Str
+                           : info.key == ir::kBool ? JNode::Kind::Bool
+                                                   : JNode::Kind::Num;
+                key.text = node.keys[idx];
+                key.b = key.text == "true";
             }
-            if (!importValue(ctx, &key, info.key, tmp.data(), path + ".<key>") ||
-                !importValue(ctx, &v, info.elem, tmp.data() + 1, path + "." + k) || !mapSet(m, tmp.data(), tmp.data() + 1)) {
+            if (!importValue(ctx, kn, info.key, tmp.data(), path + where + ".<key>") ||
+                !importValue(ctx, v, info.elem, tmp.data() + ks, path + where) ||
+                !mapSet(m, tmp.data(), tmp.data() + ks)) {
                 return false;
             }
         }
