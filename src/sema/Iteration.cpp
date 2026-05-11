@@ -4,8 +4,7 @@
 
 namespace quartz::sema {
 
-// What `for` binds over each iterable: lists give elements (the index first), maps their keys or key and value in
-// insertion order, `str` its chars (the byte offset first) and an Iterator its items (a count first).
+// `for` binds list elements (index first), map keys or keys and values, chars (byte offset first) or items.
 TypeId Checker::iterationItem(ForStmt* s, TypeId it, TypeId& indexType) {
     const ir::TypeInfo& info = types_->info(it);
     if (info.kind == ir::TypeKind::List) {

@@ -14,8 +14,7 @@ bool continuation(unsigned char b, unsigned char lo = 0x80, unsigned char hi = 0
 
 } // namespace
 
-// Strict UTF-8 (Unicode table 3-7); a byte that does not start a well-formed sequence decodes to U+FFFD and only
-// that byte is consumed, as Go's `for range` does.
+// Strict UTF-8 (Unicode table 3-7); an ill-formed byte reads as U+FFFD and only that byte is consumed, as in Go.
 bool Sandbox::decodeChar(const Str* s, std::int64_t at, Slot* dst) {
     if (at < 0 || at >= static_cast<std::int64_t>(s->len)) {
         return fail(ir::TrapCode::IndexOutOfBounds);

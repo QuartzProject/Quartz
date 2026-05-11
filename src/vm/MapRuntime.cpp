@@ -167,8 +167,7 @@ void Sandbox::mapGet(const Map* m, const Slot* key, Slot* dst) const {
     }
 }
 
-// A cursor is a position in `order` with the map's version above it, so a key added or removed since it was
-// made (D24: deterministic, the same in both tiers) is caught instead of skipping or repeating entries.
+// Cursors carry the map's version, so adding or removing a key mid-loop traps instead of skipping entries.
 std::int64_t Sandbox::mapNext(const Map* m, std::int64_t cursor) {
     std::uint64_t stamp = static_cast<std::uint64_t>(m->version & 0x7FFFFFFF) << 32;
     std::uint32_t pos = 0;

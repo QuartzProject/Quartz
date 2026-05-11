@@ -189,8 +189,7 @@ std::optional<std::vector<Checker::Ctor>> Checker::ctorsOf(TypeId t) const {
     }
 }
 
-// The constructor index of a pattern's head in a column of type `t`, or -1 for a wildcard or a literal of an
-// unbounded type; `args` receives its sub-patterns.
+// The constructor of a pattern's head in a column of type `t`: -1 for a wildcard, -2 for a literal or a range.
 int Checker::headCtor(const Pattern* p, TypeId t, std::vector<const Pattern*>& args) const {
     args.clear();
     if (p->kind == PatternKind::Wildcard || p->kind == PatternKind::Binding) {
