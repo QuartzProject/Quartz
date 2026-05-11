@@ -1,6 +1,10 @@
+import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
+import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
 import java.nio.file.Files
+import javax.inject.Inject
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
 plugins {
     kotlin("multiplatform")
@@ -9,6 +13,64 @@ plugins {
 // The native targets link libquartz statically, built here from a Quartz checkout given as -Pquartz.source.
 val quartzSource = providers.gradleProperty("quartz.source").orNull
 val staticDir = layout.buildDirectory.dir("quartz-static")
+
+// Android needs the SDK (ANDROID_HOME) and an NDK (-Pquartz.ndk or ANDROID_NDK_HOME) to build libquartz_jni.
+val androidSdk = providers.environmentVariable("ANDROID_HOME").orNull
+val ndkDir = providers.gradleProperty("quartz.ndk").orElse(providers.environmentVariable("ANDROID_NDK_HOME")).orNull
+val androidSource = providers.gradleProperty("quartz.androidSource").orNull ?: quartzSource
+val androidEnabled = androidSdk != null && ndkDir != null && androidSource != null
+val androidAbis = listOf("arm64-v8a", "x86_64")
+if (androidEnabled) {
+    apply(plugin = "com.android.kotlin.multiplatform.library")
+}
+
+/** Builds libquartz_jni.so (the JNI shim with libquartz inside) for each Android ABI with the NDK. */
+abstract class BuildQuartzJni @Inject constructor(private val exec: ExecOperations) : DefaultTask() {
+    @get:InputDirectory
+    abstract val shim: DirectoryProperty
+
+    @get:Input
+    abstract val ndk: Property<String>
+
+    @get:Input
+    abstract val quartz: Property<String>
+
+    @get:Input
+    abstract val abis: ListProperty<String>
+
+    @get:Internal
+    abstract val work: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun build() {
+        for (abi in abis.get()) {
+            val dir = work.get().dir(abi).asFile
+            exec.exec {
+                commandLine(
+                    "cmake", "-S", shim.get().asFile.path, "-B", dir.path, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
+                    "-DCMAKE_TOOLCHAIN_FILE=${ndk.get()}/build/cmake/android.toolchain.cmake", "-DANDROID_ABI=$abi",
+                    "-DANDROID_PLATFORM=android-26", "-DANDROID_STL=c++_static", "-DQUARTZ_SOURCE=${quartz.get()}",
+                )
+            }
+            exec.exec { commandLine("cmake", "--build", dir.path, "--target", "quartz_jni") }
+            val target = output.get().dir(abi).asFile
+            target.mkdirs()
+            File(dir, "libquartz_jni.so").copyTo(File(target, "libquartz_jni.so"), overwrite = true)
+        }
+    }
+}
+
+val buildQuartzJni = tasks.register<BuildQuartzJni>("buildQuartzJni") {
+    shim = layout.projectDirectory.dir("src/androidMain/c")
+    ndk = ndkDir ?: ""
+    quartz = androidSource ?: ""
+    abis = androidAbis
+    work = layout.buildDirectory.dir("android-jni")
+    output = layout.buildDirectory.dir("android-jniLibs")
+}
 
 val buildQuartzStatic = tasks.register<Exec>("buildQuartzStatic") {
     description = "Builds libquartz_kmp.a (the C interface and everything it needs) from -Pquartz.source."
@@ -65,6 +127,7 @@ kotlin {
         common {
             group("capi") {
                 withNative()
+                withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
             }
         }
     }
@@ -94,6 +157,24 @@ kotlin {
         logger.lifecycle("quartz-kmp: set -Pquartz.source=<Quartz checkout> to build the native targets")
     }
 
+    if (androidEnabled) {
+        (this as ExtensionAware).extensions.configure<KotlinMultiplatformAndroidLibraryTarget>("android") {
+            namespace = "org.quartzlang.kmp"
+            compileSdk = 36
+            minSdk = 26
+            optimization {
+                consumerKeepRules.publish = true
+                consumerKeepRules.file("src/androidMain/consumer-rules.pro")
+            }
+            withDeviceTestBuilder { sourceSetTreeName = "test" }.configure {
+                instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+            }
+            compilerOptions {
+                jvmTarget = JvmTarget.JVM_17
+            }
+        }
+    }
+
     compilerOptions {
         allWarningsAsErrors = true
     }
@@ -111,4 +192,14 @@ kotlin {
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     providers.gradleProperty("quartz.library").orNull?.let { systemProperty("quartz.library", it) }
+}
+
+if (androidEnabled) {
+    extensions.configure<KotlinMultiplatformAndroidComponentsExtension>("androidComponents") {
+        onVariants { variant -> variant.sources.jniLibs?.addGeneratedSourceDirectory(buildQuartzJni) { it.output } }
+    }
+    kotlin.sourceSets.getByName("androidDeviceTest").dependencies {
+        implementation("androidx.test:runner:1.7.0")
+        implementation(kotlin("test"))
+    }
 }

@@ -108,7 +108,11 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
     }
 }
 
-internal class CExport(val program: CProgram, override val name: String, val index: Int, override val signature: Signature) :
-    Export {
+internal class CExport(
+    val program: CProgram,
+    override val name: String,
+    val index: Int,
+    override val signature: Signature,
+) : Export {
     override fun toString(): String = "Export[$name $signature]"
 }

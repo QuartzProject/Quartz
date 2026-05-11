@@ -90,7 +90,7 @@ internal object Slots {
             is Short -> value.toLong()
             is Byte -> value.toLong()
             is Char -> value.code.toLong()
-            else -> throw IllegalArgumentException("a ${value::class.simpleName} cannot be passed as ${kind.name.lowercase()}")
+            else -> throw IllegalArgumentException("a ${value::class.simpleName} cannot be passed as $kind")
         }
         return checkedInteger(kind, n)
     }

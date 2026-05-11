@@ -4,6 +4,7 @@ package org.quartzlang.kmp
 
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.COpaquePointer
+import kotlinx.cinterop.CPointed
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -119,7 +120,9 @@ internal actual fun qzCompile(
     for (i in names.indices) {
         val utf8 = texts[i].encodeToByteArray()
         sources[i].name = names[i].cstr.ptr
-        sources[i].text = allocArray<ByteVar>(maxOf(1, utf8.size)).also { b -> utf8.forEachIndexed { k, v -> b[k] = v } }
+        val text = allocArray<ByteVar>(maxOf(1, utf8.size))
+        utf8.forEachIndexed { k, v -> text[k] = v }
+        sources[i].text = text
         sources[i].length = utf8.size.toULong()
     }
     val options = alloc<qz_compile_options>()
@@ -132,18 +135,22 @@ internal actual fun qzCompile(
     p.toLong()
 }
 
-internal actual fun qzLoad(bytes: ByteArray, keys: Array<ByteArray>, requireSignature: Boolean, error: Array<String?>): Long =
-    memScoped {
-        val module = allocArray<UByteVar>(maxOf(1, bytes.size))
-        bytes.forEachIndexed { i, b -> module[i] = b.toUByte() }
-        val keyBytes = allocArray<UByteVar>(maxOf(1, keys.size * 32))
-        keys.forEachIndexed { k, key -> key.forEachIndexed { i, b -> keyBytes[k * 32 + i] = b.toUByte() } }
-        val out = alloc<CPointerVar<ByteVar>>()
-        val p = qz_load(module, bytes.size.toULong(), if (keys.isEmpty()) null else keyBytes.reinterpret(),
-            keys.size.toULong(), requireSignature, out.ptr)
-        error[0] = take(out.value)
-        p.toLong()
-    }
+internal actual fun qzLoad(
+    bytes: ByteArray,
+    keys: Array<ByteArray>,
+    requireSignature: Boolean,
+    error: Array<String?>,
+): Long = memScoped {
+    val module = allocArray<UByteVar>(maxOf(1, bytes.size))
+    bytes.forEachIndexed { i, b -> module[i] = b.toUByte() }
+    val keyBytes = allocArray<UByteVar>(maxOf(1, keys.size * 32))
+    keys.forEachIndexed { k, key -> key.forEachIndexed { i, b -> keyBytes[k * 32 + i] = b.toUByte() } }
+    val out = alloc<CPointerVar<ByteVar>>()
+    val p = qz_load(module, bytes.size.toULong(), if (keys.isEmpty()) null else keyBytes.reinterpret(),
+        keys.size.toULong(), requireSignature, out.ptr)
+    error[0] = take(out.value)
+    p.toLong()
+}
 
 internal actual fun qzProgramBinary(program: Long): ByteArray? = memScoped {
     val length = alloc<ULongVar>()
@@ -223,19 +230,20 @@ internal actual fun qzBind(sandbox: Long, name: String, binding: CBinding): Long
     return ref.asCPointer().toLong()
 }
 
-internal actual fun qzUnbind(token: Long) = token.toCPointer<kotlinx.cinterop.CPointed>()!!.asStableRef<CBinding>().dispose()
+internal actual fun qzUnbind(token: Long) = token.toCPointer<CPointed>()!!.asStableRef<CBinding>().dispose()
 
 internal actual fun qzStart(sandbox: Long): Int = qz_sandbox_start(sandbox(sandbox)).toInt()
 
-internal actual fun qzCall(sandbox: Long, function: Int, args: LongArray, count: Int, result: LongArray): Int = memScoped {
-    val out = alloc<ULongVar>()
-    val status = args.usePinned { pinned ->
-        qz_sandbox_call(sandbox(sandbox), function.toUInt(), pinned.addressOf(0).reinterpret(), count.toULong(),
-            out.ptr.reinterpret())
+internal actual fun qzCall(sandbox: Long, function: Int, args: LongArray, count: Int, result: LongArray): Int =
+    memScoped {
+        val out = alloc<ULongVar>()
+        val status = args.usePinned { pinned ->
+            qz_sandbox_call(sandbox(sandbox), function.toUInt(), pinned.addressOf(0).reinterpret(), count.toULong(),
+                out.ptr.reinterpret())
+        }
+        result[0] = out.value.toLong()
+        status.toInt()
     }
-    result[0] = out.value.toLong()
-    status.toInt()
-}
 
 private fun store(o: qz_task_outcome, outcome: LongArray) {
     outcome[0] = o.kind.toLong()
@@ -308,7 +316,8 @@ internal actual fun qzImportHandle(sandbox: Long, handle: Long, json: String): I
     }
 }
 
-internal actual fun qzDropHandle(sandbox: Long, handle: Long) = qz_sandbox_drop_handle(sandbox(sandbox), handle.toULong())
+internal actual fun qzDropHandle(sandbox: Long, handle: Long) =
+    qz_sandbox_drop_handle(sandbox(sandbox), handle.toULong())
 
 internal actual fun qzStr(slot: Long): ByteArray = memScoped {
     val length = alloc<ULongVar>()

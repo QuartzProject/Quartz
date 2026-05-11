@@ -49,7 +49,7 @@ public interface HostCall {
     /** Argument [index] boxed by its kind. */
     public fun arg(index: Int): Any?
 
-    /** A list argument read as [element]; the C interface does not tell the element type, so it is the caller's word. */
+    /** A list argument read as [element], which is unchecked: the C interface does not describe list elements. */
     public fun list(index: Int, element: Kind): List<Any?>
 
     /** Charges fuel for native work; false when the budget is gone. */

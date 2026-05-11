@@ -20,7 +20,12 @@ internal expect fun qzCompile(
     diagnostics: Array<String?>,
 ): Long
 
-internal expect fun qzLoad(bytes: ByteArray, keys: Array<ByteArray>, requireSignature: Boolean, error: Array<String?>): Long
+internal expect fun qzLoad(
+    bytes: ByteArray,
+    keys: Array<ByteArray>,
+    requireSignature: Boolean,
+    error: Array<String?>,
+): Long
 
 internal expect fun qzProgramBinary(program: Long): ByteArray?
 

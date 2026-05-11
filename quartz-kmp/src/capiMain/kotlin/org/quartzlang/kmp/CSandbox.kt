@@ -20,7 +20,7 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
     private var argv = LongArray(8)
 
     init {
-        val sb = qzSandboxNew(current.address, limits.memoryBytes, limits.fuelPerCall, limits.maxDepth, limits.tier.ordinal)
+        val sb = with(limits) { qzSandboxNew(current.address, memoryBytes, fuelPerCall, maxDepth, tier.ordinal) }
         if (sb == 0L) {
             throw QuartzException("cannot create a sandbox")
         }
@@ -224,7 +224,7 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
         }
         require(kind != Kind.LIST && kind != Kind.MAP && kind != Kind.FUNCTION) { "a $kind result cannot be passed" }
         if (kind == Kind.STR || kind == Kind.BYTES) {
-            require(v is CValue && v.ownedBy(this)) { "a str result only goes back to its own sandbox before its next call" }
+            require(v is CValue && v.ownedBy(this)) { "a str result is only valid in its sandbox until the next call" }
         }
         return v.bits
     }
@@ -253,7 +253,8 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
     private fun outcome(): TaskOutcome {
         val kind = TaskOutcome.Kind.entries.getOrElse(outcome[0].toInt()) { TaskOutcome.Kind.YIELD }
         val task = outcome[1].toInt()
-        val type = if (kind == TaskOutcome.Kind.DONE) taskResults.remove(task) ?: Type(Kind.OTHER) else Type(Kind.HANDLE)
+        val type =
+            if (kind == TaskOutcome.Kind.DONE) taskResults.remove(task) ?: Type(Kind.OTHER) else Type(Kind.HANDLE)
         return TaskOutcome(kind, task, CValue(outcome[2], this, group.generation, type))
     }
 

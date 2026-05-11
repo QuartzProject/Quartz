@@ -48,8 +48,9 @@ internal fun kindOf(kind: JKind): Kind = Kind.entries[kind.ordinal]
 
 internal fun jkind(kind: Kind): JKind = JKind.entries[kind.ordinal]
 
-internal fun signatureOf(s: JSignature): Signature =
-    Signature(s.params().map { Type(kindOf(it.kind()), it.slots()) }, Type(kindOf(s.result().kind()), s.result().slots()))
+internal fun typeOf(t: org.quartzlang.jvm.Type): Type = Type(kindOf(t.kind()), t.slots())
+
+internal fun signatureOf(s: JSignature): Signature = Signature(s.params().map(::typeOf), typeOf(s.result()))
 
 internal class JvmProgram(val java: JProgram) : Program {
     private val exports = ConcurrentHashMap<String, JvmExport>()
