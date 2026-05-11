@@ -179,3 +179,22 @@ fn f() {} // trailing
     (parameters)
     (block))
   (line_comment))
+
+================================================================================
+Format specs in interpolations
+================================================================================
+
+const S = "{x:>8.2} {n}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_declaration
+    (identifier)
+    (string
+      (interpolation
+        (identifier)
+        (format_spec))
+      (string_content)
+      (interpolation
+        (identifier)))))

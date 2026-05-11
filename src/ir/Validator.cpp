@@ -260,6 +260,10 @@ private:
             ok = t_.kind(dst) == TypeKind::Tuple && t_.info(dst).elems == std::vector<TypeId>{kChar, kI64} &&
                  sig({kStr, kI64}, dst);
             break;
+        case Intrinsic::StrFormat:
+            ok = !at.empty() && (at[0] == kI64 || at[0] == kU64 || at[0] == kF64 || at[0] == kStr) &&
+                 sig({at[0], kI64}, kStr);
+            break;
         case Intrinsic::Count: break;
         default:
             ok = builtinSignatureOk(t_, op, at, dst);

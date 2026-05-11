@@ -96,7 +96,9 @@ Reg Lowerer::lowerInterp(InterpExpr* e) {
             parts.push_back(constStr(e->texts[i]));
         }
         if (i < e->exprs.size()) {
-            parts.push_back(toStr(lowerExpr(e->exprs[i]), T(e->exprs[i]->type)));
+            Reg v = lowerExpr(e->exprs[i]);
+            TypeId t = T(e->exprs[i]->type);
+            parts.push_back(i < e->formats.size() && e->formats[i] != 0 ? formatted(v, t, e->formats[i]) : toStr(v, t));
         }
     }
     if (parts.size() == 1) {

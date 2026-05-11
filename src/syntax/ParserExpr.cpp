@@ -254,12 +254,14 @@ Expr* Parser::parseInterp() {
     Span begin = cur().span;
     std::vector<std::string_view> texts;
     std::vector<Expr*> exprs;
+    std::vector<std::string_view> specs;
     texts.push_back(advance().text);
     while (true) {
         {
             NewlineGuard g(*this, true);
             exprs.push_back(parseExpr());
         }
+        specs.push_back(at(Tok::FormatSpec) ? advance().text : std::string_view{});
         if (at(Tok::InterpMid)) {
             texts.push_back(advance().text);
             continue;
@@ -276,6 +278,7 @@ Expr* Parser::parseInterp() {
     in->kind = ExprKind::Interp;
     in->texts = list(texts);
     in->exprs = list(exprs);
+    in->specs = list(specs);
     return in;
 }
 

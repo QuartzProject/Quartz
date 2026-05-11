@@ -581,7 +581,14 @@ module.exports = grammar({
       /\\u\{[0-9a-fA-F]{1,7}\}/,
     )),
 
-    interpolation: $ => seq(token.immediate('{'), $._expression, '}'),
+    interpolation: $ => seq(
+      token.immediate('{'),
+      $._expression,
+      optional(seq(':', field('format', $.format_spec))),
+      '}',
+    ),
+
+    format_spec: _ => token.immediate(/[^}"\n]*/),
 
     identifier: _ => /[A-Za-z_][A-Za-z0-9_]*/,
 

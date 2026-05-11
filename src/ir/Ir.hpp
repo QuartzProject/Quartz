@@ -173,6 +173,10 @@ enum class Intrinsic : std::uint16_t {
     MapKeyAt,   // dst K, args: map, cursor; traps if the map gained or lost a key since the cursor was made
     MapValueAt, // dst V, args: map, cursor; same check
     StrDecode,  // dst (char, i64): the scalar at a byte index and the index after it, args: str, index
+    // dst str, args: value (i64, u64, f64 or str), spec i64 packed as fill (bits 0-20), align (21-22: default,
+    // left, right, center), plus (23), zero padding (24), width (25-40), precision + 1 (41-48, 0 for none) and
+    // radix (49-51: decimal, x, X, b, o)
+    StrFormat,
     Count,
 };
 

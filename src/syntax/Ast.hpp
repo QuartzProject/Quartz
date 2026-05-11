@@ -140,6 +140,8 @@ struct StringLitExpr : Expr {
 struct InterpExpr : Expr {
     std::span<std::string_view> texts; // texts.size() == exprs.size() + 1
     std::span<Expr*> exprs;
+    std::span<std::string_view> specs; // per expression: the format spec after `:`, empty without one
+    std::span<std::uint64_t> formats;  // per expression: the spec packed by sema for `str.format`, 0 for none
 };
 
 enum class IdentRef : std::uint8_t { Unresolved, Local, Global, Function, Type, Const, Module };

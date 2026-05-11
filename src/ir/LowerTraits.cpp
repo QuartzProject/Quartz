@@ -266,6 +266,22 @@ Reg Lowerer::showOf(Reg r, TypeId t) {
     return res;
 }
 
+// `"{x:spec}"`: numbers keep their value for the runtime to lay out; anything else is shown first, then padded.
+Reg Lowerer::formatted(Reg v, TypeId t, std::uint64_t spec) {
+    Reg arg = v;
+    TypeId at = types_->isInteger(t) ? (types_->isSigned(t) ? kI64 : kU64) : types_->isFloat(t) ? kF64 : kStr;
+    if (at == kStr) {
+        arg = toStr(v, t);
+    } else if (at != t) {
+        arg = newReg(at);
+        emit(Op::Convert, arg, v);
+    }
+    Reg out = newReg(kStr);
+    emitArgs(Op::Intrinsic, out, static_cast<std::uint32_t>(Intrinsic::StrFormat),
+             {arg, constInt(static_cast<std::int64_t>(spec), kI64)});
+    return out;
+}
+
 Reg Lowerer::lowerTraitCompare(BinaryOp op, Reg l, Reg r, TypeId t) {
     Reg res = newReg(kBool);
     if (op == BinaryOp::Eq || op == BinaryOp::Ne) {

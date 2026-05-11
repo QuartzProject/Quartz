@@ -405,6 +405,13 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         write1(in.dst, B_.CreateICmpNE(B_.CreateCall(U.runtime(Rt::MapRemove), {ctx_, arg(0), s}), constI32(0)));
         return;
     }
+    case Intrinsic::StrFormat: {
+        ir::Reg value = fn_.args[in.argBegin];
+        llvm::Value* s = scratch(1);
+        storeSlots(s, 0, read(value), kindsOf(value), U.tbaaSlot);
+        checked(B_.CreateCall(U.runtime(Rt::Format), {ctx_, s, constI32(vm::formatKind(fn_.regs[value])), arg(1)}));
+        return;
+    }
     case Intrinsic::MapNext: {
         llvm::Value* next = B_.CreateCall(U.runtime(Rt::MapNext), {ctx_, arg(0), arg(1)});
         trapIf(B_.CreateICmpEQ(next, llvm::ConstantInt::get(U.i64, -2)), kAlreadySet);

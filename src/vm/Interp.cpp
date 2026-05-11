@@ -670,6 +670,8 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             NEXT();
             CASE(StrDecode) CHECK(decodeChar(STR(RB), RC.i, &RA));
             NEXT();
+            CASE(StrFmt) CHECK((RA.p = formatValue(RB, ins.pad, RC.i)) != nullptr);
+            NEXT();
             CASE(MapSet) CHECK(mapSet(MAP(RA), &RB, &RC));
             NEXT();
             CASE(MapHas) RA.u = mapFind(MAP(RB), &RC) != nullptr;

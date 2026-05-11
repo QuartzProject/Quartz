@@ -70,6 +70,7 @@ public:
     Reg signOf(Reg lt, Reg gt);
     Reg showOf(Reg r, TypeId t);
     Reg concatParts(const std::vector<Reg>& parts);
+    Reg formatted(Reg v, TypeId t, std::uint64_t spec);
     Reg langTraitCall(CallExpr* e, TypeId recvType, Reg dst);
     Reg lowerTraitCompare(BinaryOp op, Reg l, Reg r, TypeId t);
     void lowerDerived(sema::FnInfo* fn, Function& out);

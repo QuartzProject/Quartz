@@ -20,6 +20,8 @@ const char* tokName(Tok t) {
     case Tok::InterpBegin:
     case Tok::InterpMid:
     case Tok::InterpEnd: return "string literal";
+    case Tok::FormatSpec:
+        return "format spec";
 #define QUARTZ_KW_NAME(name, text)                                                                                     \
     case Tok::Kw##name: return "'" text "'";
         QUARTZ_KEYWORDS(QUARTZ_KW_NAME)
@@ -252,10 +254,34 @@ private:
         if (c == '}' && !modes_.empty() && modes_.back() != Mode::Brace) {
             bool multiline = modes_.back() == Mode::InterpMultiline;
             modes_.pop_back();
+            parens_.pop_back();
             ++pos_;
             return stringPart(begin, multiline, false);
         }
+        if (c == ':' && peek(1) != ':' && !modes_.empty() && modes_.back() != Mode::Brace && parens_.back() == 0) {
+            return formatSpec(begin);
+        }
+        if ((c == '(' || c == '[' || c == ')' || c == ']') && !parens_.empty()) {
+            parens_.back() += c == '(' || c == '[' ? 1 : parens_.back() > 0 ? -1 : 0;
+        }
         return punct(begin);
+    }
+
+    // `{x:>8.2}`: a `:` at the top of an interpolation starts its format spec, raw text up to the `}`.
+    Token formatSpec(std::size_t begin) {
+        ++pos_;
+        std::size_t start = pos_;
+        while (pos_ < src_.size() && src_[pos_] != '}' && src_[pos_] != '{' && src_[pos_] != '"' &&
+               src_[pos_] != '\n') {
+            ++pos_;
+        }
+        if (pos_ >= src_.size() || src_[pos_] != '}') {
+            error(static_cast<std::uint32_t>(begin), static_cast<std::uint32_t>(pos_),
+                  "a format spec ends at the '}' of its interpolation");
+        }
+        Token t = make(Tok::FormatSpec, begin);
+        t.text = src_.substr(start, pos_ - start);
+        return t;
     }
 
     Token number(std::size_t begin) {
@@ -399,6 +425,7 @@ private:
             if (c == '{') {
                 ++pos_;
                 modes_.push_back(multiline ? Mode::InterpMultiline : Mode::Interp);
+                parens_.push_back(0);
                 Token t = make(first ? Tok::InterpBegin : Tok::InterpMid, begin);
                 t.text = arena_.copy(text);
                 return t;
@@ -466,11 +493,13 @@ private:
         case ']': kind = Tok::RBracket; break;
         case '{':
             modes_.push_back(Mode::Brace);
+            parens_.push_back(0);
             kind = Tok::LBrace;
             break;
         case '}':
             if (!modes_.empty()) {
                 modes_.pop_back();
+                parens_.pop_back();
             }
             kind = Tok::RBrace;
             break;
@@ -545,6 +574,7 @@ private:
     std::vector<Span>* comments_;
     std::size_t pos_ = 0;
     std::vector<Mode> modes_;
+    std::vector<std::uint32_t> parens_; // per mode: `(` and `[` open inside it
 };
 
 } // namespace

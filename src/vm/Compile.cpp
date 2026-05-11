@@ -17,25 +17,6 @@ using ir::Reg;
 using ir::TypeId;
 using ir::TypeKind;
 
-const char* opcodeName(Opc op) {
-    static const char* const kNames[] = {
-#define QUARTZ_OPC_NAME(name) #name,
-        QUARTZ_OPCODES(QUARTZ_OPC_NAME)
-#undef QUARTZ_OPC_NAME
-    };
-    auto i = static_cast<std::size_t>(op);
-    return i < static_cast<std::size_t>(Opc::Count) ? kNames[i] : "?";
-}
-
-std::uint32_t Program::findFunction(std::string_view name) const {
-    for (std::uint32_t i = 0; i < functions.size(); ++i) {
-        if (functions[i].name == name) {
-            return i;
-        }
-    }
-    return ~0U;
-}
-
 namespace {
 
 class FunctionCompiler {
@@ -556,6 +537,9 @@ private:
             return;
         case Intrinsic::StrDecode:
             put(Opc::StrDecode, d, sa(0), sa(1));
+            return;
+        case Intrinsic::StrFormat:
+            put(Opc::StrFmt, d, sa(0), sa(1), formatKind(ty(a[0])));
             return;
         case Intrinsic::MapLen: put(Opc::MapLen, d, sa(0)); return;
         case Intrinsic::MapGet: put(Opc::MapGet, d, sa(0), sa(1)); return;

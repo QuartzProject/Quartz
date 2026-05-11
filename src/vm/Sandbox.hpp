@@ -48,6 +48,9 @@ struct Limits {
 
 class Sandbox;
 
+/// The shortest text that reads back as `v`, always with a decimal part (`2.0`); `buf` holds it.
+std::string_view shortestF64(double v, char (&buf)[40]);
+
 /// What a task (a call to a `suspend fn`) did before handing control back to the host.
 struct TaskOutcome {
     enum class Kind : std::uint8_t { Done, Wait, AtEnter, AtLeave, Yield };
@@ -154,6 +157,7 @@ public:
     std::int64_t mapNext(const Map* m, std::int64_t cursor);
     bool mapEntry(const Map* m, std::int64_t cursor, bool value, Slot* dst);
     bool decodeChar(const Str* s, std::int64_t at, Slot* dst);
+    Str* formatValue(Slot v, std::uint32_t kind, std::int64_t spec);
     [[nodiscard]] std::uint64_t valueHash(ir::TypeId type, const Slot* v) const;
     [[nodiscard]] bool valueEq(ir::TypeId type, const Slot* a, const Slot* b) const;
     Closure* newClosure(std::uint32_t function, std::uint32_t captures, std::uint32_t slots, const Slot* values);

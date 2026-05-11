@@ -144,6 +144,9 @@ public:
     std::set<const Expr*> isBindOk_;
     bool patternMutable_ = false;
 
+    // FormatSpec.cpp
+    std::uint64_t formatSpec(std::string_view spec, TypeId t, Span span);
+
     // Iteration.cpp
     TypeId iterationItem(ForStmt* s, TypeId it, TypeId& indexType);
     TypeId mapListCall(CallExpr* call, MemberExpr* callee, TypeId recv);

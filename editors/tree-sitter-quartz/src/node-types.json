@@ -1367,7 +1367,18 @@
   {
     "type": "interpolation",
     "named": true,
-    "fields": {},
+    "fields": {
+      "format": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "format_spec",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
       "multiple": false,
       "required": true,
@@ -2780,6 +2791,10 @@
   {
     "type": "for",
     "named": false
+  },
+  {
+    "type": "format_spec",
+    "named": true
   },
   {
     "type": "identifier",

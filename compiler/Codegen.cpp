@@ -39,6 +39,7 @@ constexpr RuntimeSig kRuntime[] = {
     {"qz_exp", false, false},       {"qz_log", false, false},         {"qz_log10", false, false},
     {"qz_atan2", false, false},     {"qz_charge", false, true},       {"qz_trace", false, true},
     {"qz_map_next", false, false},   {"qz_map_entry", false, false},   {"qz_str_decode", false, false},
+    {"qz_format", false, false},
 };
 static_assert(std::size(kRuntime) == static_cast<std::size_t>(Rt::Count));
 
@@ -286,6 +287,9 @@ llvm::FunctionCallee UnitCodegen::runtime(Rt rt) {
         break;
     case Rt::StrDecode:
         ty = llvm::FunctionType::get(i32, {ptr, ptr, i64, ptr}, false);
+        break;
+    case Rt::Format:
+        ty = llvm::FunctionType::get(ptr, {ptr, ptr, i32, i64}, false);
         break;
     case Rt::Count:
         break;

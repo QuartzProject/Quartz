@@ -307,6 +307,10 @@ std::uint32_t qzMapEntry(NativeCtx* c, const Map* m, std::int64_t cursor, std::u
     return sb(c).mapEntry(m, cursor, value != 0, dst) ? 1 : 0;
 }
 
+Str* qzFormat(NativeCtx* c, const Slot* v, std::uint32_t kind, std::int64_t spec) {
+    return sb(c).formatValue(*v, kind, spec);
+}
+
 std::uint32_t qzStrDecode(NativeCtx* c, const Str* s, std::int64_t at, Slot* dst) {
     return sb(c).decodeChar(s, at, dst) ? 1 : 0;
 }
@@ -404,6 +408,7 @@ const NativeSymbol kSymbols[] = {
     {"qz_map_next", addr(qzMapNext)},
     {"qz_map_entry", addr(qzMapEntry)},
     {"qz_str_decode", addr(qzStrDecode)},
+    {"qz_format", addr(qzFormat)},
 };
 
 } // namespace

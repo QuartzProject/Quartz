@@ -295,7 +295,7 @@ fn run(k: int) -> int {
            "malformed type");
 }
 
-TEST_CASE("the validator rejects map and text iteration with mismatched types") {
+TEST_CASE("the validator rejects map iteration, text decoding and formatting with mismatched types") {
     quartz::SourceInput src[] = {{"i.qz", R"(fn run(m: Map<str, int>, t: str) -> int {
     var n = 0
     for k, v in m {
@@ -304,7 +304,7 @@ TEST_CASE("the validator rejects map and text iteration with mismatched types") 
     for c in t {
         n += c as int
     }
-    return n
+    return n + "{t:>9}".len()
 }
 )"}};
     quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
@@ -337,4 +337,7 @@ TEST_CASE("the validator rejects map and text iteration with mismatched types") 
     });
     reject(Intrinsic::StrDecode,
            [](quartz::ir::Function& f, quartz::ir::Inst& in) { in.dst = f.args[in.argBegin + 1]; });
+    reject(Intrinsic::StrFormat, [](quartz::ir::Function& f, quartz::ir::Inst& in) {
+        std::swap(f.args[in.argBegin], f.args[in.argBegin + 1]);
+    });
 }

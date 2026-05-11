@@ -130,6 +130,11 @@
     "}"
   ] @punctuation.special)
 
+(interpolation
+  ":" @punctuation.special)
+
+(format_spec) @string.special
+
 ; Comments
 
 (line_comment) @comment @spell

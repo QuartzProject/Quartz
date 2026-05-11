@@ -90,7 +90,8 @@ class TierState;
     X(Persist)   /* copy what slot a references out of inner regions, c levels up; type in next word */                \
     X(MapNext)   /* a = cursor after cursor c in map(b), -1 at the end */                                              \
     X(MapEnt)    /* a.. = key (pad 0) or value (pad 1) at cursor c of map(b) */                                        \
-    X(StrDecode) /* a = scalar at byte c of str(b), a+1 = the byte after it */
+    X(StrDecode) /* a = scalar at byte c of str(b), a+1 = the byte after it */                                         \
+    X(StrFmt)    /* a = b laid out by spec c; pad: b is 0 i64, 1 u64, 2 f64, 3 str */
 
 enum class Opc : std::uint8_t {
 #define QUARTZ_OPC_ENUM(name) name,
@@ -163,6 +164,9 @@ struct Program {
 };
 
 const char* opcodeName(Opc op);
+
+/// How `str.format` reads its value (ir::Intrinsic::StrFormat): 0 i64, 1 u64, 2 f64, 3 str.
+inline std::uint8_t formatKind(ir::TypeId t) { return t == ir::kI64 ? 0 : t == ir::kU64 ? 1 : t == ir::kF64 ? 2 : 3; }
 
 inline bool isShortJump(Opc op) { return op >= Opc::JLtI && op <= Opc::ForList; }
 

@@ -308,14 +308,7 @@ Str* Sandbox::fromF64(double v) {
         return newStr("nan"); // the sign of a NaN differs between CPUs (0.0 / 0.0 is -nan on x86, nan on arm64)
     }
     char buf[40];
-    auto r = std::to_chars(buf, buf + sizeof buf - 3, v);
-    std::string_view text(buf, static_cast<std::size_t>(r.ptr - buf));
-    if (text.find_first_of(".einn") == std::string_view::npos) {
-        *r.ptr++ = '.';
-        *r.ptr++ = '0';
-        text = std::string_view(buf, static_cast<std::size_t>(r.ptr - buf));
-    }
-    return newStr(text);
+    return newStr(shortestF64(v, buf));
 }
 
 Str* Sandbox::fromChar(std::uint32_t cp) {

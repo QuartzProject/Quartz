@@ -514,20 +514,6 @@ TypeId Checker::checkIndex(IndexExpr* e) {
     return ir::kError;
 }
 
-TypeId Checker::checkInterp(InterpExpr* e) {
-    for (Expr* part : e->exprs) {
-        TypeId t = checkValue(part, ir::kError);
-        if (t == ir::kError) {
-            continue;
-        }
-        if (!implements(t, langTrait(LangTrait::Show))) {
-            diags_.error(part->span, std::format("cannot interpolate a value of type '{}'; it does not implement Show",
-                                                 typeName(t)));
-        }
-    }
-    return ir::kStr;
-}
-
 TypeId Checker::checkWait(Expr* operand, Span span) {
     for (LoopWatch& w : loopWatch_) {
         w.waits = true;

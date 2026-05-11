@@ -46,7 +46,7 @@ const char* intrinsicName(Intrinsic in) {
         "int.checkedAdd",    "int.checkedSub",    "int.checkedMul",
         "int.checkedDiv",    "int.saturatingAdd", "int.saturatingSub",
         "int.saturatingMul", "map.next",          "map.keyAt",
-        "map.valueAt",       "str.decode",
+        "map.valueAt",       "str.decode",        "str.format",
     };
     constexpr std::size_t kBase = sizeof(kNames) / sizeof(kNames[0]);
     static_assert(kBase + sizeof(kExtra) / sizeof(kExtra[0]) == static_cast<std::size_t>(Intrinsic::Count));

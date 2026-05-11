@@ -11,6 +11,10 @@
 // error: @derive takes Eq, Hash, Ord and Show
 // error: Iterator needs 'fn next(self) -> (T, Bad)?'
 // error: cannot iterate over 'E'
+// error: invalid format spec '5z'
+// error: 'x' formats integers only, not 'float'
+// error: a precision formats floats only, not 'int'
+// error: '+' and '0' format numbers only, not 'str'
 
 trait Eq {
     fn same(self) -> bool
@@ -72,4 +76,8 @@ impl Iterator for Bad {
 fn loops(e: E) {
     for x in e {
     }
+}
+
+fn specs(f: float, n: int, s: str) -> str {
+    return "{n:5z} {f:x} {n:.2} {s:+}"
 }

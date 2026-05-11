@@ -74,6 +74,7 @@ enum class Rt : std::uint8_t {
     MapNext,
     MapEntry,
     StrDecode,
+    Format,
     Count,
 };
 

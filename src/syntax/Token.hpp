@@ -55,6 +55,7 @@ enum class Tok : std::uint8_t {
     InterpBegin, // text before the first `{`
     InterpMid,   // text between `}` and the next `{`
     InterpEnd,   // text after the last `}`
+    FormatSpec,  // `:spec` before the `}` of an interpolation; text is the spec
 #define QUARTZ_KW_ENUM(name, text) Kw##name,
     QUARTZ_KEYWORDS(QUARTZ_KW_ENUM)
 #undef QUARTZ_KW_ENUM

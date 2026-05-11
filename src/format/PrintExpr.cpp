@@ -202,6 +202,8 @@ void Printer::interp(const InterpExpr* e) {
         Tok k = toks_[i].kind;
         if (k == Tok::InterpBegin) {
             ++depth;
+        } else if (k == Tok::FormatSpec && depth == 0) {
+            parts.push_back(i); // printed with the part after it
         } else if (k == Tok::InterpMid && depth == 0) {
             parts.push_back(i);
         } else if (k == Tok::InterpEnd) {
@@ -213,10 +215,16 @@ void Printer::interp(const InterpExpr* e) {
         }
     }
     text(raw(toks_[first].span.begin, toks_[first].span.end));
+    std::size_t p = 0;
     for (std::size_t k = 0; k < e->exprs.size(); ++k) {
         expr(e->exprs[k]);
-        if (k < parts.size()) {
-            const Span& s = toks_[parts[k]].span;
+        if (p < parts.size() && toks_[parts[p]].kind == Tok::FormatSpec) {
+            const Span& s = toks_[parts[p++]].span;
+            flush(s.begin);
+            text(raw(s.begin, s.end));
+        }
+        if (p < parts.size()) {
+            const Span& s = toks_[parts[p++]].span;
             flush(s.begin);
             text(raw(s.begin, s.end));
         }
