@@ -411,23 +411,11 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
                 return ir::kBool;
             }
         }
-        ir::TypeKind k = types_->kind(t);
-        bool ordered = types_->isNumeric(t) || t == ir::kChar || t == ir::kStr;
-        bool equatable = ordered || t == ir::kBool || k == ir::TypeKind::Handle || k == ir::TypeKind::Nullable ||
-                         k == ir::TypeKind::Enum;
-        if (k == ir::TypeKind::Enum) {
-            for (const ir::VariantInfo& v : types_->info(t).variants) {
-                if (!v.payload.empty()) {
-                    equatable = false;
-                }
-            }
-        }
-        if (k == ir::TypeKind::Nullable) {
-            TypeId inner = types_->info(t).elem;
-            equatable = types_->isScalar(inner) || inner == ir::kStr || types_->kind(inner) == ir::TypeKind::Handle;
-        }
-        if ((eq && !equatable) || (!eq && !ordered)) {
-            diags_.error(e->span, std::format("operator '{}' is not defined for '{}'", binaryOpText(op), typeName(t)));
+        bool withNull = (lt == ir::kNull || rt == ir::kNull) && types_->kind(t) == ir::TypeKind::Nullable;
+        TraitInfo* need = langTrait(eq ? LangTrait::Eq : LangTrait::Ord);
+        if (!withNull && !implements(t, need)) {
+            diags_.error(e->span, std::format("operator '{}' is not defined for '{}'; it needs {}", binaryOpText(op),
+                                              typeName(t), need->name));
         }
         return ir::kBool;
     }
@@ -532,8 +520,9 @@ TypeId Checker::checkInterp(InterpExpr* e) {
         if (t == ir::kError) {
             continue;
         }
-        if (!types_->isNumeric(t) && t != ir::kBool && t != ir::kChar && t != ir::kStr) {
-            diags_.error(part->span, std::format("cannot interpolate a value of type '{}'", typeName(t)));
+        if (!implements(t, langTrait(LangTrait::Show))) {
+            diags_.error(part->span, std::format("cannot interpolate a value of type '{}'; it does not implement Show",
+                                                 typeName(t)));
         }
     }
     return ir::kStr;

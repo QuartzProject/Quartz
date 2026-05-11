@@ -61,6 +61,9 @@ Reg Lowerer::toStr(Reg r, TypeId t) {
     if (t == kStr) {
         return r;
     }
+    if (!types_->isScalar(t)) {
+        return showOf(r, t);
+    }
     Intrinsic op = Intrinsic::StrFromI64;
     Reg src = r;
     if (types_->isInteger(t)) {
@@ -148,6 +151,20 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
     bool shift = e->op == BinaryOp::Shl || e->op == BinaryOp::Shr;
     Reg l = lowerExpr(e->lhs, compare ? operand : kError);
     Reg r = lowerExpr(e->rhs, compare ? operand : kError);
+    if (compare && T(e->lhs->type) != kNull && T(e->rhs->type) != kNull &&
+        !((e->op == BinaryOp::Eq || e->op == BinaryOp::Ne) ? vmEquatable(operand) : vmOrdered(operand))) {
+        return lowerTraitCompare(e->op, l, r, operand);
+    }
+    if (compare && (T(e->lhs->type) == kNull || T(e->rhs->type) == kNull) && !vmEquatable(operand)) {
+        Reg isNull = newReg(kBool);
+        emit(Op::IsNull, isNull, T(e->lhs->type) == kNull ? r : l);
+        if (e->op == BinaryOp::Eq) {
+            return isNull;
+        }
+        Reg res = newReg(kBool);
+        emit(Op::Not, res, isNull);
+        return res;
+    }
     if (shift && T(e->rhs->type) != t) {
         Reg conv = newReg(t);
         emit(Op::Convert, conv, r);
@@ -265,12 +282,20 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
             const TypeInfo& recvInfo = types_->info(recvType);
             std::string method = fn->name.substr(fn->name.rfind('.') + 1);
             auto it = prog_.methodTable.find({recvInfo.genericBase != 0 ? recvInfo.genericBase : recvType, method});
+            bool userType = recvInfo.kind == TypeKind::Struct || recvInfo.kind == TypeKind::Enum;
+            if (fn->trait != nullptr && fn->trait->lang != sema::LangTrait::None &&
+                (it == prog_.methodTable.end() || !userType)) {
+                return langTraitCall(e, recvType, dst);
+            }
             if (it == prog_.methodTable.end()) {
                 diags_.error(e->span, std::format("no implementation of '{}' for '{}'", fn->name, types_->name(recvType)));
                 return dst;
             }
             fn = it->second;
             targs = recvInfo.genericBase != 0 ? recvInfo.typeArgs : std::vector<TypeId>{};
+            if (fn->trait != nullptr) {
+                targs = {recvType}; // a trait's default body, generic over `Self`
+            }
         }
         ir::TypeSubst callee;
         for (std::size_t i = 0; i < fn->typeParams.size() && i < targs.size(); ++i) {

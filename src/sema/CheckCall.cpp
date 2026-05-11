@@ -501,6 +501,9 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
     if (TypeId hof = ir::kError; checkListFunctionMethod(call, recv, callee->name, hof)) {
         return hof;
     }
+    if (TypeId t = langMethodCall(call, callee, recv); t != ir::kError) {
+        return t;
+    }
     return checkBuiltinMethod(call, recv, callee->name, expected);
 }
 
@@ -542,6 +545,7 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
                         return ir::kError;
                     }
                     tt = types_->instantiate(tt, args);
+                    checkTypeArgs(tt, id->span);
                 } else {
                     std::vector<TypeId> fields;
                     for (const ir::Field& f : base.fields) {

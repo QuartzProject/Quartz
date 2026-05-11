@@ -60,10 +60,10 @@ void Checker::declareTypes() {
                     tps = {};
                 }
             }
+            if (!tps.empty()) {
+                typeParamDecls_[entry.type] = {tps, currentFile_};
+            }
             for (const TypeParam& tp : tps) {
-                if (!tp.bounds.empty()) {
-                    diags_.error(tp.span, "bounds on type parameters of types are not supported; bound the functions");
-                }
                 TypeId pid = types_->param(std::string(str(tp.name)));
                 types_->mutableInfo(entry.type).typeParams.push_back(pid);
                 baseParams_[entry.type].emplace_back(tp.name, pid);
@@ -212,7 +212,7 @@ void Checker::completeTypes() {
                     continue;
                 }
                 types_->mutableInfo(entry.type).reprC = true;
-            } else if (an != "handle" && an != "awaitable") {
+            } else if (an != "handle" && an != "awaitable" && an != "derive") {
                 diags_.warning(a.span, std::format("unknown attribute '@{}'", an));
             }
         }
@@ -343,11 +343,7 @@ TypeId Checker::resolveTypeExpr(TypeExpr* t) {
                 return types_->list(a);
             }
             TypeId v = resolveType(n->args[1]);
-            ir::TypeKind kk = types_->kind(a);
-            if (!types_->isInteger(a) && a != ir::kStr && a != ir::kBool && a != ir::kChar &&
-                kk != ir::TypeKind::Handle && a != ir::kError) {
-                diags_.error(n->args[0]->span, "map keys must be integers, bool, char, str or handles");
-            }
+            checkMapKey(a, n->args[0]->span);
             return types_->map(a, v);
         }
         TypeId found = ir::kError;
@@ -376,7 +372,9 @@ TypeId Checker::resolveTypeExpr(TypeExpr* t) {
             for (TypeExpr* a : n->args) {
                 args.push_back(resolveType(a));
             }
-            return types_->instantiate(found, args);
+            TypeId inst = types_->instantiate(found, args);
+            checkTypeArgs(inst, t->span);
+            return inst;
         }
         if (!n->args.empty()) {
             diags_.error(t->span, std::format("type '{}' takes no type arguments", text));
@@ -532,13 +530,15 @@ void Checker::declareFunctions() {
                 const ir::TypeInfo& oinfo = types_->info(owner);
                 if (!ip.ids.empty() && (oinfo.typeArgs != ip.ids)) {
                     diags_.error(impl->span, "a generic impl must target its type with exactly its parameters, in order");
+                } else {
+                    mergeTypeBounds(owner, ip);
                 }
                 std::vector<FnInfo*> methods;
                 for (FnDecl* m : impl->methods) {
                     methods.push_back(declareFn(m, owner, iface, ip));
                 }
                 typeScopes_.pop_back();
-                declareImplTrait(impl, owner, methods);
+                declareImplTrait(impl, owner, methods, ip);
             } else if (d->kind == DeclKind::Const) {
                 auto* c = static_cast<ConstDecl*>(d);
                 auto* g = prog_->globalStorage.emplace_back(std::make_unique<GlobalInfo>()).get();
@@ -556,7 +556,11 @@ std::unique_ptr<Program> Checker::run() {
     declareTypes();
     completeTypes();
     declareTraits();
+    resolveTypeBounds();
+    declareDerives();
     declareFunctions();
+    checkDerives();
+    flushPendingChecks();
     checkFunctionTypes();
     for (GlobalInfo* g : globalList_) {
         currentFile_ = g->decl->span.file;

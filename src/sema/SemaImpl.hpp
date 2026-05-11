@@ -105,7 +105,7 @@ public:
 
     // Generics.cpp
     void declareTraits();
-    void declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<FnInfo*>& methods);
+    void declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<FnInfo*>& methods, const ImplParams& ip);
     void pushTypeParams(std::span<TypeParam> params, std::vector<TypeId>& ids, std::vector<Symbol>& names,
                         std::vector<std::vector<TraitInfo*>>& bounds);
     bool unify(TypeId pattern, TypeId actual, ir::TypeSubst& bindings);
@@ -119,6 +119,44 @@ public:
     std::vector<std::pair<TraitDecl*, TraitInfo*>> traitList_;
     std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> genericMethods_; // (generic base, method)
     std::set<std::pair<TraitInfo*, TypeId>> traitImpls_;                // (trait, concrete type or base)
+
+    // Traits.cpp
+    TraitInfo* langTraits_[6] = {};
+
+    [[nodiscard]] TraitInfo* langTrait(LangTrait l) const { return langTraits_[static_cast<std::size_t>(l)]; }
+
+    void declareLangTraits();
+    TraitInfo* langTraitNamed(std::string_view name) const;
+    void useDefaultMethod(TypeId owner, FnInfo* method);
+    TypeId langMethodCall(CallExpr* call, MemberExpr* callee, TypeId recv);
+    bool builtinImplements(TypeId t, LangTrait lang);
+    void resolveTypeBounds();
+    void mergeTypeBounds(TypeId owner, ImplParams& ip);
+    void checkTypeArgs(TypeId instance, Span span);
+    void checkMapKey(TypeId key, Span span);
+    void flushPendingChecks();
+    std::map<TypeId, std::pair<std::span<TypeParam>, std::uint32_t>>
+        typeParamDecls_;                                                          // generic base -> its params, file
+    std::unordered_map<TypeId, std::vector<std::vector<TraitInfo*>>> typeBounds_; // `struct Sorted<T: Ord>`
+    std::map<std::pair<TraitInfo*, TypeId>, std::vector<std::vector<TraitInfo*>>> implBounds_; // per base parameter
+    bool boundsReady_ = false; // impls and derives are known, so bounds can be checked
+    std::vector<std::pair<TypeId, Span>> pendingInstances_;
+    std::vector<std::pair<TypeId, Span>> pendingKeys_;
+
+    // Derive.cpp
+    struct DeriveInfo {
+        TypeId type;
+        TraitInfo* trait;
+        Span span;
+    };
+
+    std::vector<DeriveInfo> derives_;
+    std::vector<std::pair<TypeId, Span>> manualOrd_;
+    void declareDerives();
+    void deriveTrait(TypeId type, TraitInfo* trait);
+    void checkDerives();
+    bool checkLangImpl(ImplDecl* impl, TypeId owner, TraitInfo* trait, const std::vector<FnInfo*>& methods);
+    TypeId iteratorItem(TypeId owner, FnInfo* next);
 
     // Lambdas.cpp
     struct LambdaScope {
@@ -193,7 +231,8 @@ public:
     TypeEntry* findType(Symbol n) { return static_cast<TypeEntry*>(findName(n, NameKind::Type)); }
     FnInfo* findFunction(Symbol n) { return static_cast<FnInfo*>(findName(n, NameKind::Function)); }
     GlobalInfo* findGlobal(Symbol n) { return static_cast<GlobalInfo*>(findName(n, NameKind::Global)); }
-    TraitInfo* findTrait(Symbol n) { return static_cast<TraitInfo*>(findName(n, NameKind::Trait)); }
+
+    TraitInfo* findTrait(Symbol n);
     std::unordered_map<Symbol, std::vector<NameEntry>> table_;
     std::vector<FileScope> files_;
     std::set<std::string> packages_;

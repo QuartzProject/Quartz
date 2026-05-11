@@ -38,12 +38,16 @@ struct AnnotationInfo {
 
 struct TraitInfo;
 
+/// Traits the compiler knows: operators, interpolation, map keys and `for` use them.
+enum class LangTrait : std::uint8_t { None, Eq, Hash, Ord, Show, Iterator };
+
 struct FnInfo {
     syntax::FnDecl* decl = nullptr;
     std::vector<TypeId> typeParams;          // impl parameters first, then the function's own
     std::vector<Symbol> typeParamNames;
     std::vector<std::vector<TraitInfo*>> bounds; // per type parameter
     TraitInfo* trait = nullptr;              // set on the abstract methods of a trait declaration
+    LangTrait derived = LangTrait::None;     // made by `@derive`: no declaration, lowering builds the body
     [[nodiscard]] bool generic() const { return !typeParams.empty(); }
     std::vector<AnnotationInfo> annotations;
     std::string name;            // `Type.method` for methods
@@ -66,6 +70,7 @@ struct FnInfo {
 
 struct TraitInfo {
     std::string name;
+    LangTrait lang = LangTrait::None;
     TypeId self = ir::kError; // the `Self` parameter in method signatures
     std::vector<FnInfo*> methods;
 };

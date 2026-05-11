@@ -249,6 +249,10 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
         out.name += ">";
     }
     out.result = T(fn->result);
+    if (fn->derived != sema::LangTrait::None) {
+        lowerDerived(fn, out);
+        return;
+    }
     out.isSuspend = fn->isSuspend;
     out.inlining = fn->inlining;
     scopes_.clear();

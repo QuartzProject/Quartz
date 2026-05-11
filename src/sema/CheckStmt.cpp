@@ -128,6 +128,9 @@ void Checker::checkAttributes(FnInfo* fn) {
 }
 
 void Checker::checkFunction(FnInfo* fn) {
+    if (fn->decl == nullptr) {
+        return; // derived: lowering writes the body
+    }
     currentFile_ = fn->decl->span.file;
     checkAttributes(fn);
     typeScopes_.emplace_back();

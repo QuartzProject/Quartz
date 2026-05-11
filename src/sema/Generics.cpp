@@ -27,12 +27,18 @@ void Checker::pushTypeParams(std::span<TypeParam> params, std::vector<TypeId>& i
 }
 
 void Checker::declareTraits() {
+    declareLangTraits();
     for (Module* mod : modules_) {
         for (Decl* d : mod->decls) {
             if (d->kind != DeclKind::Trait) {
                 continue;
             }
             auto* t = static_cast<TraitDecl*>(d);
+            if (langTraitNamed(str(t->name)) != nullptr) {
+                diags_.error(t->nameSpan,
+                             std::format("'{}' is a language trait; implement it or derive it instead", str(t->name)));
+                continue;
+            }
             auto* info = prog_->traitStorage.emplace_back(std::make_unique<TraitInfo>()).get();
             info->name = std::string(str(t->name));
             info->self = types_->param("Self");
@@ -44,9 +50,6 @@ void Checker::declareTraits() {
         currentFile_ = t->span.file;
         {
             for (FnDecl* m : t->methods) {
-                if (m->body != nullptr) {
-                    diags_.error(m->span, "trait methods cannot have a default body yet");
-                }
                 if (!m->hasSelf || !m->typeParams.empty()) {
                     diags_.error(m->span, "trait methods take 'self' and no type parameters");
                 }
@@ -69,12 +72,22 @@ void Checker::declareTraits() {
                 fn->result = m->result != nullptr ? resolveType(m->result) : ir::kVoid;
                 selfType_ = savedSelf;
                 info->methods.push_back(fn);
+                if (m->body != nullptr) {
+                    // A default body is generic over `Self`, bounded by its own trait, and instantiated per type.
+                    m->info = fn;
+                    fn->typeParams = {info->self};
+                    fn->typeParamNames = {names_.intern("Self")};
+                    fn->bounds = {{info}};
+                    paramBounds_[info->self] = {info};
+                    prog_->generics.push_back(fn);
+                }
             }
         }
     }
 }
 
-void Checker::declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<FnInfo*>& methods) {
+void Checker::declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<FnInfo*>& methods,
+                               const ImplParams& ip) {
     if (impl->trait == nullptr) {
         return;
     }
@@ -90,8 +103,14 @@ void Checker::declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<F
     }
     const ir::TypeInfo& oinfo = types_->info(owner);
     TypeId key = oinfo.genericBase != 0 ? oinfo.genericBase : owner;
+    if (trait->lang != LangTrait::None && !checkLangImpl(impl, owner, trait, methods)) {
+        return;
+    }
     if (!traitImpls_.insert({trait, key}).second) {
         diags_.error(impl->span, std::format("'{}' already implements '{}'", typeName(owner), trait->name));
+    }
+    if (!ip.ids.empty()) {
+        implBounds_[{trait, key}] = ip.bounds;
     }
     for (FnInfo* want : trait->methods) {
         FnInfo* have = nullptr;
@@ -101,6 +120,10 @@ void Checker::declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<F
             }
         }
         std::string mname(str(want->decl->name));
+        if (have == nullptr && want->decl->body != nullptr) {
+            useDefaultMethod(owner, want);
+            continue;
+        }
         if (have == nullptr) {
             diags_.error(impl->span, std::format("missing method '{}' of trait '{}'", mname, trait->name));
             continue;
@@ -115,19 +138,6 @@ void Checker::declareImplTrait(ImplDecl* impl, TypeId owner, const std::vector<F
                                                        trait->name));
         }
     }
-}
-
-bool Checker::implements(TypeId type, TraitInfo* trait) {
-    if (types_->kind(type) == ir::TypeKind::Param) {
-        auto it = paramBounds_.find(type);
-        if (it == paramBounds_.end()) {
-            return false;
-        }
-        return std::find(it->second.begin(), it->second.end(), trait) != it->second.end();
-    }
-    const ir::TypeInfo& info = types_->info(type);
-    TypeId key = info.genericBase != 0 ? info.genericBase : type;
-    return traitImpls_.contains({trait, key});
 }
 
 bool Checker::unify(TypeId pattern, TypeId actual, ir::TypeSubst& bindings) {
@@ -287,7 +297,11 @@ TypeId Checker::finishGenericCall(CallExpr* call, FnInfo* fn, Expr* receiver, ir
 TypeId Checker::checkTraitCall(CallExpr* call, MemberExpr* callee, TypeId recv) {
     auto it = paramBounds_.find(recv);
     if (it != paramBounds_.end()) {
-        for (TraitInfo* t : it->second) {
+        std::vector<TraitInfo*> traits = it->second;
+        if (implements(recv, langTrait(LangTrait::Eq))) {
+            traits.push_back(langTrait(LangTrait::Eq));
+        }
+        for (TraitInfo* t : traits) {
             for (FnInfo* m : t->methods) {
                 if (m->decl->name == callee->name) {
                     ir::TypeSubst self{{t->self, recv}};
@@ -347,7 +361,9 @@ TypeId Checker::inferInstance(TypeId base, const std::vector<TypeId>& patterns, 
     for (Arg& a : args) {
         a.value->type = ir::kError; // checked again against the instance's field types
     }
-    return types_->instantiate(base, targs);
+    TypeId inst = types_->instantiate(base, targs);
+    checkTypeArgs(inst, span);
+    return inst;
 }
 
 } // namespace quartz::sema

@@ -54,6 +54,20 @@ public:
     void lowerLambda(const LambdaWork& w);
     [[nodiscard]] bool signatureHasFn(const Function& f) const;
 
+    // LowerTraits.cpp: Eq, Ord and Show for any type, and the bodies of derived methods
+    [[nodiscard]] bool vmEquatable(TypeId t) const;
+    [[nodiscard]] bool vmOrdered(TypeId t) const;
+    sema::FnInfo* userMethod(TypeId t, std::string_view name, std::vector<TypeId>& targs) const;
+    Reg callMethod(sema::FnInfo* fn, const std::vector<TypeId>& targs, const std::vector<Reg>& args, TypeId result);
+    Reg equalsOf(Reg a, Reg b, TypeId t);
+    Reg compareOf(Reg a, Reg b, TypeId t);
+    Reg signOf(Reg lt, Reg gt);
+    Reg showOf(Reg r, TypeId t);
+    Reg concatParts(const std::vector<Reg>& parts);
+    Reg langTraitCall(CallExpr* e, TypeId recvType, Reg dst);
+    Reg lowerTraitCompare(BinaryOp op, Reg l, Reg r, TypeId t);
+    void lowerDerived(sema::FnInfo* fn, Function& out);
+
     // LowerExpr.cpp
     Reg lowerExpr(Expr* e, TypeId want = kError);
     Reg lowerInner(Expr* e);

@@ -1,0 +1,140 @@
+// expect: ana says hi; ana says hi
+// expect: box says hello
+// expect: total 7
+// expect: Point(x=1, y=2) Point(x=1, y=3) false true true -1 1 0
+// expect: Rect(Point(x=1, y=2), Point(x=1, y=3)) Circle(1.5) Empty true false
+// expect: Box(value=5, label=null) Box(value=hi, label=lbl) true
+// expect: 9 c Point(x=1, y=3)
+// expect: 1 true false true
+// expect: <1.5> <[1, 2]> <(1, a)> <Point(x=1, y=2)> 5 1
+// expect: null true true true
+// expect: false 0 true
+trait Greet {
+    fn name(self) -> str
+    fn greet(self) -> str {
+        return "{self.name()} says hi"
+    }
+    fn twice(self) -> str {
+        return self.greet() + "; " + self.greet()
+    }
+}
+
+struct Person {
+    name: str
+}
+
+impl Greet for Person {
+    fn name(self) -> str {
+        return self.name
+    }
+}
+
+struct Crate<T> {
+    label: T
+}
+
+impl<T> Greet for Crate<T> {
+    fn name(self) -> str {
+        return "box"
+    }
+    fn greet(self) -> str {
+        return "{self.name()} says hello"
+    }
+}
+
+trait Weight {
+    fn weight(self) -> int
+}
+
+impl Weight for int {
+    fn weight(self) -> int {
+        return self
+    }
+}
+
+struct Pile<T: Weight> {
+    items: [T]
+}
+
+impl<T> Pile<T> {
+    fn total(self) -> int {
+        var sum = 0
+        for it in self.items {
+            sum += it.weight()
+        }
+        return sum
+    }
+}
+
+@derive(Eq, Hash, Ord, Show)
+struct Point {
+    x: int
+    y: int
+}
+
+@derive(Eq, Ord, Show)
+enum Shape {
+    Circle(float)
+    Rect(Point, Point)
+    Empty
+}
+
+@derive(Eq, Show)
+struct Box<T> {
+    value: T
+    label: str?
+}
+
+struct Rev {
+    n: int
+}
+
+impl Eq for Rev {
+    fn eq(self, other: Rev) -> bool {
+        return self.n == other.n
+    }
+}
+
+impl Ord for Rev {
+    fn cmp(self, other: Rev) -> int {
+        return other.n - self.n
+    }
+}
+
+fn largest<T: Ord>(xs: [T]) -> T {
+    var best = xs[0]
+    for x in xs {
+        if x > best {
+            best = x
+        }
+    }
+    return best
+}
+
+fn same<T: Eq>(a: T, b: T) -> bool {
+    return a == b
+}
+
+fn show<T: Show>(x: T) -> str {
+    return "<{x}>"
+}
+
+fn main() -> int {
+    print(Person("ana").twice())
+    print(Crate(1).greet())
+    print("total {Pile([3, 4]).total()}")
+    let p = Point(1, 2)
+    let q = Point(1, 3)
+    print("{p} {q} {p == q} {p != q} {p < q} {p.cmp(q)} {q.cmp(p)} {p.cmp(p)}")
+    let s = Shape.Rect(p, q)
+    print("{s} {Shape.Circle(1.5)} {Shape.Empty} {s == Shape.Rect(p, q)} {Shape.Empty < s}")
+    print("{Box(5, null)} {Box("hi", "lbl")} {Box(p, null) == Box(Point(1, 2), null)}")
+    print("{largest([3, 9, 2])} {largest(["b", "c", "a"])} {largest([p, q, Point(0, 9)])}")
+    print("{largest([Rev(3), Rev(1), Rev(2)]).n} {same(1, 1)} {same(p, q)} {same("a", "a")}")
+    print("{show(1.5)} {show([1, 2])} {show((1, "a"))} {show(p)} {5.show()} {"b".cmp("a")}")
+    let maybe: Point? = null
+    print("{maybe} {maybe == null} {Shape.Circle(0.0) == Shape.Circle(-0.0)} {Shape.Circle(-0.0) < Shape.Circle(0.0)}")
+    let nan = 0.0 / 0.0
+    print("{Shape.Circle(nan) == Shape.Circle(nan)} {Shape.Circle(nan).cmp(Shape.Circle(nan))} {Shape.Circle(1.0) < Shape.Circle(nan)}")
+    return 0
+}

@@ -1,0 +1,58 @@
+// error: 'Eq' is a language trait; implement it or derive it instead
+// error: missing method 'weight' of trait 'Weight'
+// error: 'str' does not implement 'Weight', which 'Pile' requires of its parameter
+// error: cannot derive 'Hash' for 'F': field 'x' of type 'float' does not implement it
+// error: deriving Hash needs Eq derived too
+// error: Hash can only be derived
+// error: Ord needs Eq: derive or implement it too
+// error: cannot interpolate a value of type 'Rock'; it does not implement Show
+// error: operator '<' is not defined for 'E'; it needs Ord
+// error: map keys must implement Hash, and 'Rock' does not
+// error: @derive takes Eq, Hash, Ord and Show
+
+trait Eq {
+    fn same(self) -> bool
+}
+
+trait Weight {
+    fn weight(self) -> int
+    fn heavy(self) -> bool {
+        return self.weight() > 10
+    }
+}
+
+struct Rock {
+    kg: int
+}
+
+impl Weight for Rock {}
+
+struct Pile<T: Weight> {
+    items: [T]
+}
+
+fn names(p: Pile<str>) -> int {
+    return 0
+}
+
+@derive(Hash)
+struct F {
+    x: float
+}
+
+impl Hash for Rock {}
+
+@derive(Ord, Iterator)
+struct O {
+    n: int
+}
+
+@derive(Eq)
+struct E {
+    n: int
+}
+
+fn misuse(r: Rock, a: E, b: E, m: Map<Rock, int>) -> bool {
+    let t = "{r}"
+    return a < b
+}

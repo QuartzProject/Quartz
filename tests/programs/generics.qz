@@ -5,7 +5,7 @@
 // expect: [1, 2, 3] [x, y]
 // expect: swap 2 1
 
-trait Show {
+trait Describe {
     fn show(self) -> str
 }
 
@@ -14,19 +14,19 @@ struct P {
     y: int
 }
 
-impl Show for P {
+impl Describe for P {
     fn show(self) -> str {
         return "P({self.x}, {self.y})"
     }
 }
 
-impl Show for int {
+impl Describe for int {
     fn show(self) -> str {
         return "{self}"
     }
 }
 
-impl Show for str {
+impl Describe for str {
     fn show(self) -> str {
         return self
     }
@@ -42,7 +42,7 @@ impl<T> Box<T> {
     }
 }
 
-impl<T: Show> Show for Box<T> {
+impl<T: Describe> Describe for Box<T> {
     fn show(self) -> str {
         return "Box({self.value.show()})"
     }
@@ -67,7 +67,7 @@ fn orElse<T>(m: Maybe<T>, fallback: T) -> T {
     }
 }
 
-fn describe<T: Show>(items: [T]) -> str {
+fn describe<T: Describe>(items: [T]) -> str {
     var parts: [str] = []
     for it in items {
         parts.push(it.show())
