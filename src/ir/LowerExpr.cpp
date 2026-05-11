@@ -594,113 +594,14 @@ Reg Lowerer::lowerInner(Expr* e) {
     }
     case ExprKind::If: return lowerIf(static_cast<IfExpr*>(e), T(e->type), true);
     case ExprKind::Match: return lowerMatch(static_cast<MatchExpr*>(e), T(e->type), true);
+    case ExprKind::Is:
+        return lowerIs(static_cast<IsExpr*>(e));
     case ExprKind::Block: return lowerBlockValue(static_cast<BlockExpr*>(e), T(e->type));
     case ExprKind::Lambda:
         return lowerClosure(static_cast<LambdaExpr*>(e));
     default: break;
     }
     return newReg(kError);
-}
-
-Reg Lowerer::patternTest(Pattern* p, Reg subject, TypeId subjectType) {
-    switch (p->kind) {
-    case PatternKind::Wildcard:
-    case PatternKind::Binding: return kNoReg;
-    case PatternKind::Literal: {
-        Reg lit = lowerExpr(p->literal, subjectType);
-        Reg c = newReg(kBool);
-        emit(Op::Eq, c, subject, lit);
-        return c;
-    }
-    case PatternKind::Range: {
-        Reg lo = lowerExpr(p->literal, subjectType);
-        Reg hi = lowerExpr(p->rangeHi, subjectType);
-        Reg a = newReg(kBool);
-        emit(Op::Ge, a, subject, lo);
-        Reg b = newReg(kBool);
-        emit(p->inclusive ? Op::Le : Op::Lt, b, subject, hi);
-        Reg c = newReg(kBool);
-        emit(Op::BitAnd, c, a, b);
-        return c;
-    }
-    case PatternKind::Variant: {
-        Reg tag = newReg(kI64);
-        emit(Op::EnumTag, tag, subject);
-        Reg want = constInt(p->variantIndex, kI64);
-        Reg c = newReg(kBool);
-        emit(Op::Eq, c, tag, want);
-        return c;
-    }
-    }
-    return kNoReg;
-}
-
-void Lowerer::bindPattern(Pattern* p, Reg subject, TypeId subjectType) {
-    if (p->kind == PatternKind::Binding && p->local != nullptr) {
-        p->local->reg = newReg(subjectType);
-        emit(Op::Move, p->local->reg, subject);
-    } else if (p->kind == PatternKind::Variant) {
-        const VariantInfo& v = types_->info(subjectType).variants[p->variantIndex];
-        for (std::uint32_t i = 0; i < p->sub.size(); ++i) {
-            Pattern* sub = p->sub[i];
-            if (sub->kind == PatternKind::Binding && sub->local != nullptr) {
-                sub->local->reg = newReg(v.payload[i]);
-                Inst& in = emit(Op::EnumField, sub->local->reg, subject, kNoReg, p->variantIndex);
-                in.b = i;
-            }
-        }
-    }
-}
-
-Reg Lowerer::lowerArmBody(Expr* body, TypeId want, bool wantValue) {
-    if (wantValue) {
-        return lowerExpr(body, want);
-    }
-    if (body->kind == ExprKind::Block) {
-        lowerBlockStmts(static_cast<BlockExpr*>(body));
-    } else if (body->kind == ExprKind::If) {
-        lowerIf(static_cast<IfExpr*>(body), kError, false);
-    } else if (body->kind == ExprKind::Match) {
-        lowerMatch(static_cast<MatchExpr*>(body), kError, false);
-    } else {
-        lowerExpr(body);
-    }
-    return kNoReg;
-}
-
-Reg Lowerer::lowerMatch(MatchExpr* m, TypeId want, bool wantValue) {
-    TypeId st = T(m->subject->type);
-    Reg subject = lowerExpr(m->subject);
-    TypeId rt = wantValue ? (want != kError ? want : T(m->type)) : kError;
-    Reg result = wantValue && rt != kVoid && rt != kNever ? newReg(rt) : kNoReg;
-    std::size_t exit = depth_;
-    open(Op::Block);
-    for (MatchArm& arm : m->arms) {
-        std::size_t next = depth_;
-        open(Op::Block);
-        Reg test = patternTest(arm.pattern, subject, st);
-        if (test != kNoReg) {
-            Reg miss = newReg(kBool);
-            emit(Op::Not, miss, test);
-            brIf(miss, next);
-        }
-        bindPattern(arm.pattern, subject, st);
-        if (arm.guard != nullptr) {
-            Reg g = lowerExpr(arm.guard, kBool);
-            Reg miss = newReg(kBool);
-            emit(Op::Not, miss, g);
-            brIf(miss, next);
-        }
-        Reg v = lowerArmBody(arm.body, rt, wantValue);
-        if (result != kNoReg && v != kNoReg && T(arm.body->type) != kNever) {
-            emit(Op::Move, result, v);
-        }
-        br(exit);
-        close();
-    }
-    emit(Op::Trap, kNoReg, kNoReg, kNoReg, static_cast<std::uint32_t>(TrapCode::Unreachable));
-    close();
-    return result;
 }
 
 std::unique_ptr<Module> Lowerer::run() {

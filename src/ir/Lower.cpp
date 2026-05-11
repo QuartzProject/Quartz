@@ -423,6 +423,10 @@ sema::Local* Lowerer::rootLocal(Expr* target) {
 }
 
 void Lowerer::lowerLet(LetStmt* s) {
+    if (s->pattern != nullptr) {
+        lowerLetPattern(s);
+        return;
+    }
     sema::Local* l = s->local;
     Reg v = s->init != nullptr ? lowerExpr(s->init, T(l->type)) : zeroValue(T(l->type), s->span);
     l->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
@@ -661,6 +665,11 @@ void Lowerer::branchIfFalse(Expr* e, std::size_t frame) {
     }
     if (e->kind == ExprKind::Unary && static_cast<UnaryExpr*>(e)->op == UnaryOp::Not) {
         branchIfTrue(static_cast<UnaryExpr*>(e)->operand, frame);
+        return;
+    }
+    if (e->kind == ExprKind::Is) {
+        auto* is = static_cast<IsExpr*>(e);
+        matchPattern(is->pattern, lowerExpr(is->value), T(is->value->type), frame);
         return;
     }
     Reg c = lowerExpr(e, kBool);

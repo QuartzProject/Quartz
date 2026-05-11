@@ -263,7 +263,7 @@ struct CastExpr : Expr {
 
 struct IsExpr : Expr {
     Expr* value;
-    TypeExpr* target;
+    struct Pattern* pattern;
 };
 
 struct WaitExpr : Expr {
@@ -285,14 +285,14 @@ struct IfExpr : Expr {
     Expr* otherwise; // BlockExpr, IfExpr or null
 };
 
-enum class PatternKind : std::uint8_t { Wildcard, Binding, Literal, Variant, Range };
+enum class PatternKind : std::uint8_t { Wildcard, Binding, Literal, Variant, Range, Tuple, Struct };
 
 struct Pattern {
     PatternKind kind;
     Span span;
     Symbol name;                    // binding name, or variant name
     std::span<Symbol> path;         // `Enum.Variant`
-    std::span<struct Pattern*> sub; // variant payload patterns
+    std::span<struct Pattern*> sub; // variant payload, tuple element or struct field patterns
     Expr* literal;                  // literal or range lo
     Expr* rangeHi;
     bool inclusive = false; // `a..=b`; `a..b` excludes b, as in `for`
@@ -347,6 +347,7 @@ struct LetStmt : Stmt {
     TypeExpr* type;
     Expr* init;
     sema::Local* local = nullptr;
+    struct Pattern* pattern = nullptr; // `let (a, b) = pair`: destructuring instead of `name`
 };
 
 struct AssignStmt : Stmt {

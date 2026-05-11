@@ -1,0 +1,91 @@
+// expect: zero leaf; small leaf; negative -3; leaf 42
+// expect: circle 1.5 weight 2; square 2.0; rect 1.0x3.0; empty 7
+// expect: zero a x 4 5 y none zero some 9 2
+// expect: 1 two 3 4 11
+// expect: origin y axis x axis plane
+// expect: big circle 2.0
+// expect: not empty true true
+enum Shape {
+    Circle(float)
+    Rect(float, float)
+    Empty
+}
+
+enum Tree {
+    Leaf(int)
+    Node(Shape, int)
+}
+
+struct Point {
+    x: int
+    y: int
+}
+
+fn describe(t: Tree) -> str {
+    return match t {
+        Leaf(0) => "zero leaf"
+        Leaf(1..=9) => "small leaf"
+        Leaf(n) if n < 0 => "negative {n}"
+        Leaf(n) => "leaf {n}"
+        Node(Circle(r), w) => "circle {r} weight {w}"
+        Node(Rect(a, b), _) if a == b => "square {a}"
+        Node(Rect(a, b), _) => "rect {a}x{b}"
+        Node(Empty, w) => "empty {w}"
+    }
+}
+
+fn quadrant(p: Point) -> str {
+    return match p {
+        Point(0, 0) => "origin"
+        Point(0, _) => "y axis"
+        Point(_, 0) => "x axis"
+        _ => "plane"
+    }
+}
+
+fn pair(t: (int, str)) -> str {
+    return match t {
+        (0, s) => "zero {s}"
+        (n, "x") => "x {n}"
+        (n, s) => "{n} {s}"
+    }
+}
+
+fn opt(v: int?) -> str {
+    return match v {
+        null => "none"
+        0 => "zero"
+        n => "some {n}"
+    }
+}
+
+fn flags(a: bool, b: bool) -> int {
+    return match (a, b) {
+        (true, true) => 3
+        (true, false) => 2
+        (false, true) => 1
+        (false, false) => 0
+    }
+}
+
+fn main() -> int {
+    print(describe(Tree.Leaf(0)) + "; " + describe(Tree.Leaf(5)) + "; " + describe(Tree.Leaf(-3)) + "; " + describe(Tree.Leaf(42)))
+    print(describe(Tree.Node(Shape.Circle(1.5), 2)) + "; " + describe(Tree.Node(Shape.Rect(2.0, 2.0), 0)) + "; " + describe(Tree.Node(Shape.Rect(1.0, 3.0), 0)) + "; " + describe(Tree.Node(Shape.Empty, 7)))
+    print("{pair((0, "a"))} {pair((4, "x"))} {pair((5, "y"))} {opt(null)} {opt(0)} {opt(9)} {flags(true, false)}")
+    let (a, b) = (1, "two")
+    let Point(x, y) = Point(3, 4)
+    var (c, d) = (5, 6)
+    c += d
+    print("{a} {b} {x} {y} {c}")
+    print("{quadrant(Point(0, 0))} {quadrant(Point(0, 2))} {quadrant(Point(3, 0))} {quadrant(Point(1, 1))}")
+    let s = Shape.Circle(2.0)
+    if s is Circle(r) && r > 1.0 {
+        print("big circle {r}")
+    }
+    if s is Empty {
+        print("empty")
+    } else {
+        print("not empty {s is Circle(_)} {Tree.Leaf(3) is Leaf(1..5)}")
+    }
+    return 0
+}

@@ -93,6 +93,7 @@ void Walker::stmt(const Stmt* s) {
         const auto* l = static_cast<const LetStmt*>(s);
         type(l->type);
         expr(l->init, nullptr);
+        pattern(l->pattern, l->type != nullptr ? l->type->type : l->init != nullptr ? l->init->type : 0);
         break;
     }
     case StmtKind::Assign: {
@@ -222,7 +223,7 @@ void Walker::expr(const Expr* e, const Expr* parent) {
     case ExprKind::Is: {
         const auto* c = static_cast<const IsExpr*>(e);
         expr(c->value, e);
-        type(c->target);
+        pattern(c->pattern, c->value->type);
         break;
     }
     case ExprKind::Wait:
@@ -300,13 +301,26 @@ void Walker::pattern(const Pattern* p, std::uint32_t subject) {
     if (p == nullptr) {
         return;
     }
-    onPattern(*p, subject);
     const sema::Program* prog = a_.program();
+    if (prog != nullptr && subject != 0 && subject < prog->types.size() &&
+        prog->types.kind(subject) == ir::TypeKind::Nullable && p->kind != PatternKind::Binding) {
+        subject = prog->types.info(subject).elem; // patterns other than names see through `null`
+    }
+    onPattern(*p, subject);
     const std::vector<std::uint32_t>* payload = nullptr;
-    if (prog != nullptr && p->kind == PatternKind::Variant && subject != 0 && subject < prog->types.size()) {
+    std::vector<std::uint32_t> fields;
+    if (prog != nullptr && subject != 0 && subject < prog->types.size()) {
         const ir::TypeInfo& info = prog->types.info(subject);
-        if (info.kind == ir::TypeKind::Enum && p->variantIndex < info.variants.size()) {
+        if (p->kind == PatternKind::Variant && info.kind == ir::TypeKind::Enum &&
+            p->variantIndex < info.variants.size()) {
             payload = &info.variants[p->variantIndex].payload;
+        } else if (p->kind == PatternKind::Tuple && info.kind == ir::TypeKind::Tuple) {
+            payload = &info.elems;
+        } else if (p->kind == PatternKind::Struct && info.kind == ir::TypeKind::Struct) {
+            for (const ir::Field& f : info.fields) {
+                fields.push_back(f.type);
+            }
+            payload = &fields;
         }
     }
     for (std::size_t i = 0; i < p->sub.size(); ++i) {

@@ -386,6 +386,10 @@ void Checker::checkViewBinding(Local* l, const Expr* init, Span span) {
 }
 
 void Checker::checkLet(LetStmt* s) {
+    if (s->pattern != nullptr) {
+        checkLetPattern(s);
+        return;
+    }
     TypeId declared = s->type != nullptr ? resolveType(s->type) : ir::kError;
     TypeId t = declared;
     if (s->init != nullptr) {
@@ -564,160 +568,6 @@ void Checker::watchLoop(BlockExpr* body) {
             outer.allocates = false; // already reported by the inner loop
         }
     }
-}
-
-void Checker::checkPattern(Pattern* p, TypeId subject) {
-    const ir::TypeInfo& info = types_->info(subject);
-    switch (p->kind) {
-    case PatternKind::Wildcard: return;
-    case PatternKind::Binding:
-        if (info.kind == ir::TypeKind::Enum) {
-            for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
-                if (info.variants[v].name == str(p->name)) {
-                    p->kind = PatternKind::Variant;
-                    p->variantIndex = v;
-                    if (!info.variants[v].payload.empty()) {
-                        diags_.error(p->span, std::format("variant '{}' has a payload; match it with '{}(...)'",
-                                                          str(p->name), str(p->name)));
-                    }
-                    return;
-                }
-            }
-        }
-        p->local = declareLocal(p->name, subject, false, p->span);
-        return;
-    case PatternKind::Literal:
-    case PatternKind::Range: {
-        Expr* lits[] = {p->literal, p->rangeHi};
-        for (Expr* lit : lits) {
-            if (lit == nullptr) {
-                continue;
-            }
-            bool literal = lit->kind == ExprKind::IntLit || lit->kind == ExprKind::CharLit ||
-                           lit->kind == ExprKind::StringLit || lit->kind == ExprKind::BoolLit ||
-                           (lit->kind == ExprKind::Unary && static_cast<UnaryExpr*>(lit)->operand->kind ==
-                                                                ExprKind::IntLit);
-            if (!literal) {
-                diags_.error(lit->span, "patterns must be literals");
-            }
-            expectAssignable(checkValue(lit, subject), subject, lit->span);
-        }
-        if (p->kind == PatternKind::Range && !types_->isInteger(subject) && subject != ir::kChar &&
-            subject != ir::kError) {
-            diags_.error(p->span, "range patterns need an integer or char subject");
-        }
-        return;
-    }
-    case PatternKind::Variant: {
-        if (info.kind != ir::TypeKind::Enum) {
-            if (subject != ir::kError) {
-                diags_.error(p->span, std::format("variant pattern on a value of type '{}'", typeName(subject)));
-            }
-            return;
-        }
-        if (p->path.size() > 2 || (p->path.size() == 2 && str(p->path[0]) != info.name)) {
-            diags_.error(p->span, std::format("pattern does not belong to '{}'", info.name));
-            return;
-        }
-        for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
-            if (info.variants[v].name == str(p->name)) {
-                p->variantIndex = v;
-                const std::vector<TypeId>& payload = info.variants[v].payload;
-                if (p->sub.size() != payload.size()) {
-                    diags_.error(p->span, std::format("variant '{}' has {} field(s), the pattern has {}",
-                                                      str(p->name), payload.size(), p->sub.size()));
-                    return;
-                }
-                for (std::size_t i = 0; i < payload.size(); ++i) {
-                    if (p->sub[i]->kind == PatternKind::Variant) {
-                        diags_.error(p->sub[i]->span, "nested variant patterns are not supported yet");
-                        continue;
-                    }
-                    checkPattern(p->sub[i], payload[i]);
-                }
-                return;
-            }
-        }
-        diags_.error(p->span, std::format("'{}' has no variant '{}'", info.name, str(p->name)));
-        return;
-    }
-    }
-}
-
-TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
-    TypeId subject = checkValue(m->subject, ir::kError);
-    const ir::TypeInfo& sinfo = types_->info(subject);
-    bool scalarOk = types_->isInteger(subject) || subject == ir::kChar || subject == ir::kStr ||
-                    subject == ir::kBool || sinfo.kind == ir::TypeKind::Enum || subject == ir::kError;
-    if (!scalarOk) {
-        diags_.error(m->subject->span, std::format("cannot match on '{}'", typeName(subject)));
-    }
-    TypeId result = ir::kNever;
-    bool catchAll = false;
-    std::vector<bool> covered(sinfo.kind == ir::TypeKind::Enum ? sinfo.variants.size() : 0, false);
-    bool sawTrue = false;
-    bool sawFalse = false;
-    for (MatchArm& arm : m->arms) {
-        pushScope();
-        checkPattern(arm.pattern, subject);
-        if (arm.guard != nullptr) {
-            expectAssignable(checkValue(arm.guard, ir::kBool), ir::kBool, arm.guard->span);
-        } else {
-            PatternKind k = arm.pattern->kind;
-            if (k == PatternKind::Wildcard || k == PatternKind::Binding) {
-                catchAll = true;
-            } else if (k == PatternKind::Variant && arm.pattern->variantIndex < covered.size()) {
-                bool all = true;
-                for (Pattern* sub : arm.pattern->sub) {
-                    all = all && (sub->kind == PatternKind::Wildcard || sub->kind == PatternKind::Binding);
-                }
-                if (all) {
-                    covered[arm.pattern->variantIndex] = true;
-                }
-            } else if (k == PatternKind::Literal && arm.pattern->literal->kind == ExprKind::BoolLit) {
-                (static_cast<BoolLitExpr*>(arm.pattern->literal)->value ? sawTrue : sawFalse) = true;
-            }
-        }
-        TypeId t = ir::kVoid;
-        if (wantValue) {
-            t = checkValue(arm.body, expected);
-            result = unify(result, t, arm.body->span);
-        } else if (arm.body->kind == ExprKind::Block) {
-            t = checkBlock(static_cast<BlockExpr*>(arm.body), ir::kError, false);
-            arm.body->type = t;
-        } else if (arm.body->kind == ExprKind::If) {
-            t = checkIf(static_cast<IfExpr*>(arm.body), ir::kError, false);
-            arm.body->type = t;
-        } else {
-            t = check(arm.body, ir::kError);
-        }
-        if (!wantValue && t != ir::kNever) {
-            result = ir::kVoid;
-        }
-        popScope();
-    }
-    bool exhaustive = catchAll || (subject == ir::kBool && sawTrue && sawFalse);
-    if (!covered.empty() && !exhaustive) {
-        exhaustive = true;
-        std::string missing;
-        for (std::size_t v = 0; v < covered.size(); ++v) {
-            if (!covered[v]) {
-                exhaustive = false;
-                missing += (missing.empty() ? "" : ", ") + sinfo.variants[v].name;
-            }
-        }
-        if (!exhaustive) {
-            diags_.error(m->span, std::format("match is not exhaustive; missing: {}", missing));
-            exhaustive = true;
-        }
-    }
-    if (!exhaustive && subject != ir::kError) {
-        diags_.error(m->span, "match is not exhaustive; add a '_' arm");
-    }
-    if (m->arms.empty()) {
-        return wantValue ? ir::kError : ir::kVoid;
-    }
-    return result;
 }
 
 } // namespace quartz::sema

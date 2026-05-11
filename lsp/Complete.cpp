@@ -72,6 +72,17 @@ public:
         }
     }
 
+    // Names bound by `x is P` in an `if` condition, alone or joined with `&&`.
+    void isBindings(const Expr* cond) {
+        if (cond != nullptr && cond->kind == ExprKind::Is) {
+            patternBindings(static_cast<const IsExpr*>(cond)->pattern);
+        } else if (cond != nullptr && cond->kind == ExprKind::Binary &&
+                   static_cast<const BinaryExpr*>(cond)->op == BinaryOp::And) {
+            isBindings(static_cast<const BinaryExpr*>(cond)->lhs);
+            isBindings(static_cast<const BinaryExpr*>(cond)->rhs);
+        }
+    }
+
     std::vector<Completion> take() { return std::move(items_); }
 
 private:
@@ -91,7 +102,11 @@ void scopeNames(const Analysis& a, const std::vector<Node>& path, std::uint32_t 
                 for (auto s = b->stmts.rbegin(); s != b->stmts.rend(); ++s) {
                     if ((*s)->kind == StmtKind::Let && (*s)->span.end <= offset) {
                         const auto* l = static_cast<const LetStmt*>(*s);
-                        out.local(l->local, l->name);
+                        if (l->pattern != nullptr) {
+                            out.patternBindings(l->pattern);
+                        } else {
+                            out.local(l->local, l->name);
+                        }
                     }
                 }
             } else if (e->kind == ExprKind::Lambda) {
@@ -100,9 +115,11 @@ void scopeNames(const Analysis& a, const std::vector<Node>& path, std::uint32_t 
                 }
             } else if (e->kind == ExprKind::If) {
                 const auto* i = static_cast<const IfExpr*>(e);
-                if (i->bindName.valid() && i->then != nullptr && i->then->span.begin <= offset &&
-                    offset <= i->then->span.end) {
-                    out.local(i->bindLocal, i->bindName);
+                if (i->then != nullptr && i->then->span.begin <= offset && offset <= i->then->span.end) {
+                    if (i->bindName.valid()) {
+                        out.local(i->bindLocal, i->bindName);
+                    }
+                    out.isBindings(i->cond);
                 }
             }
         } else if (n.kind == NodeKind::MatchArm) {

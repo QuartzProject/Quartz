@@ -231,8 +231,7 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
         return checkLambda(static_cast<LambdaExpr*>(e), expected);
     case ExprKind::Cast: return checkCast(static_cast<CastExpr*>(e));
     case ExprKind::Is:
-        diags_.error(e->span, "'is' is not supported yet");
-        return ir::kBool;
+        return checkIs(static_cast<IsExpr*>(e));
     case ExprKind::Wait: return checkWait(static_cast<WaitExpr*>(e)->value, e->span);
     case ExprKind::If: return checkIf(static_cast<IfExpr*>(e), expected, true);
     case ExprKind::Match: return checkMatch(static_cast<MatchExpr*>(e), expected, true);
@@ -452,6 +451,7 @@ TypeId Checker::checkIf(IfExpr* e, TypeId expected, bool wantValue) {
         }
         e->bindLocal = declareLocal(e->bindName, inner, false, e->bindValue->span);
     } else {
+        allowIsBindings(e->cond);
         expectAssignable(checkValue(e->cond, ir::kBool), ir::kBool, e->cond->span);
     }
     TypeId thenT = checkBlock(e->then, expected, wantValue);

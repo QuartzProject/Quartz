@@ -35,8 +35,10 @@ public:
     Reg lowerArmBody(Expr* body, TypeId want, bool wantValue);
     void branchIfFalse(Expr* e, std::size_t frame);
     void branchIfTrue(Expr* e, std::size_t frame);
-    Reg patternTest(Pattern* p, Reg subject, TypeId subjectType);
-    void bindPattern(Pattern* p, Reg subject, TypeId subjectType);
+    // LowerPattern.cpp
+    void matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fail);
+    Reg lowerIs(IsExpr* e);
+    void lowerLetPattern(LetStmt* s);
     Reg zeroValue(TypeId t, Span span);
 
     // LowerLambda.cpp

@@ -104,19 +104,19 @@ Expr* Parser::parseBinary(int minPrec) {
             continue;
         }
         if ((at(Tok::KwAs) || at(Tok::KwIs)) && minPrec <= kPrecAs && !(cur().newlineBefore && newlineSensitive())) {
-            bool isAs = advance().kind == Tok::KwAs;
-            TypeExpr* target = parseType();
-            if (isAs) {
+            if (advance().kind == Tok::KwAs) {
+                TypeExpr* target = parseType();
                 auto* c = node<CastExpr>(lhs->span.to(prevSpan()));
                 c->kind = ExprKind::Cast;
                 c->value = lhs;
                 c->target = target;
                 lhs = c;
             } else {
+                Pattern* pattern = parsePattern();
                 auto* c = node<IsExpr>(lhs->span.to(prevSpan()));
                 c->kind = ExprKind::Is;
                 c->value = lhs;
-                c->target = target;
+                c->pattern = pattern;
                 lhs = c;
             }
             continue;
@@ -384,6 +384,26 @@ Pattern* Parser::parsePattern() {
     if (at(Tok::Ident) && cur().text == "_") {
         advance();
         p->kind = PatternKind::Wildcard;
+        return p;
+    }
+    if (accept(Tok::LParen)) {
+        NewlineGuard g(*this, true);
+        std::vector<Pattern*> sub;
+        bool comma = false;
+        while (!at(Tok::RParen) && !at(Tok::Eof)) {
+            sub.push_back(parsePattern());
+            if (!accept(Tok::Comma)) {
+                break;
+            }
+            comma = true;
+        }
+        expect(Tok::RParen, "to close the tuple pattern");
+        if (sub.size() == 1 && !comma) {
+            return sub[0]; // `(p)` only groups
+        }
+        p->kind = PatternKind::Tuple;
+        p->sub = list(sub);
+        p->span = begin.to(prevSpan());
         return p;
     }
     if (at(Tok::Ident)) {

@@ -1,0 +1,47 @@
+// error: match is not exhaustive; missing: Node(Rect(_, _), _)
+// error: match is not exhaustive; missing: (false, false)
+// error: match is not exhaustive; missing: null
+// error: this pattern can fail (it does not match Rect(_, _))
+// error: names bound by 'is' can only be used in an 'if' condition
+// error: match is not exhaustive; add a '_' arm
+
+enum Shape {
+    Circle(float)
+    Rect(float, float)
+    Empty
+}
+enum Tree {
+    Leaf(int)
+    Node(Shape, int)
+}
+fn a(t: Tree) -> int {
+    return match t {
+        Leaf(_) => 1
+        Node(Circle(_), _) => 2
+        Node(Empty, 0) => 3
+    }
+}
+fn b(x: bool, y: bool) -> int {
+    return match (x, y) {
+        (true, _) => 1
+        (false, true) => 2
+    }
+}
+fn c(v: Shape?) -> int {
+    return match v {
+        Circle(_) => 1
+        Rect(_, _) => 2
+        Empty => 3
+    }
+}
+fn d(s: Shape) -> bool {
+    let Circle(r) = s
+    let ok = s is Circle(q)
+    return ok
+}
+fn e(n: int) -> int {
+    return match n {
+        0 => 1
+        1..10 => 2
+    }
+}

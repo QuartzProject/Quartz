@@ -241,7 +241,7 @@ module.exports = grammar({
 
     let_declaration: $ => seq(
       choice('let', 'var', 'const', 'ref'),
-      field('name', $.identifier),
+      choice(field('name', $.identifier), field('pattern', choice($.tuple_pattern, $.variant_pattern))),
       optional(seq(':', field('type', $._type))),
       optional(seq('=', field('value', $._expression))),
     ),
@@ -354,7 +354,7 @@ module.exports = grammar({
     is_expression: $ => prec.left(PREC.cast, seq(
       field('value', $._expression),
       'is',
-      field('type', $._type),
+      field('pattern', $._pattern),
     )),
 
     call_expression: $ => prec(PREC.postfix, seq(
@@ -458,18 +458,21 @@ module.exports = grammar({
       $.wildcard_pattern,
       $.identifier,
       $.variant_pattern,
+      $.tuple_pattern,
       $._literal_pattern,
       $.range_pattern,
     ),
 
+    tuple_pattern: $ => seq('(', commaSep($._pattern), ')'),
+
     wildcard_pattern: _ => '_',
 
-    variant_pattern: $ => choice(
+    variant_pattern: $ => prec.right(PREC.postfix + 1, choice(
       seq(field('name', $.identifier), field('arguments', $.pattern_arguments)),
       seq(field('name', $.scoped_identifier), optional(field('arguments', $.pattern_arguments))),
-    ),
+    )),
 
-    scoped_identifier: $ => seq($.identifier, repeat1(seq('.', $.identifier))),
+    scoped_identifier: $ => prec(PREC.postfix + 1, seq($.identifier, repeat1(seq('.', $.identifier)))),
 
     pattern_arguments: $ => seq('(', commaSep($._pattern), ')'),
 
@@ -477,11 +480,11 @@ module.exports = grammar({
 
     negative_literal: $ => seq('-', choice($.integer_literal, $.float_literal)),
 
-    range_pattern: $ => seq(
+    range_pattern: $ => prec(PREC.postfix + 1, seq(
       field('start', $._literal_pattern),
       field('operator', choice('..', '..=')),
       field('end', $._literal_pattern),
-    ),
+    )),
 
     _type: $ => choice(
       alias($.identifier, $.type_identifier),

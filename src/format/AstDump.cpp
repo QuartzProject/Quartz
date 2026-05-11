@@ -207,7 +207,7 @@ public:
             break;
         case ExprKind::Is:
             expr(static_cast<const IsExpr*>(e)->value);
-            type(static_cast<const IsExpr*>(e)->target);
+            pattern(static_cast<const IsExpr*>(e)->pattern);
             break;
         case ExprKind::Wait:
             expr(static_cast<const WaitExpr*>(e)->value);
@@ -269,6 +269,9 @@ public:
             const auto* l = static_cast<const LetStmt*>(s);
             out += std::format(" {}{}{}", l->mutable_ ? 'm' : '-', l->isConst ? 'c' : '-', l->isRef ? 'r' : '-');
             sym(l->name);
+            if (l->pattern != nullptr) {
+                pattern(l->pattern);
+            }
             type(l->type);
             expr(l->init);
             break;

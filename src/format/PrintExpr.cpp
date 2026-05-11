@@ -347,18 +347,19 @@ void Printer::exprInner(const Expr* e) {
         lambda(static_cast<const LambdaExpr*>(e));
         return;
     case ExprKind::Cast:
-    case ExprKind::Is: {
-        bool isCast = e->kind == ExprKind::Cast;
-        const Expr* value = isCast ? static_cast<const CastExpr*>(e)->value : static_cast<const IsExpr*>(e)->value;
-        const TypeExpr* target =
-            isCast ? static_cast<const CastExpr*>(e)->target : static_cast<const IsExpr*>(e)->target;
-        expr(value, kPrecCast);
+        expr(static_cast<const CastExpr*>(e)->value, kPrecCast);
         space();
-        text(isCast ? "as" : "is");
+        text("as");
         space();
-        type(target);
+        type(static_cast<const CastExpr*>(e)->target);
         return;
-    }
+    case ExprKind::Is:
+        expr(static_cast<const IsExpr*>(e)->value, kPrecCast);
+        space();
+        text("is");
+        space();
+        pattern(static_cast<const IsExpr*>(e)->pattern);
+        return;
     case ExprKind::Wait:
         text("wait");
         space();

@@ -61,8 +61,6 @@ public:
     void checkLet(LetStmt* s);
     void checkAssign(AssignStmt* s);
     void checkFor(ForStmt* s);
-    TypeId checkMatch(MatchExpr* m, TypeId expected, bool wantValue);
-    void checkPattern(Pattern* p, TypeId subject);
     bool isPlace(Expr* e, bool& mutableOut);
 
     // CheckExpr.cpp
@@ -119,6 +117,32 @@ public:
     std::vector<std::pair<TraitDecl*, TraitInfo*>> traitList_;
     std::map<std::pair<TypeId, std::uint32_t>, FnInfo*> genericMethods_; // (generic base, method)
     std::set<std::pair<TraitInfo*, TypeId>> traitImpls_;                // (trait, concrete type or base)
+
+    // Patterns.cpp
+    using PatternRow = std::vector<const Pattern*>;
+
+    struct Ctor {
+        std::string name;
+        std::vector<TypeId> args;
+    };
+
+    TypeId checkMatch(MatchExpr* m, TypeId expected, bool wantValue);
+    void checkPattern(Pattern* p, TypeId subject);
+    [[nodiscard]] bool matchable(TypeId t) const;
+    [[nodiscard]] bool patternBinds(const Pattern* p) const;
+    [[nodiscard]] std::optional<std::vector<Ctor>> ctorsOf(TypeId t) const;
+    int headCtor(const Pattern* p, TypeId t, std::vector<const Pattern*>& args) const;
+    [[nodiscard]] std::string ctorText(const Ctor& c, TypeId t, std::span<const std::string> args) const;
+    [[nodiscard]] std::optional<std::vector<std::string>> uncovered(const std::vector<PatternRow>& rows,
+                                                                    const std::vector<TypeId>& cols) const;
+    [[nodiscard]] std::optional<std::vector<std::string>>
+    specialized(const std::vector<PatternRow>& rows, const std::vector<TypeId>& cols, const Ctor& c, int k) const;
+    [[nodiscard]] std::vector<std::string> missingCases(const std::vector<const Pattern*>& arms, TypeId subject) const;
+    TypeId checkIs(IsExpr* e);
+    void allowIsBindings(Expr* cond);
+    void checkLetPattern(LetStmt* s);
+    std::set<const Expr*> isBindOk_;
+    bool patternMutable_ = false;
 
     // Traits.cpp
     TraitInfo* langTraits_[6] = {};

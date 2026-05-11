@@ -115,7 +115,8 @@ public:
             break;
         case StmtKind::Let: {
             const auto* l = static_cast<const LetStmt*>(s);
-            leaf(NodeKind::LetName, l->nameSpan, l) || type(l->type) || expr(l->init);
+            (l->pattern != nullptr ? pattern(l->pattern) : leaf(NodeKind::LetName, l->nameSpan, l)) || type(l->type) ||
+                expr(l->init);
             break;
         }
         case StmtKind::Assign: {
@@ -250,7 +251,7 @@ public:
         }
         case ExprKind::Is: {
             const auto* c = static_cast<const IsExpr*>(e);
-            expr(c->value) || type(c->target);
+            expr(c->value) || pattern(c->pattern);
             break;
         }
         case ExprKind::Wait:

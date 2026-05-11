@@ -41,6 +41,9 @@
 (pattern_arguments
   (identifier) @local.definition.var)
 
+(tuple_pattern
+  (identifier) @local.definition.var)
+
 (const_declaration
   name: (identifier) @local.definition.constant)
 

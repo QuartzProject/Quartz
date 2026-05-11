@@ -495,7 +495,12 @@ Stmt* Parser::parseLet(bool mutable_, bool isConst, bool isRef) {
     let->isConst = isConst;
     let->isRef = isRef;
     let->nameSpan = cur().span;
-    let->name = expectIdent("variable name");
+    if (!isConst && !isRef && (at(Tok::LParen) || (at(Tok::Ident) && peekTok().kind == Tok::LParen))) {
+        let->pattern = parsePattern();
+        let->nameSpan = let->pattern->span;
+    } else {
+        let->name = expectIdent("variable name");
+    }
     if (accept(Tok::Colon)) {
         let->type = parseType();
     }

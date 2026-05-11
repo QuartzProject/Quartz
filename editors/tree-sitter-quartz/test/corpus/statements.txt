@@ -367,3 +367,49 @@ fn f(s: Shape) -> float {
             (match_arm
               (wildcard_pattern)
               (float_literal))))))))
+
+================================================================================
+Destructuring and tuple patterns
+================================================================================
+
+fn f(t: (int, str)) {
+    let (a, b) = t
+    let Point(x, _) = p
+    match t {
+        (0, s) => s
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (tuple_type
+          (type_identifier)
+          (type_identifier))))
+    (block
+      (let_declaration
+        (tuple_pattern
+          (identifier)
+          (identifier))
+        (identifier))
+      (let_declaration
+        (variant_pattern
+          (identifier)
+          (pattern_arguments
+            (identifier)
+            (wildcard_pattern)))
+        (identifier))
+      (expression_statement
+        (match_expression
+          (identifier)
+          (match_block
+            (match_arm
+              (tuple_pattern
+                (integer_literal)
+                (identifier))
+              (identifier))))))))

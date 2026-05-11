@@ -84,7 +84,11 @@ void Printer::stmt(const Stmt* s) {
         const auto* l = static_cast<const LetStmt*>(s);
         text(l->isConst ? "const" : l->isRef ? "ref" : l->mutable_ ? "var" : "let");
         space();
-        text(name(l->name));
+        if (l->pattern != nullptr) {
+            pattern(l->pattern);
+        } else {
+            text(name(l->name));
+        }
         if (l->type != nullptr) {
             text(":");
             space();
@@ -270,6 +274,15 @@ void Printer::pattern(const Pattern* p, std::size_t fence) {
         expr(p->rangeHi, kPrecUnary, fence);
         return;
     }
+    case PatternKind::Tuple: {
+        std::size_t open = nextToken(p->span.begin, Tok::LParen);
+        items(
+            "(", p->sub.size() == 1 ? ",)" : ")", toks_[open].span.end, p->span.end - 1, p->sub.size(),
+            [&](std::size_t i) { return p->sub[i]->span.begin; }, [&](std::size_t i) { return p->sub[i]->span.end; },
+            [&](std::size_t i) { pattern(p->sub[i], open); });
+        return;
+    }
+    case PatternKind::Struct:
     case PatternKind::Variant: {
         for (std::size_t i = 0; i < p->path.size(); ++i) {
             if (i > 0) {

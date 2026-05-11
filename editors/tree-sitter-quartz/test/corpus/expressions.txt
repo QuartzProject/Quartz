@@ -172,12 +172,12 @@ fn f() {
           (tuple_index))))))
 
 ================================================================================
-Casts and type tests
+Casts and pattern tests
 ================================================================================
 
 fn f() {
     let a = x as int?
-    let b = x is Box<int>
+    let b = x is Circle(_)
     let c = (x as int) < y
 }
 
@@ -198,10 +198,10 @@ fn f() {
         (identifier)
         (is_expression
           (identifier)
-          (generic_type
-            (type_identifier)
-            (type_arguments
-              (type_identifier)))))
+          (variant_pattern
+            (identifier)
+            (pattern_arguments
+              (wildcard_pattern)))))
       (let_declaration
         (identifier)
         (binary_expression
