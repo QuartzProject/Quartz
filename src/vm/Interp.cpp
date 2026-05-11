@@ -662,19 +662,14 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             }
             CASE(MapLen) RA.i = MAP(RB)->count;
             NEXT();
-            CASE(MapGet) {
-                const Map* m = MAP(RB);
-                const Slot* e = mapFind(m, &RC);
-                if (m->valuePtrNullable) {
-                    RA.p = e != nullptr ? e[m->keySlots].p : nullptr;
-                } else if (e == nullptr) {
-                    RA.u = 0;
-                } else {
-                    RA.u = 1;
-                    std::memcpy(&RA + 1, e + m->keySlots, m->valueSlots * sizeof(Slot));
-                }
-                NEXT();
-            }
+            CASE(MapGet) mapGet(MAP(RB), &RC, &RA);
+            NEXT();
+            CASE(MapNext) CHECK((RA.i = mapNext(MAP(RB), RC.i)) != -2);
+            NEXT();
+            CASE(MapEnt) CHECK(mapEntry(MAP(RB), RC.i, ins.pad != 0, &RA));
+            NEXT();
+            CASE(StrDecode) CHECK(decodeChar(STR(RB), RC.i, &RA));
+            NEXT();
             CASE(MapSet) CHECK(mapSet(MAP(RA), &RB, &RC));
             NEXT();
             CASE(MapHas) RA.u = mapFind(MAP(RB), &RC) != nullptr;

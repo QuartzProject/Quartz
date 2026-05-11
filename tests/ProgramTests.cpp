@@ -294,3 +294,47 @@ fn run(k: int) -> int {
     reject([](Module& m, Function&, Inst&, Inst&, Inst&) { m.types.fn({quartz::ir::kNever}, quartz::ir::kI64); },
            "malformed type");
 }
+
+TEST_CASE("the validator rejects map and text iteration with mismatched types") {
+    quartz::SourceInput src[] = {{"i.qz", R"(fn run(m: Map<str, int>, t: str) -> int {
+    var n = 0
+    for k, v in m {
+        n += v + k.len()
+    }
+    for c in t {
+        n += c as int
+    }
+    return n
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    using quartz::ir::Intrinsic;
+    auto reject = [&](Intrinsic which, auto mutate) {
+        auto mod = quartz::ir::deserialize(out.binary);
+        REQUIRE(mod.has_value());
+        quartz::ir::Function& run = (*mod)->functions[out.program->findFunction("run")];
+        quartz::ir::Inst* found = nullptr;
+        for (quartz::ir::Inst& in : run.code) {
+            if (in.op == quartz::ir::Op::Intrinsic && in.imm == static_cast<std::uint32_t>(which) && found == nullptr) {
+                found = &in;
+            }
+        }
+        REQUIRE(found != nullptr);
+        mutate(run, *found);
+        auto loaded = quartz::load(quartz::ir::serialize(**mod));
+        REQUIRE_FALSE(loaded.has_value());
+        CHECK_MESSAGE(loaded.error().find("bad operand types for intrinsic") != std::string::npos, loaded.error());
+    };
+    reject(Intrinsic::MapNext, [](quartz::ir::Function& f, quartz::ir::Inst& in) {
+        std::swap(f.args[in.argBegin], f.args[in.argBegin + 1]);
+    });
+    reject(Intrinsic::MapKeyAt, [](quartz::ir::Function&, quartz::ir::Inst& in) {
+        in.imm = static_cast<std::uint32_t>(Intrinsic::MapValueAt);
+    });
+    reject(Intrinsic::MapValueAt, [](quartz::ir::Function&, quartz::ir::Inst& in) {
+        in.imm = static_cast<std::uint32_t>(Intrinsic::MapKeyAt);
+    });
+    reject(Intrinsic::StrDecode,
+           [](quartz::ir::Function& f, quartz::ir::Inst& in) { in.dst = f.args[in.argBegin + 1]; });
+}

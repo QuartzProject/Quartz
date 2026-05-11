@@ -155,6 +155,52 @@ Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
     }
 }
 
+void Sandbox::mapGet(const Map* m, const Slot* key, Slot* dst) const {
+    const Slot* e = mapFind(m, key);
+    if (m->valuePtrNullable) {
+        dst->p = e != nullptr ? e[m->keySlots].p : nullptr;
+    } else if (e == nullptr) {
+        dst->u = 0;
+    } else {
+        dst->u = 1;
+        std::memcpy(dst + 1, e + m->keySlots, m->valueSlots * sizeof(Slot));
+    }
+}
+
+// A cursor is a position in `order` with the map's version above it, so a key added or removed since it was
+// made (D24: deterministic, the same in both tiers) is caught instead of skipping or repeating entries.
+std::int64_t Sandbox::mapNext(const Map* m, std::int64_t cursor) {
+    std::uint64_t stamp = static_cast<std::uint64_t>(m->version & 0x7FFFFFFF) << 32;
+    std::uint32_t pos = 0;
+    if (cursor >= 0) {
+        if ((static_cast<std::uint64_t>(cursor) & ~0xFFFFFFFFULL) != stamp) {
+            fail(ir::TrapCode::Panic, "map changed during iteration");
+            return -2;
+        }
+        pos = static_cast<std::uint32_t>(cursor) + 1;
+    }
+    while (pos < m->ordered && m->order[pos] == 0) {
+        ++pos;
+    }
+    return pos < m->ordered ? static_cast<std::int64_t>(stamp | pos) : -1;
+}
+
+bool Sandbox::mapEntry(const Map* m, std::int64_t cursor, bool value, Slot* dst) {
+    std::uint64_t stamp = static_cast<std::uint64_t>(m->version & 0x7FFFFFFF) << 32;
+    auto pos = static_cast<std::uint32_t>(cursor);
+    if (cursor < 0 || (static_cast<std::uint64_t>(cursor) & ~0xFFFFFFFFULL) != stamp || pos >= m->ordered ||
+        m->order[pos] == 0) {
+        return fail(ir::TrapCode::Panic, "map changed during iteration");
+    }
+    const Slot* e = m->entries + (m->order[pos] - 1) * entrySlots(m);
+    if (value) {
+        std::memcpy(dst, e + m->keySlots, m->valueSlots * sizeof(Slot));
+    } else {
+        std::memcpy(dst, e, m->keySlots * sizeof(Slot));
+    }
+    return true;
+}
+
 // Drops removed entries from `order`; only an insertion calls it, and that already ends any `for` over the map.
 void Sandbox::compactOrder(Map* m) {
     std::uint32_t n = 0;

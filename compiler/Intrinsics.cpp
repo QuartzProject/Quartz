@@ -405,6 +405,24 @@ void FunctionCodegen::intrinsic(const ir::Inst& in) {
         write1(in.dst, B_.CreateICmpNE(B_.CreateCall(U.runtime(Rt::MapRemove), {ctx_, arg(0), s}), constI32(0)));
         return;
     }
+    case Intrinsic::MapNext: {
+        llvm::Value* next = B_.CreateCall(U.runtime(Rt::MapNext), {ctx_, arg(0), arg(1)});
+        trapIf(B_.CreateICmpEQ(next, llvm::ConstantInt::get(U.i64, -2)), kAlreadySet);
+        write1(in.dst, next);
+        return;
+    }
+    case Intrinsic::MapKeyAt:
+    case Intrinsic::MapValueAt:
+    case Intrinsic::StrDecode: {
+        llvm::Value* s = scratch(static_cast<std::uint32_t>(kindsOf(in.dst).size()));
+        llvm::Value* ok = op == Intrinsic::StrDecode
+                              ? B_.CreateCall(U.runtime(Rt::StrDecode), {ctx_, arg(0), arg(1), s})
+                              : B_.CreateCall(U.runtime(Rt::MapEntry),
+                                              {ctx_, arg(0), arg(1), constI32(op == Intrinsic::MapValueAt), s});
+        trapIf(B_.CreateICmpEQ(ok, constI32(0)), kAlreadySet);
+        write(in.dst, loadSlots(s, 0, kindsOf(in.dst), U.tbaaSlot));
+        return;
+    }
     case Intrinsic::Panic:
         B_.CreateCall(U.runtime(Rt::Panic), {ctx_, arg(0), constI32(index_), constI32(line_)});
         B_.CreateBr(failBlock_);

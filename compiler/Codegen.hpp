@@ -71,6 +71,9 @@ enum class Rt : std::uint8_t {
     Atan2,
     Charge,
     Trace,
+    MapNext,
+    MapEntry,
+    StrDecode,
     Count,
 };
 

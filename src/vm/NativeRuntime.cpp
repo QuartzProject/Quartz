@@ -301,6 +301,16 @@ std::uint32_t qzMapSet(NativeCtx* c, Map* m, const Slot* key, const Slot* value)
 
 std::uint32_t qzMapRemove(NativeCtx* c, Map* m, const Slot* key) { return sb(c).mapRemove(m, key) ? 1 : 0; }
 
+std::int64_t qzMapNext(NativeCtx* c, const Map* m, std::int64_t cursor) { return sb(c).mapNext(m, cursor); }
+
+std::uint32_t qzMapEntry(NativeCtx* c, const Map* m, std::int64_t cursor, std::uint32_t value, Slot* dst) {
+    return sb(c).mapEntry(m, cursor, value != 0, dst) ? 1 : 0;
+}
+
+std::uint32_t qzStrDecode(NativeCtx* c, const Str* s, std::int64_t at, Slot* dst) {
+    return sb(c).decodeChar(s, at, dst) ? 1 : 0;
+}
+
 std::uint32_t qzStateStore(NativeCtx* c, std::uint32_t type, const Slot* src, Slot* dst) {
     return sb(c).storeState(type, src, dst) ? 1 : 0;
 }
@@ -391,6 +401,9 @@ const NativeSymbol kSymbols[] = {
     {"qz_atan2", addr(math::atan2)},
     {"qz_charge", addr(qzCharge)},
     {"qz_trace", addr(qzTrace)},
+    {"qz_map_next", addr(qzMapNext)},
+    {"qz_map_entry", addr(qzMapEntry)},
+    {"qz_str_decode", addr(qzStrDecode)},
 };
 
 } // namespace

@@ -523,8 +523,7 @@ private:
         auto sa = [&](std::size_t i) { return s(a[i]); };
         switch (op) {
         case Intrinsic::ListNew:
-            put(Opc::ListNew, d);
-            word(prog_.module->types.info(ty(in.dst)).elem);
+            put(Opc::ListNew, d), word(prog_.module->types.info(ty(in.dst)).elem);
             return;
         case Intrinsic::ListFilled:
             put(Opc::ListFilled, d, sa(0), sa(1));
@@ -545,11 +544,19 @@ private:
         case Intrinsic::ListPop: put(Opc::ListPop, d, sa(0)); return;
         case Intrinsic::ListClear: put(Opc::ListClear, sa(0)); return;
         case Intrinsic::ListJoin: put(Opc::ListJoin, d, sa(0), sa(1)); return;
-        case Intrinsic::MapNew: {
-            put(Opc::MapNew, d);
-            word(ty(in.dst));
+        case Intrinsic::MapNew:
+            put(Opc::MapNew, d), word(ty(in.dst));
             return;
-        }
+        case Intrinsic::MapNext:
+            put(Opc::MapNext, d, sa(0), sa(1));
+            return;
+        case Intrinsic::MapKeyAt:
+        case Intrinsic::MapValueAt:
+            put(Opc::MapEnt, d, sa(0), sa(1), op == Intrinsic::MapValueAt);
+            return;
+        case Intrinsic::StrDecode:
+            put(Opc::StrDecode, d, sa(0), sa(1));
+            return;
         case Intrinsic::MapLen: put(Opc::MapLen, d, sa(0)); return;
         case Intrinsic::MapGet: put(Opc::MapGet, d, sa(0), sa(1)); return;
         case Intrinsic::MapSet: put(Opc::MapSet, sa(0), sa(1), sa(2)); return;

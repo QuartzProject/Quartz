@@ -87,7 +87,10 @@ class TierState;
     X(Wait)      /* suspend the task on handle a; resume value goes to b unless 0xFFFF; c = kind; type in next word */ \
     X(ScopeIn) X(ScopeOut)                                                                                             \
     X(Zero)      /* slots a..a+c = 0 */                                                                                \
-    X(Persist)   /* copy what slot a references out of inner regions, c levels up; type in next word */
+    X(Persist)   /* copy what slot a references out of inner regions, c levels up; type in next word */                \
+    X(MapNext)   /* a = cursor after cursor c in map(b), -1 at the end */                                              \
+    X(MapEnt)    /* a.. = key (pad 0) or value (pad 1) at cursor c of map(b) */                                        \
+    X(StrDecode) /* a = scalar at byte c of str(b), a+1 = the byte after it */
 
 enum class Opc : std::uint8_t {
 #define QUARTZ_OPC_ENUM(name) name,

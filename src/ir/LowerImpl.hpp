@@ -35,6 +35,10 @@ public:
     Reg lowerArmBody(Expr* body, TypeId want, bool wantValue);
     void branchIfFalse(Expr* e, std::size_t frame);
     void branchIfTrue(Expr* e, std::size_t frame);
+    // LowerFor.cpp
+    void lowerForEach(ForStmt* s, TypeId t);
+    Reg lowerMapList(CallExpr* e, Reg dst);
+
     // LowerPattern.cpp
     void matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fail);
     Reg lowerIs(IsExpr* e);

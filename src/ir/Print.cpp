@@ -23,12 +23,12 @@ const char* trapName(TrapCode code) {
 
 const char* intrinsicName(Intrinsic in) {
     static const char* const kNames[] = {
-        "list.new",     "list.filled",  "list.len",    "list.get",   "list.set",    "list.push",   "list.pop",
-        "list.clear",   "list.join",    "map.new",     "map.len",    "map.get",     "map.set",     "map.has",
-        "map.remove",   "str.len",      "str.concat",  "str.slice",  "str.lower",   "str.upper",   "str.contains",
-        "str.find",     "str.starts",   "str.ends",    "str.byteAt", "str.fromI64", "str.fromU64", "str.fromF64",
-        "str.fromBool", "str.fromChar", "math.sqrt",   "math.floor", "math.ceil",   "math.absf",   "math.absi",
-        "math.mini",    "math.maxi",    "math.minf",   "math.maxf",  "math.pow",    "math.sin",    "math.cos",
+        "list.new",     "list.filled",  "list.len",   "list.get",    "list.set",    "list.push",   "list.pop",
+        "list.clear",   "list.join",    "map.new",    "map.len",     "map.get",     "map.set",     "map.has",
+        "map.remove",   "str.len",      "str.concat", "str.slice",   "str.lower",   "str.upper",   "str.contains",
+        "str.find",     "str.starts",   "str.ends",   "str.byteAt",  "str.fromI64", "str.fromU64", "str.fromF64",
+        "str.fromBool", "str.fromChar", "math.sqrt",  "math.floor",  "math.ceil",   "math.absf",   "math.absi",
+        "math.mini",    "math.maxi",    "math.minf",  "math.maxf",   "math.pow",    "math.sin",    "math.cos",
         "panic",
     };
     static const char* const kExtra[] = {
@@ -45,7 +45,8 @@ const char* intrinsicName(Intrinsic in) {
         "math.clampi",       "math.clampf",       "list.sortByKeys",
         "int.checkedAdd",    "int.checkedSub",    "int.checkedMul",
         "int.checkedDiv",    "int.saturatingAdd", "int.saturatingSub",
-        "int.saturatingMul",
+        "int.saturatingMul", "map.next",          "map.keyAt",
+        "map.valueAt",       "str.decode",
     };
     constexpr std::size_t kBase = sizeof(kNames) / sizeof(kNames[0]);
     static_assert(kBase + sizeof(kExtra) / sizeof(kExtra[0]) == static_cast<std::size_t>(Intrinsic::Count));

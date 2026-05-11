@@ -185,6 +185,8 @@ enum class SpecialOp : std::uint8_t {
     NullUnwrap,
     NullUnwrapOr,
     Assert, // `assert(cond, message)`: the message is built only when cond is false
+    MapKeys,
+    MapValues,
 };
 
 struct CallExpr : Expr {

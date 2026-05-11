@@ -85,31 +85,31 @@ enum class TrapCode : std::uint8_t {
 const char* trapName(TrapCode code);
 
 enum class Intrinsic : std::uint16_t {
-    ListNew,      // dst [T]
-    ListFilled,   // dst [T], args: count i64, value T
-    ListLen,      // dst i64, args: list
-    ListGet,      // dst T, args: list, index
-    ListSet,      // args: list, index, value
-    ListPush,     // args: list, value
-    ListPop,      // dst T?, args: list
-    ListClear,    // args: list
-    ListJoin,     // dst str, args: [str], sep
-    MapNew,       // dst Map<K,V>
-    MapLen,       // dst i64, args: map
-    MapGet,       // dst V?, args: map, key
-    MapSet,       // args: map, key, value
-    MapHas,       // dst bool, args: map, key
-    MapRemove,    // dst bool, args: map, key
-    StrLen,       // dst i64 (bytes), args: str
-    StrConcat,    // dst str, args: str...
-    StrSlice,     // dst str, args: str, begin, end (byte offsets, checked)
+    ListNew,    // dst [T]
+    ListFilled, // dst [T], args: count i64, value T
+    ListLen,    // dst i64, args: list
+    ListGet,    // dst T, args: list, index
+    ListSet,    // args: list, index, value
+    ListPush,   // args: list, value
+    ListPop,    // dst T?, args: list
+    ListClear,  // args: list
+    ListJoin,   // dst str, args: [str], sep
+    MapNew,     // dst Map<K,V>
+    MapLen,     // dst i64, args: map
+    MapGet,     // dst V?, args: map, key
+    MapSet,     // args: map, key, value
+    MapHas,     // dst bool, args: map, key
+    MapRemove,  // dst bool, args: map, key
+    StrLen,     // dst i64 (bytes), args: str
+    StrConcat,  // dst str, args: str...
+    StrSlice,   // dst str, args: str, begin, end (byte offsets, checked)
     StrLower,
     StrUpper,
-    StrContains,  // dst bool
-    StrFind,      // dst i64? byte offset
+    StrContains, // dst bool
+    StrFind,     // dst i64? byte offset
     StrStartsWith,
     StrEndsWith,
-    StrByteAt,    // dst i64
+    StrByteAt, // dst i64
     StrFromI64,
     StrFromU64,
     StrFromF64,
@@ -169,6 +169,10 @@ enum class Intrinsic : std::uint16_t {
     IntSaturatingAdd,    // dst T, args: a, b, the type id of T: clamped to T's range
     IntSaturatingSub,
     IntSaturatingMul,
+    MapNext,    // dst i64 cursor of the next entry in insertion order or -1, args: map, cursor (-1 to start)
+    MapKeyAt,   // dst K, args: map, cursor; traps if the map gained or lost a key since the cursor was made
+    MapValueAt, // dst V, args: map, cursor; same check
+    StrDecode,  // dst (char, i64): the scalar at a byte index and the index after it, args: str, index
     Count,
 };
 

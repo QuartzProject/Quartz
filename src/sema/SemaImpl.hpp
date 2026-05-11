@@ -144,6 +144,10 @@ public:
     std::set<const Expr*> isBindOk_;
     bool patternMutable_ = false;
 
+    // Iteration.cpp
+    TypeId iterationItem(ForStmt* s, TypeId it, TypeId& indexType);
+    TypeId mapListCall(CallExpr* call, MemberExpr* callee, TypeId recv);
+
     // Traits.cpp
     TraitInfo* langTraits_[6] = {};
 

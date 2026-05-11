@@ -505,6 +505,7 @@ void Checker::checkAssign(AssignStmt* s) {
 
 void Checker::checkFor(ForStmt* s) {
     TypeId elem = ir::kError;
+    TypeId indexType = ir::kI64;
     if (s->iterable->kind == ExprKind::Range) {
         auto* r = static_cast<RangeExpr*>(s->iterable);
         TypeId lt = ir::kError;
@@ -528,21 +529,21 @@ void Checker::checkFor(ForStmt* s) {
     } else {
         TypeId it = checkValue(s->iterable, ir::kError);
         if (it != ir::kError) {
-            if (types_->kind(it) == ir::TypeKind::List) {
-                elem = types_->info(it).elem;
-            } else {
-                diags_.error(s->iterable->span, std::format("cannot iterate over '{}'", typeName(it)));
-            }
+            elem = iterationItem(s, it, indexType);
         }
     }
     pushScope();
     if (s->indexName.valid()) {
-        s->indexLocal = declareLocal(s->indexName, ir::kI64, false, s->nameSpan);
+        s->indexLocal = declareLocal(s->indexName, indexType, false, s->nameSpan);
     }
     s->local = declareLocal(s->name, elem, false, s->nameSpan);
     if (s->iterable->kind != ExprKind::Range && derivedFromState(s->iterable)) {
         s->local->stateView = true;
-        if (currentFn_ != nullptr && currentFn_->isSuspend && holdsMutable(elem)) {
+        if (s->indexLocal != nullptr) {
+            s->indexLocal->stateView = true;
+        }
+        bool overMap = types_->kind(s->iterable->type) == ir::TypeKind::Map;
+        if (currentFn_ != nullptr && currentFn_->isSuspend && (holdsMutable(elem) || overMap)) {
             diags_.error(s->nameSpan, "a suspend function cannot iterate over lists or maps held by the state");
         }
     }

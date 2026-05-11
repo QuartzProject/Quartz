@@ -557,3 +557,48 @@ int main(int argc, char** argv) {
     doctest::Context ctx(argc, argv);
     return ctx.run();
 }
+
+namespace {
+
+bool rawText(quartz::vm::HostCall& call, void*) {
+    call.result.p = call.string(std::string_view("a\xC3\xFF\xE4\xB8\x96\xF0\x9F", 8));
+    return call.result.p != nullptr;
+}
+
+} // namespace
+
+TEST_CASE("for over invalid UTF-8 and over a map changed inside the loop matches the interpreter") {
+    std::string text = "fn main() -> int {\n"
+                       "    var codes = \"\"\n"
+                       "    for i, c in raw() {\n"
+                       "        codes += \"{i}:{c as int} \"\n"
+                       "    }\n"
+                       "    print(codes)\n"
+                       "    var m: Map<int, int> = Map()\n"
+                       "    m[1] = 1\n"
+                       "    m[2] = 2\n"
+                       "    for k, v in m {\n"
+                       "        m[k + 10] = v\n"
+                       "    }\n"
+                       "    return 0\n"
+                       "}\n";
+    auto p = build({{"iter.qz", text}, {"iter.qzi", "fn raw() -> str\nfn print(text: str)\n"}});
+    auto run = [&](TierMode mode) {
+        Outcome o;
+        quartz::vm::Limits limits;
+        limits.tier = mode;
+        quartz::vm::Sandbox sb(p, limits);
+        sb.bind("print", logText, &o.log);
+        sb.bind("raw", rawText);
+        REQUIRE(sb.start().has_value());
+        auto r = sb.call(p->findFunction("main"), {});
+        o.trap = r ? "" : r.error().describe();
+        return o;
+    };
+    Outcome interp = run(TierMode::Interpreter);
+    CHECK(interp.log == "0:97 1:65533 2:65533 3:19990 6:65533 7:65533 \n");
+    CHECK(interp.trap.find("map changed during iteration") != std::string::npos);
+    if (!forcedUnavailable()) {
+        CHECK(run(TierMode::Native) == interp);
+    }
+}

@@ -504,6 +504,9 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
     if (TypeId t = langMethodCall(call, callee, recv); t != ir::kError) {
         return t;
     }
+    if (TypeId t = mapListCall(call, callee, recv); t != ir::kError) {
+        return t;
+    }
     return checkBuiltinMethod(call, recv, callee->name, expected);
 }
 

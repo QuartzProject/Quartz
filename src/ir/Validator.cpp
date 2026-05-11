@@ -247,6 +247,19 @@ private:
         case Intrinsic::MathMinI:
         case Intrinsic::MathMaxI: ok = sig({kI64, kI64}, kI64); break;
         case Intrinsic::Panic: ok = sig({kStr}, kVoid); break;
+        case Intrinsic::MapNext:
+            ok = kindOf(0) == TypeKind::Map && sig({at[0], kI64}, kI64);
+            break;
+        case Intrinsic::MapKeyAt:
+        case Intrinsic::MapValueAt: {
+            const TypeInfo* m = kindOf(0) == TypeKind::Map ? &t_.info(at[0]) : nullptr;
+            ok = m != nullptr && sig({at[0], kI64}, op == Intrinsic::MapKeyAt ? m->key : m->elem);
+            break;
+        }
+        case Intrinsic::StrDecode:
+            ok = t_.kind(dst) == TypeKind::Tuple && t_.info(dst).elems == std::vector<TypeId>{kChar, kI64} &&
+                 sig({kStr, kI64}, dst);
+            break;
         case Intrinsic::Count: break;
         default:
             ok = builtinSignatureOk(t_, op, at, dst);

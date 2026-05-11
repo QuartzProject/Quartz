@@ -1,0 +1,79 @@
+// expect: b=2 c=3 a=10 bca
+// expect: [b, c, a] [2, 3, 10]
+// expect: 15 [4, 6, 20]
+// expect: h|é|l|l|o|,| |世|界|!|
+// expect: 0:a
+// expect: 1:é
+// expect: countdown 8
+// expect: 0 x
+// expect: 1 y
+struct Countdown {
+    n: int
+}
+
+impl Iterator for Countdown {
+    fn next(self) -> (int, Countdown)? {
+        if self.n == 0 {
+            return null
+        }
+        return (self.n, Countdown(self.n - 1))
+    }
+}
+
+struct Each<T> {
+    items: [T]
+    pos: int
+}
+
+impl<T> Iterator for Each<T> {
+    fn next(self) -> (T, Each<T>)? {
+        if self.pos >= self.items.len() {
+            return null
+        }
+        return (self.items[self.pos], Each(self.items, self.pos + 1))
+    }
+}
+
+fn main() -> int {
+    var m: Map<str, int> = Map()
+    m["b"] = 2
+    m["a"] = 1
+    m["c"] = 3
+    m.remove("a")
+    m["a"] = 10
+    var line = ""
+    for k, v in m {
+        line += "{k}={v} "
+    }
+    for k in m {
+        line += k
+    }
+    print(line)
+    print("{m.keys()} {m.values()}")
+    var total = 0
+    for k, v in m {
+        m[k] = v * 2
+        total += v
+    }
+    print("{total} {m.values()}")
+    var text = ""
+    for c in "héllo, 世界!" {
+        text += "{c}|"
+    }
+    print(text)
+    for i, c in "aé" {
+        print("{i}:{c}")
+    }
+    var sum = 0
+    for x in Countdown(4) {
+        if x == 2 {
+            continue
+        }
+        sum += x
+    }
+    print("countdown {sum}")
+    for i, w in Each(["x", "y"], 0) {
+        print("{i} {w}")
+    }
+    return 0
+}

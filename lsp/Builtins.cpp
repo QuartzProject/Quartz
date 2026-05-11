@@ -40,9 +40,9 @@ constexpr BuiltinFunction kFunctions[] = {
     {"Map", "Map<K, V>() -> Map<K, V>", {}},
 };
 
-constexpr std::string_view kTypes[] = {"void",  "bool", "int", "float",  "byte", "char", "str",
-                                       "Bytes", "List", "Map", "Result", "i8",   "i16",  "i32",
-                                       "i64",   "u8",   "u16", "u32",    "u64",  "f32",  "f64"};
+constexpr std::string_view kTypes[] = {"void", "bool",   "int", "float", "byte", "char", "str",  "Bytes",   "List",
+                                       "Map",  "Result", "i8",  "i16",   "i32",  "i64",  "u8",   "u16",     "u32",
+                                       "u64",  "f32",    "f64", "Eq",    "Hash", "Ord",  "Show", "Iterator"};
 
 #define QUARTZ_KW_TEXT(name, text) std::string_view(text),
 constexpr std::string_view kKeywords[] = {QUARTZ_KEYWORDS(QUARTZ_KW_TEXT)};
@@ -115,6 +115,8 @@ std::vector<BuiltinMethod> builtinMethods(const Analysis& a, std::uint32_t recv)
         add("set", std::format("(key: {}, value: {})", key, value));
         add("has", std::format("(key: {}) -> bool", key));
         add("remove", std::format("(key: {}) -> bool", key));
+        add("keys", std::format("() -> [{}]", key));
+        add("values", std::format("() -> [{}]", value));
     } else if (recv == ir::kF64) {
         for (std::string_view n : {"sqrt", "floor", "ceil", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp",
                                    "log", "log10", "round"}) {

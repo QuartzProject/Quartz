@@ -319,6 +319,9 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
             lowerAssert(e);
             return dst;
         }
+        if (static_cast<SpecialOp>(e->builtin) >= SpecialOp::MapKeys) {
+            return lowerMapList(e, dst);
+        }
         Reg recv = lowerExpr(e->receiver);
         TypeId rt0 = T(e->receiver->type);
         auto op = static_cast<SpecialOp>(e->builtin);

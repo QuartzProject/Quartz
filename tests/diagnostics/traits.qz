@@ -9,6 +9,8 @@
 // error: operator '<' is not defined for 'E'; it needs Ord
 // error: map keys must implement Hash, and 'Rock' does not
 // error: @derive takes Eq, Hash, Ord and Show
+// error: Iterator needs 'fn next(self) -> (T, Bad)?'
+// error: cannot iterate over 'E'
 
 trait Eq {
     fn same(self) -> bool
@@ -55,4 +57,19 @@ struct E {
 fn misuse(r: Rock, a: E, b: E, m: Map<Rock, int>) -> bool {
     let t = "{r}"
     return a < b
+}
+
+struct Bad {
+    n: int
+}
+
+impl Iterator for Bad {
+    fn next(self) -> int? {
+        return null
+    }
+}
+
+fn loops(e: E) {
+    for x in e {
+    }
 }

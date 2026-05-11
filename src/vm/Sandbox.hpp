@@ -150,6 +150,10 @@ public:
     Slot* mapFind(const Map* m, const Slot* key) const;
     bool mapSet(Map* m, const Slot* key, const Slot* value);
     bool mapRemove(Map* m, const Slot* key);
+    void mapGet(const Map* m, const Slot* key, Slot* dst) const;
+    std::int64_t mapNext(const Map* m, std::int64_t cursor);
+    bool mapEntry(const Map* m, std::int64_t cursor, bool value, Slot* dst);
+    bool decodeChar(const Str* s, std::int64_t at, Slot* dst);
     [[nodiscard]] std::uint64_t valueHash(ir::TypeId type, const Slot* v) const;
     [[nodiscard]] bool valueEq(ir::TypeId type, const Slot* a, const Slot* b) const;
     Closure* newClosure(std::uint32_t function, std::uint32_t captures, std::uint32_t slots, const Slot* values);

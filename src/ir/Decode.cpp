@@ -16,7 +16,7 @@ namespace {
 
 // The encoding stores these enums by value: a change to any of them needs a new kFormatVersion.
 static_assert(static_cast<int>(Op::CallValue) == 49);
-static_assert(static_cast<int>(Intrinsic::Count) == 83);
+static_assert(static_cast<int>(Intrinsic::Count) == 87);
 static_assert(static_cast<int>(TrapCode::HostError) == 9);
 static_assert(static_cast<int>(ConstKind::Str) == 2);
 static_assert(static_cast<int>(AnnotationArg::Kind::Name) == 4);
