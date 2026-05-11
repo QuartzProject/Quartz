@@ -2,12 +2,14 @@ package org.quartzlang.jvm;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -19,6 +21,7 @@ public final class Program implements AutoCloseable {
     private final Cleaner.Cleanable cleanable;
     private final String diagnostics;
     private final ConcurrentHashMap<String, Optional<Export>> exports = new ConcurrentHashMap<>();
+    private volatile List<Import> imports;
 
     Program(MemorySegment address, String diagnostics) {
         this.handle = new NativeHandle(address, Program::free);
@@ -101,7 +104,83 @@ public final class Program implements AutoCloseable {
         try (Arena arena = Arena.ofConfined()) {
             int index = (int) Native.PROGRAM_FUNCTION.invokeExact(handle.address(),
                     arena.allocateFrom(name, StandardCharsets.UTF_8));
-            return index == -1 ? Optional.empty() : Optional.of(new Export(this, name, index));
+            if (index == -1) {
+                return Optional.empty();
+            }
+            MemorySegment slots = arena.allocate(JAVA_INT);
+            MemorySegment p = handle.address();
+            int arity = (int) Native.FUNCTION_ARITY.invokeExact(p, index);
+            List<Type> params = new ArrayList<>(arity);
+            for (int i = 0; i < arity; ++i) {
+                int kind = (int) Native.FUNCTION_PARAM.invokeExact(p, index, i, slots);
+                params.add(new Type(Kind.of(kind), slots.get(JAVA_INT, 0)));
+            }
+            int result = (int) Native.FUNCTION_RESULT.invokeExact(p, index, slots);
+            return Optional.of(new Export(this, name, index,
+                    new Signature(params, new Type(Kind.of(result), slots.get(JAVA_INT, 0)))));
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            handle.release();
+        }
+    }
+
+    /** The host functions this program imports, which a sandbox binds before {@link Sandbox#start()}. */
+    public List<Import> imports() {
+        List<Import> known = imports;
+        if (known != null) {
+            return known;
+        }
+        handle.retain();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment slots = arena.allocate(JAVA_INT);
+            MemorySegment p = handle.address();
+            int count = (int) Native.IMPORT_COUNT.invokeExact(p);
+            List<Import> out = new ArrayList<>(count);
+            for (int i = 0; i < count; ++i) {
+                String name = Native.takeString((MemorySegment) Native.IMPORT_NAME.invokeExact(p, i), false);
+                int arity = (int) Native.IMPORT_ARITY.invokeExact(p, i);
+                List<Type> params = new ArrayList<>(arity);
+                for (int k = 0; k < arity; ++k) {
+                    int kind = (int) Native.IMPORT_PARAM.invokeExact(p, i, k, slots);
+                    params.add(new Type(Kind.of(kind), slots.get(JAVA_INT, 0)));
+                }
+                int result = (int) Native.IMPORT_RESULT.invokeExact(p, i, slots);
+                out.add(new Import(name, new Signature(params, new Type(Kind.of(result), slots.get(JAVA_INT, 0)))));
+            }
+            known = List.copyOf(out);
+            imports = known;
+            return known;
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            handle.release();
+        }
+    }
+
+    /** The import called {@code name}, if the program has one. */
+    public Optional<Import> findImport(String name) {
+        return imports().stream().filter(i -> i.name().equals(name)).findFirst();
+    }
+
+    /** The .qzi other packages compile against, for a program built with a package.toml. */
+    public String packageInterface() {
+        return packageInterface(null);
+    }
+
+    /** The .qzi other packages compile against, describing the package with {@code manifest} (package.toml). */
+    public String packageInterface(String manifest) {
+        handle.retain();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment error = arena.allocate(ADDRESS);
+            MemorySegment m = manifest == null ? MemorySegment.NULL : arena.allocateFrom(manifest,
+                    StandardCharsets.UTF_8);
+            MemorySegment text = (MemorySegment) Native.PROGRAM_INTERFACE.invokeExact(handle.address(), m, error);
+            String message = Native.takeString(error.get(ADDRESS, 0), true);
+            if (text.address() == 0) {
+                throw new QuartzException(message == null ? "the program has no package interface" : message);
+            }
+            return Native.takeString(text, true);
         } catch (Throwable t) {
             throw Native.rethrow(t);
         } finally {

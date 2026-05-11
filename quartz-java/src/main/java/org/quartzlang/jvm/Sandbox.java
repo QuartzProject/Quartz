@@ -9,12 +9,14 @@ import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /** An isolated instance of a program with its own memory, fuel and state, used by one thread at a time. */
 public final class Sandbox implements AutoCloseable {
-    private final Program program;
+    private volatile Program program;
     private final NativeHandle handle;
     private final MemorySegment address;
     private final Cleaner.Cleanable cleanable;
@@ -23,12 +25,14 @@ public final class Sandbox implements AutoCloseable {
     private boolean active;
     // Only held so the host functions native code may still call stay reachable.
     private final List<HostDispatch.Binding> bindings = new ArrayList<>();
+    private final Map<Integer, Type> taskResults = new HashMap<>();
     private final List<Sandbox> providers = new ArrayList<>();
     private final HostCall hostCall = new HostCall(this);
     private final Arena scratch = Arena.ofAuto();
     private final MemorySegment result = scratch.allocate(JAVA_LONG);
     private final MemorySegment outcome = scratch.allocate(Native.TASK_OUTCOME);
     private final MemorySegment length = scratch.allocate(JAVA_LONG);
+    private final MemorySegment element = scratch.allocate(JAVA_LONG);
     private MemorySegment argv = scratch.allocate(JAVA_LONG, 8);
 
     public Sandbox(Program program) {
@@ -72,11 +76,13 @@ public final class Sandbox implements AutoCloseable {
     /** Binds the host import {@code importName} as the .qzi spells it ({@code greet}, {@code Player.level}). */
     public void bind(String importName, HostFunction function) {
         Objects.requireNonNull(function, "function");
-        HostDispatch.Binding binding = new HostDispatch.Binding(this, function);
+        Import declared = program.findImport(importName).orElseThrow(
+                () -> new IllegalArgumentException("the program imports nothing named " + importName));
+        HostDispatch.Binding binding = new HostDispatch.Binding(this, function, importName, declared.signature());
         Confinement c = begin();
         try (Arena arena = Arena.ofConfined()) {
             int index = HostDispatch.register(binding);
-            boolean bound = (boolean) Native.SANDBOX_BIND.invokeExact(address,
+            boolean bound = (boolean) Native.SANDBOX_BIND_DIRECT.invokeExact(address,
                     arena.allocateFrom(importName, StandardCharsets.UTF_8), HostDispatch.STUB,
                     MemorySegment.ofAddress(index));
             if (!bound) {
@@ -115,12 +121,12 @@ public final class Sandbox implements AutoCloseable {
         requireOwn(function);
         Confinement c = begin();
         try {
-            MemorySegment slots = slots(args);
+            MemorySegment slots = slots(function.signature(), args);
             c.generation++;
             c.hostFailure = null;
             check((int) Native.SANDBOX_CALL.invokeExact(address, function.index(), slots, (long) args.length, result),
                     c);
-            return new Value(result.get(JAVA_LONG, 0), this, c.generation);
+            return new Value(result.get(JAVA_LONG, 0), this, c.generation, function.signature().result());
         } catch (Throwable t) {
             throw Native.rethrow(t);
         } finally {
@@ -133,11 +139,12 @@ public final class Sandbox implements AutoCloseable {
         requireOwn(function);
         Confinement c = begin();
         try {
-            MemorySegment slots = slots(args);
+            MemorySegment slots = slots(function.signature(), args);
             c.generation++;
             c.hostFailure = null;
             check((int) Native.SANDBOX_SPAWN.invokeExact(address, function.index(), slots, (long) args.length,
                     outcome), c);
+            taskResults.put(outcome.get(JAVA_INT, 4), function.signature().result());
             return outcome(c);
         } catch (Throwable t) {
             throw Native.rethrow(t);
@@ -150,11 +157,15 @@ public final class Sandbox implements AutoCloseable {
         return spawn(program.export(name), args);
     }
 
-    /** Resumes a suspended task; {@code value} is what its {@code wait} produces (null for void awaitables). */
+    /**
+     * Resumes a suspended task; {@code value} is what its {@code wait} produces (null for void awaitables). The C
+     * interface does not describe the awaited type, so the value goes by its Java type: a boxed number, Boolean,
+     * Character, String, byte[], or a {@link List} of those for a list awaitable.
+     */
     public TaskOutcome resume(int task, Object value) {
         Confinement c = begin();
         try {
-            long slot = value == null ? 0 : argSlot(value);
+            long slot = value == null ? 0 : value instanceof List<?> list ? newList(task, list) : looseSlot(value);
             c.generation++;
             c.hostFailure = null;
             check((int) Native.SANDBOX_RESUME.invokeExact(address, task, slot, outcome), c);
@@ -170,6 +181,7 @@ public final class Sandbox implements AutoCloseable {
         Confinement c = begin();
         try {
             c.generation++;
+            taskResults.remove(task);
             Native.SANDBOX_CANCEL.invokeExact(address, task);
         } catch (Throwable t) {
             throw Native.rethrow(t);
@@ -184,7 +196,7 @@ public final class Sandbox implements AutoCloseable {
         try {
             MemorySegment json = (MemorySegment) Native.SANDBOX_EXPORT_STATE.invokeExact(address);
             if (json.address() == 0) {
-                throw new TrapException(error());
+                throw new TrapException(trapCode(), error());
             }
             return Native.takeString(json, true);
         } catch (Throwable t) {
@@ -243,6 +255,111 @@ public final class Sandbox implements AutoCloseable {
                 theirs.exit();
             }
             end(mine);
+        }
+    }
+
+    /**
+     * Replaces the program in place, keeping bindings and limits and migrating every state; on failure nothing
+     * changes and the trap is thrown. Results of earlier calls are no longer readable.
+     */
+    public void reload(Program next) {
+        Objects.requireNonNull(next, "next");
+        Confinement c = begin();
+        NativeHandle nextHandle = next.handle();
+        nextHandle.retain();
+        try {
+            for (HostDispatch.Binding b : bindings) {
+                Import declared = next.findImport(b.name).orElse(null);
+                if (declared == null) {
+                    continue;
+                }
+                b.signature = declared.signature();
+            }
+            c.generation++;
+            c.hostFailure = null;
+            try {
+                check((int) Native.SANDBOX_RELOAD.invokeExact(address, nextHandle.address()), c);
+            } catch (Throwable t) {
+                for (HostDispatch.Binding b : bindings) {
+                    program.findImport(b.name).ifPresent(i -> b.signature = i.signature());
+                }
+                throw t;
+            }
+            handle.dependOn(nextHandle);
+            program = next;
+            taskResults.clear();
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            nextHandle.release();
+            end(c);
+        }
+    }
+
+    /** The {@code @persist(per = Handle)} states of {@code handle} as JSON, to save when it leaves. */
+    public String exportHandle(long handleId) {
+        Confinement c = begin();
+        try {
+            MemorySegment json = (MemorySegment) Native.SANDBOX_EXPORT_HANDLE.invokeExact(address, handleId);
+            if (json.address() == 0) {
+                throw new TrapException(trapCode(), error());
+            }
+            return Native.takeString(json, true);
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            end(c);
+        }
+    }
+
+    /** Loads the per-handle states {@link #exportHandle(long)} wrote. */
+    public void importHandle(long handleId, String json) {
+        Confinement c = begin();
+        try (Arena arena = Arena.ofConfined()) {
+            byte[] utf8 = json.getBytes(StandardCharsets.UTF_8);
+            MemorySegment text = arena.allocate(Math.max(1, utf8.length));
+            MemorySegment.copy(utf8, 0, text, JAVA_BYTE, 0, utf8.length);
+            c.generation++;
+            check((int) Native.SANDBOX_IMPORT_HANDLE.invokeExact(address, handleId, text, (long) utf8.length), c);
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            end(c);
+        }
+    }
+
+    /** Frees the per-handle states of a handle that left; the next call with it starts from the defaults. */
+    public void dropHandle(long handleId) {
+        Confinement c = begin();
+        try {
+            Native.SANDBOX_DROP_HANDLE.invokeExact(address, handleId);
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            end(c);
+        }
+    }
+
+    /** Tasks spawned and not yet finished or cancelled. */
+    public long liveTasks() {
+        Confinement c = enter();
+        try {
+            return (long) Native.SANDBOX_LIVE_TASKS.invokeExact(address);
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            c.exit();
+        }
+    }
+
+    public long fuelPerCall() {
+        Confinement c = enter();
+        try {
+            return (long) Native.SANDBOX_FUEL_PER_CALL.invokeExact(address);
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            c.exit();
         }
     }
 
@@ -308,12 +425,48 @@ public final class Sandbox implements AutoCloseable {
     byte[] readString(long bits, long generation) {
         Confinement c = enter();
         try {
-            if (c.generation != generation) {
-                throw new IllegalStateException("a later call freed this str result; copy it out before calling again");
-            }
+            requireCurrent(c, generation);
             return readSlotString(bits);
         } finally {
             c.exit();
+        }
+    }
+
+    int listLength(long bits, long generation) {
+        Confinement c = enter();
+        try {
+            requireCurrent(c, generation);
+            return Math.toIntExact((long) Native.LIST_LENGTH.invokeExact(bits));
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            c.exit();
+        }
+    }
+
+    List<Object> readList(long bits, long generation, Kind kind) {
+        Confinement c = enter();
+        try {
+            requireCurrent(c, generation);
+            return readListSlot(bits, kind);
+        } finally {
+            c.exit();
+        }
+    }
+
+    List<Object> readListSlot(long bits, Kind kind) {
+        try {
+            int n = Math.toIntExact((long) Native.LIST_LENGTH.invokeExact(bits));
+            List<Object> out = new ArrayList<>(n);
+            for (int i = 0; i < n; ++i) {
+                if (!(boolean) Native.LIST_GET.invokeExact(bits, (long) i, element, 1L)) {
+                    throw new UnsupportedOperationException("list elements wider than one slot cannot be read yet");
+                }
+                out.add(Slots.box(kind, element.get(JAVA_LONG, 0), this::readSlotString));
+            }
+            return out;
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
         }
     }
 
@@ -328,11 +481,11 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    boolean runHost(HostFunction function, long call) {
+    boolean runHost(HostDispatch.Binding binding, long call, long args) {
         HostCall hc = hostCall.active() ? new HostCall(this) : hostCall;
-        hc.begin(call);
+        hc.begin(binding.signature, call, args);
         try {
-            hc.setResult(function.call(hc));
+            hc.setResult(binding.function.call(hc));
             return true;
         } catch (Throwable t) {
             confinement.hostFailure = t;
@@ -343,74 +496,73 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    long scalarSlot(Object value) {
-        if (value instanceof Long l) {
-            return l;
-        }
-        if (value instanceof Integer i) {
-            return i;
-        }
-        if (value instanceof Double d) {
-            return Double.doubleToRawLongBits(d);
-        }
-        if (value instanceof Boolean b) {
-            return b ? 1 : 0;
-        }
-        if (value instanceof Value v) {
-            if (v.owner() != null && (v.owner() != this || !isCurrent(v.generation()))) {
-                throw new IllegalArgumentException("a Value only goes back to its own sandbox before its next call");
-            }
-            return v.bits();
-        }
-        if (value instanceof Float f) {
-            return Float.floatToRawIntBits(f) & 0xFFFF_FFFFL;
-        }
-        if (value instanceof Short s) {
-            return s;
-        }
-        if (value instanceof Byte b) {
-            return b;
-        }
-        if (value instanceof Character ch) {
-            return ch;
-        }
-        throw new IllegalArgumentException("cannot pass a " + value.getClass().getName() + " to Quartz");
+    /** A slot chosen by the Java type alone, for {@code resume}, whose awaited type the C interface hides. */
+    private long looseSlot(Object value) throws Throwable {
+        Kind kind = switch (value) {
+            case Long _ -> Kind.I64;
+            case Integer _ -> Kind.I64;
+            case Short _ -> Kind.I64;
+            case Byte _ -> Kind.I64;
+            case Double _ -> Kind.F64;
+            case Float _ -> Kind.F32;
+            case Boolean _ -> Kind.BOOL;
+            case Character _ -> Kind.CHAR;
+            case String _ -> Kind.STR;
+            case byte[] _ -> Kind.BYTES;
+            case Value v -> v.kind();
+            default -> throw new IllegalArgumentException("cannot pass a " + value.getClass().getName() + " to Quartz");
+        };
+        return Slots.encode(new Type(kind, 1), value, this, this::newString);
     }
 
-    private long argSlot(Object value) throws Throwable {
-        Objects.requireNonNull(value, "Quartz arguments cannot be null");
-        if (value instanceof String s) {
-            return newString(s.getBytes(StandardCharsets.UTF_8));
+    private long newList(int task, List<?> elements) throws Throwable {
+        int type = (int) Native.SANDBOX_WAIT_TYPE.invokeExact(address, task);
+        long list = (long) Native.SANDBOX_LIST.invokeExact(address, type);
+        if (list == 0) {
+            throw new IllegalArgumentException("task " + task + " does not wait for a list");
         }
-        if (value instanceof byte[] b) {
-            return newString(b);
+        for (Object e : elements) {
+            element.set(JAVA_LONG, 0, looseSlot(Objects.requireNonNull(e, "list elements cannot be null")));
+            if (!(boolean) Native.LIST_PUSH.invokeExact(address, list, element, 1L)) {
+                throw new TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list (quota or element size)");
+            }
         }
-        return scalarSlot(value);
+        return list;
     }
 
     private long newString(byte[] utf8) throws Throwable {
         long slot = (long) Native.SANDBOX_STR.invokeExact(address, MemorySegment.ofArray(utf8), (long) utf8.length);
         if (slot == 0) {
-            throw new TrapException("out of memory passing a string");
+            throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory passing a string");
         }
         return slot;
     }
 
-    private MemorySegment slots(Object[] args) throws Throwable {
+    private MemorySegment slots(Signature signature, Object[] args) throws Throwable {
+        if (args.length != signature.arity()) {
+            throw new IllegalArgumentException("expected " + signature.arity() + " arguments " + signature.params()
+                    + ", got " + args.length);
+        }
         if (args.length > argv.byteSize() / Long.BYTES) {
             argv = scratch.allocate(JAVA_LONG, Math.max(args.length, argv.byteSize() / Long.BYTES * 2));
         }
         for (int i = 0; i < args.length; ++i) {
-            argv.setAtIndex(JAVA_LONG, i, argSlot(args[i]));
+            argv.setAtIndex(JAVA_LONG, i, Slots.encode(signature.params().get(i), args[i], this, this::newString));
         }
         return argv;
     }
 
     private TaskOutcome outcome(Confinement c) {
         TaskOutcome.Kind[] kinds = TaskOutcome.Kind.values();
-        int kind = outcome.get(JAVA_INT, 0);
-        return new TaskOutcome(kind >= 0 && kind < kinds.length ? kinds[kind] : TaskOutcome.Kind.YIELD,
-                outcome.get(JAVA_INT, 4), new Value(outcome.get(JAVA_LONG, 8), this, c.generation));
+        int code = outcome.get(JAVA_INT, 0);
+        TaskOutcome.Kind kind = code >= 0 && code < kinds.length ? kinds[code] : TaskOutcome.Kind.YIELD;
+        int task = outcome.get(JAVA_INT, 4);
+        Type type = new Type(Kind.HANDLE, 1);
+        if (kind == TaskOutcome.Kind.DONE) {
+            Type declared = taskResults.remove(task);
+            type = declared == null ? new Type(Kind.OTHER, 1) : declared;
+        }
+        return new TaskOutcome(kind, task, new Value(outcome.get(JAVA_LONG, 8), this, c.generation, type));
     }
 
     private void requireOwn(Export function) {
@@ -426,9 +578,23 @@ public final class Sandbox implements AutoCloseable {
         Throwable cause = c.hostFailure;
         c.hostFailure = null;
         if (status == Native.TRAP) {
-            throw new TrapException(error(), cause);
+            throw new TrapException(trapCode(), error(), cause);
         }
         throw new QuartzException(error());
+    }
+
+    private TrapCode trapCode() {
+        try {
+            return TrapCode.of((int) Native.SANDBOX_TRAP_CODE.invokeExact(address));
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        }
+    }
+
+    private static void requireCurrent(Confinement c, long generation) {
+        if (c.generation != generation) {
+            throw new IllegalStateException("a later call freed this result; copy it out before calling again");
+        }
     }
 
     private String error() {

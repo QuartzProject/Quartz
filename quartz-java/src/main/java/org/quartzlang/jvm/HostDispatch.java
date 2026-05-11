@@ -13,9 +13,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 
-/** One upcall stub serves every host function; {@code user} indexes weak bindings so sandboxes stay collectable. */
+/** One direct upcall stub serves every host function; {@code user} indexes weak bindings so sandboxes stay collectable. */
 final class HostDispatch {
-    record Binding(Sandbox sandbox, HostFunction function) {}
+    static final class Binding {
+        final Sandbox sandbox;
+        final HostFunction function;
+        final String name;
+        volatile Signature signature;
+
+        Binding(Sandbox sandbox, HostFunction function, String name, Signature signature) {
+            this.sandbox = sandbox;
+            this.function = function;
+            this.name = name;
+            this.signature = signature;
+        }
+    }
 
     static final MemorySegment STUB;
 
@@ -26,9 +38,9 @@ final class HostDispatch {
     static {
         try {
             var target = MethodHandles.lookup().findStatic(HostDispatch.class, "dispatch",
-                    MethodType.methodType(boolean.class, long.class, long.class));
-            STUB = Native.linker().upcallStub(target, FunctionDescriptor.of(JAVA_BOOLEAN, JAVA_LONG, JAVA_LONG),
-                    Arena.global());
+                    MethodType.methodType(boolean.class, long.class, long.class, long.class, long.class));
+            STUB = Native.linker().upcallStub(target,
+                    FunctionDescriptor.of(JAVA_BOOLEAN, JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG), Arena.global());
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -54,14 +66,14 @@ final class HostDispatch {
     }
 
     @SuppressWarnings("unused")
-    private static boolean dispatch(long call, long user) {
+    private static boolean dispatch(long call, long args, long result, long user) {
         try {
             Binding binding = lookup(user);
             if (binding == null) {
                 fail(call, "host function was released");
                 return false;
             }
-            return binding.sandbox().runHost(binding.function(), call);
+            return binding.sandbox.runHost(binding, call, args);
         } catch (Throwable t) {
             fail(call, "host error");
             return false;

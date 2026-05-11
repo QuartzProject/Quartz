@@ -4,13 +4,12 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
-/** A running host function's arguments, read as the declared types, and its fuel; valid only while it runs. */
+/** A running host function's arguments, checked against the import's types, and its fuel; valid while it runs. */
 public final class HostCall {
-    /** The C interface does not give the argument count; reads past this bound fail instead of wandering. */
-    private static final long MAX_ARGS = 255;
-
     private final Sandbox sandbox;
+    private Signature signature;
     private long call;
     private long args;
     private boolean active;
@@ -24,42 +23,96 @@ public final class HostCall {
         return sandbox;
     }
 
+    /** The import's parameter and result types. */
+    public Signature signature() {
+        check();
+        return signature;
+    }
+
+    public int arity() {
+        return signature().arity();
+    }
+
     public long longArg(int index) {
-        return rawArg(index);
+        Kind k = kind(index);
+        if (k == Kind.I64) {
+            return rawArg(index);
+        }
+        if (!(k.isInteger() || k == Kind.HANDLE || k == Kind.CHAR || k == Kind.BOOL || k == Kind.ENUM)) {
+            throw wrong(index, "longArg");
+        }
+        return Slots.widen(k, rawArg(index));
     }
 
     public int intArg(int index) {
-        return (int) rawArg(index);
+        return (int) longArg(index);
     }
 
     public double doubleArg(int index) {
-        return Double.longBitsToDouble(rawArg(index));
+        return switch (kind(index)) {
+            case F64 -> Double.longBitsToDouble(rawArg(index));
+            case F32 -> Float.intBitsToFloat((int) rawArg(index));
+            default -> throw wrong(index, "doubleArg");
+        };
     }
 
     public float floatArg(int index) {
-        return Float.intBitsToFloat((int) rawArg(index));
+        return (float) doubleArg(index);
     }
 
     public boolean boolArg(int index) {
+        if (kind(index) != Kind.BOOL) {
+            throw wrong(index, "boolArg");
+        }
         return rawArg(index) != 0;
     }
 
-    /** Only for a {@code str} parameter. */
+    public int codePointArg(int index) {
+        if (kind(index) != Kind.CHAR) {
+            throw wrong(index, "codePointArg");
+        }
+        return (int) rawArg(index);
+    }
+
     public String stringArg(int index) {
         return new String(bytesArg(index), StandardCharsets.UTF_8);
     }
 
-    /** Only for a {@code str} or {@code Bytes} parameter. */
     public byte[] bytesArg(int index) {
+        Kind k = kind(index);
+        if (k != Kind.STR && k != Kind.BYTES) {
+            throw wrong(index, "bytesArg");
+        }
         return sandbox.readSlotString(rawArg(index));
     }
 
-    /** The raw 64 bits of argument {@code index}; the caller must stay within the declared parameters. */
-    public long rawArg(int index) {
-        if (index < 0 || index >= MAX_ARGS) {
-            throw new IndexOutOfBoundsException(index);
+    /** Argument {@code index} boxed by its kind, as {@link Value#get()} does. */
+    public Object arg(int index) {
+        Kind k = kind(index);
+        if (k == Kind.STR || k == Kind.BYTES) {
+            byte[] b = bytesArg(index);
+            return k == Kind.STR ? new String(b, StandardCharsets.UTF_8) : b;
         }
-        return Native.ALL.get(JAVA_LONG, args() + (long) index * Long.BYTES);
+        return Slots.box(k, rawArg(index), ignored -> {
+            throw new IllegalStateException("unreachable");
+        });
+    }
+
+    /** A list argument, boxed as {@code element} says; that is the caller's word, see {@link Value#asList(Kind)}. */
+    public List<Object> listArg(int index, Kind element) {
+        if (kind(index) != Kind.LIST) {
+            throw wrong(index, "listArg");
+        }
+        return sandbox.readListSlot(rawArg(index), element);
+    }
+
+    /** The first raw slot of parameter {@code index}. */
+    public long rawArg(int index) {
+        Signature s = signature();
+        if (index < 0 || index >= s.arity()) {
+            throw new IndexOutOfBoundsException("argument " + index + " of " + s.arity());
+        }
+        return Native.ALL.get(JAVA_LONG, args + (long) s.offset(index) * Long.BYTES);
     }
 
     /** Charges fuel for native work; false when the budget is gone, and the call then traps whatever is returned. */
@@ -76,9 +129,10 @@ public final class HostCall {
         return active;
     }
 
-    void begin(long nativeCall) {
+    void begin(Signature sig, long nativeCall, long nativeArgs) {
+        signature = sig;
         call = nativeCall;
-        args = 0;
+        args = nativeArgs;
         active = true;
     }
 
@@ -89,38 +143,34 @@ public final class HostCall {
     }
 
     void setResult(Object value) throws Throwable {
-        if (value == null) {
+        Type type = signature.result();
+        if (type.kind() == Kind.VOID) {
             return;
         }
-        long bits;
-        if (value instanceof String s) {
-            bits = string(s.getBytes(StandardCharsets.UTF_8));
-        } else if (value instanceof byte[] b) {
-            bits = string(b);
-        } else {
-            bits = sandbox.scalarSlot(value);
-        }
+        long bits = Slots.encode(type, value, sandbox, this::string);
+        // A direct binding's one-slot result is overwritten by HostCall::result after it returns, so set that.
         Native.CALL_SET_RESULT.invokeExact(call, bits);
     }
 
     private long string(byte[] utf8) throws Throwable {
         long slot = (long) Native.CALL_STR.invokeExact(call, MemorySegment.ofArray(utf8), (long) utf8.length);
         if (slot == 0) {
-            throw new TrapException("out of memory returning a string");
+            throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning a string");
         }
         return slot;
     }
 
-    private long args() {
-        check();
-        if (args == 0) {
-            try {
-                args = (long) Native.CALL_ARGS.invokeExact(call);
-            } catch (Throwable t) {
-                throw Native.rethrow(t);
-            }
+    private Kind kind(int index) {
+        Signature s = signature();
+        if (index < 0 || index >= s.arity()) {
+            throw new IndexOutOfBoundsException("argument " + index + " of " + s.arity());
         }
-        return args;
+        return s.params().get(index).kind();
+    }
+
+    private IllegalStateException wrong(int index, String what) {
+        return new IllegalStateException("argument " + index + " is " + signature.params().get(index) + ", " + what
+                + " does not apply");
     }
 
     private void check() {

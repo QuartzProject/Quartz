@@ -74,6 +74,24 @@ class SandboxTest {
     }
 
     @Test
+    void callsAreCheckedAgainstTheSignature() {
+        try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT)) {
+            Export hello = program.export("hello");
+            assertEquals(List.of(new Type(Kind.STR, 1), new Type(Kind.I64, 1)), hello.signature().params());
+            assertEquals(Kind.STR, hello.signature().result().kind());
+            Import greet = program.findImport("greet").orElseThrow();
+            assertEquals(new Type(Kind.STR, 1), greet.signature().result());
+            assertThrows(IllegalArgumentException.class, () -> sandbox.call("hello", 3, 3));
+            assertThrows(IllegalArgumentException.class, () -> sandbox.call("hello", "x"));
+            assertThrows(IllegalArgumentException.class, () -> sandbox.call("divide", 1.5, 2));
+            Value n = sandbox.call("divide", 9, 3);
+            assertEquals(Kind.I64, n.kind());
+            assertThrows(IllegalStateException.class, n::asString);
+            assertEquals("hi ax1", sandbox.call("hello", "a", 1).get());
+        }
+    }
+
+    @Test
     void stringResultsCannotOutliveTheNextCall() {
         try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT)) {
             Value first = sandbox.call("hello", "a", 1);
@@ -86,10 +104,10 @@ class SandboxTest {
     void trapsLeaveTheSandboxUsable() {
         try (Program program = plugin(); Sandbox sandbox = started(program, Limits.DEFAULT.withFuel(100_000))) {
             TrapException division = assertThrows(TrapException.class, () -> sandbox.call("divide", 7, 0));
-            assertTrue(division.getMessage().contains("division"), division.getMessage());
+            assertEquals(TrapCode.DIVIDE_BY_ZERO, division.code());
             assertEquals(3, sandbox.call("divide", 7, 2).asLong());
             TrapException fuel = assertThrows(TrapException.class, () -> sandbox.call("spin", 1));
-            assertTrue(fuel.getMessage().contains("fuel"), fuel.getMessage());
+            assertEquals(TrapCode.OUT_OF_FUEL, fuel.code());
             assertEquals(4, sandbox.call("divide", 8, 2).asLong());
         }
     }
@@ -100,6 +118,7 @@ class SandboxTest {
             TrapException trap = assertThrows(TrapException.class, () -> sandbox.call("check", 9));
             assertTrue(trap.getMessage().contains("boom 9"), trap.getMessage());
             assertInstanceOf(IllegalStateException.class, trap.getCause());
+            assertEquals(TrapCode.HOST_ERROR, trap.code());
             assertEquals(1, sandbox.call("check", 0).asLong());
         }
     }
@@ -134,6 +153,73 @@ class SandboxTest {
     }
 
     @Test
+    void listsComeOutAndGoIntoWaitingTasks() {
+        String host = "@handle\n@awaitable([int])\nstruct Batch {}\nfn batch() -> Batch\n";
+        String plugin = """
+                fn words(n: int) -> [str] {
+                    var out: [str] = []
+                    var i = 0
+                    while i < n {
+                        out.push("w{i}")
+                        i += 1
+                    }
+                    return out
+                }
+                suspend fn total() -> int {
+                    let got = wait batch()
+                    var sum = 0
+                    for x in got {
+                        sum += x
+                    }
+                    return sum
+                }
+                """;
+        try (Program program = Quartz.compile(Source.of("host.qzi", host), Source.of("lists.qz", plugin));
+                Sandbox sandbox = new Sandbox(program)) {
+            sandbox.bind("batch", call -> 5L);
+            sandbox.start();
+            Value words = sandbox.call("words", 3);
+            assertEquals(3, words.listLength());
+            assertEquals(List.of("w0", "w1", "w2"), words.asStringList());
+            TaskOutcome waiting = sandbox.spawn("total");
+            assertEquals(1, sandbox.liveTasks());
+            TaskOutcome done = sandbox.resume(waiting.task(), List.of(4L, 5L, 6L));
+            assertEquals(15, done.value().asLong());
+        }
+    }
+
+    @Test
+    void reloadKeepsStateAndHandlesPersistPerHandle() {
+        String host = "@handle\nstruct Player {\n    id: int\n}\n";
+        String v1 = """
+                @persist(per = Player)
+                state Stats {
+                    joins: int
+                }
+                fn join(p: Player, s: Stats) -> int {
+                    s.joins += 1
+                    return s.joins
+                }
+                """;
+        try (Program first = Quartz.compile(Source.of("host.qzi", host), Source.of("p.qz", v1));
+                Program second = Quartz.compile(Source.of("host.qzi", host),
+                        Source.of("p.qz", v1.replace("s.joins += 1", "s.joins += 10")));
+                Sandbox sandbox = new Sandbox(first)) {
+            sandbox.bind("Player.id", call -> call.longArg(0));
+            sandbox.start();
+            assertEquals(Kind.HANDLE, first.export("join").signature().params().get(0).kind());
+            assertEquals(1, sandbox.call("join", 7L).asLong());
+            String saved = sandbox.exportHandle(7);
+            sandbox.dropHandle(7);
+            sandbox.importHandle(42, saved);
+            assertEquals(2, sandbox.call("join", 42L).asLong());
+            sandbox.reload(second);
+            assertEquals(second, sandbox.program());
+            assertEquals(12, sandbox.call("join", 42L).asLong());
+        }
+    }
+
+    @Test
     void linkedSandboxesCallEachOther() {
         String economy = """
                 package org.example.economy
@@ -156,9 +242,12 @@ class SandboxTest {
                     return "{receipt} left {balance(who)}"
                 }
                 """;
+        String manifest = "name = \"org.example.economy\"\nversion = \"1.0.0\"\nexports = [\"balance\", \"pay\"]\n";
         try (Program eco = Quartz.compile(Source.of("eco.qz", economy));
                 Program client = Quartz.compile(Source.of("economy.qzi", iface), Source.of("shop.qz", shop));
                 Sandbox user = new Sandbox(client)) {
+            String generated = eco.packageInterface(manifest);
+            assertTrue(generated.contains("fn pay("), generated);
             Sandbox provider = new Sandbox(eco);
             user.link("org.example.economy", provider);
             provider.start();
