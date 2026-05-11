@@ -95,6 +95,45 @@ fn check(hub: Hub) -> int {
     CHECK(older.error().message.find("newer") != std::string::npos);
 }
 
+TEST_CASE("reload keeps maps in insertion order, struct keys included") {
+    constexpr const char* kGrid = R"(
+@derive(Eq, Hash)
+struct Pos {
+    x: int
+    y: int
+}
+state Grid {
+    cells: Map<Pos, str>
+    names: Map<str, int>
+}
+fn fill(g: Grid) {
+    g.cells[Pos(2, 0)] = "b"
+    g.cells[Pos(1, 0)] = "a"
+    g.names["z"] = 1
+    g.names["a"] = 2
+}
+fn order(g: Grid) -> str {
+    var out = ""
+    for p, s in g.cells {
+        out += "{p.x}{s}"
+    }
+    for n in g.names {
+        out += n
+    }
+    return out
+}
+)";
+    auto v1 = build(kGrid);
+    quartz::vm::Sandbox sb(v1);
+    REQUIRE(sb.start().has_value());
+    REQUIRE(sb.call(v1->findFunction("fill"), {}).has_value());
+    auto next = sb.reload(build(kGrid));
+    REQUIRE_MESSAGE(next.has_value(), (next ? "" : next.error().describe()));
+    auto r = (*next)->call((*next)->program().findFunction("order"), {});
+    REQUIRE(r.has_value());
+    CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "2b1aza");
+}
+
 TEST_CASE("per-handle states are separate per handle and survive a save and load") {
     quartz::SourceInput in[] = {{"host.qzi", "@handle\nstruct Player {\n    id: int\n}\n"},
                                 {"plugin.qz", R"(
