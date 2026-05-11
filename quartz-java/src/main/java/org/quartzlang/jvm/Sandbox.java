@@ -157,11 +157,7 @@ public final class Sandbox implements AutoCloseable {
         return spawn(program.export(name), args);
     }
 
-    /**
-     * Resumes a suspended task; {@code value} is what its {@code wait} produces (null for void awaitables). The C
-     * interface does not describe the awaited type, so the value goes by its Java type: a boxed number, Boolean,
-     * Character, String, byte[], or a {@link List} of those for a list awaitable.
-     */
+    /** Resumes a task with what its {@code wait} produces, sent by its Java type (a {@link List} for a list). */
     public TaskOutcome resume(int task, Object value) {
         Confinement c = begin();
         try {
@@ -258,10 +254,7 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    /**
-     * Replaces the program in place, keeping bindings and limits and migrating every state; on failure nothing
-     * changes and the trap is thrown. Results of earlier calls are no longer readable.
-     */
+    /** Replaces the program in place, keeping bindings, limits and migrated state; on failure nothing changes. */
     public void reload(Program next) {
         Objects.requireNonNull(next, "next");
         Confinement c = begin();

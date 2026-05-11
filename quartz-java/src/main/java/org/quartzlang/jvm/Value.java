@@ -106,10 +106,7 @@ public final class Value {
         return owner.listLength(bits, generation);
     }
 
-    /**
-     * Elements of a list result, copied out and boxed as {@code element} says. The C interface does not tell the
-     * element type, so it is the caller's word: reading a list of numbers as {@link Kind#STR} is undefined.
-     */
+    /** A list result boxed as {@code element} says, which is unchecked: numbers read as STR are undefined. */
     public List<Object> asList(Kind element) {
         requireList();
         return owner.readList(bits, generation, element);

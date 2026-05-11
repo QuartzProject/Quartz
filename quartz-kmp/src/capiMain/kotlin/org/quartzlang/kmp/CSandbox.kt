@@ -6,10 +6,7 @@ internal class CGroup {
     val members = mutableListOf<CSandbox>()
 }
 
-/**
- * A sandbox over the C interface, for Kotlin/Native and Android. Not thread-confined like the JVM one: the caller
- * keeps it on one thread at a time. Close it when done; nothing frees a forgotten one.
- */
+/** A sandbox over the C interface; not thread-confined like the JVM one, and only [close] frees it. */
 internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox {
     private val handle: CHandle
     private var group = CGroup().also { it.members += this }
