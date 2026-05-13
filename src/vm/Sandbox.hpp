@@ -153,7 +153,6 @@ public:
     Slot* mapFind(const Map* m, const Slot* key) const;
     bool mapSet(Map* m, const Slot* key, const Slot* value);
     bool mapRemove(Map* m, const Slot* key);
-    void mapGet(const Map* m, const Slot* key, Slot* dst) const;
     std::int64_t mapNext(const Map* m, std::int64_t cursor);
     bool mapEntry(const Map* m, std::int64_t cursor, bool value, Slot* dst);
     bool decodeChar(const Str* s, std::int64_t at, Slot* dst);

@@ -108,15 +108,6 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
     return true;
 }
 
-bool Sandbox::run(std::uint32_t function, Slot* base) {
-    const CompiledFunction* fn = &program_->functions[function];
-    if (fn->isSuspend) {
-        fail(ir::TrapCode::HostError, "suspend functions run as tasks; use spawn");
-        return false;
-    }
-    return execute(fn, fn->code.data(), base, base, calls_.size()) == Status::Done;
-}
-
 Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth) {
     const Program& P = *program_;
     const Slot* K = P.constants.data();
@@ -662,16 +653,19 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
             }
             CASE(MapLen) RA.i = MAP(RB)->count;
             NEXT();
-            CASE(MapGet) mapGet(MAP(RB), &RC, &RA);
-            NEXT();
-            CASE(MapNext) CHECK((RA.i = mapNext(MAP(RB), RC.i)) != -2);
-            NEXT();
-            CASE(MapEnt) CHECK(mapEntry(MAP(RB), RC.i, ins.pad != 0, &RA));
-            NEXT();
-            CASE(StrDecode) CHECK(decodeChar(STR(RB), RC.i, &RA));
-            NEXT();
-            CASE(StrFmt) CHECK((RA.p = formatValue(RB, ins.pad, RC.i)) != nullptr);
-            NEXT();
+            CASE(MapGet) {
+                const Map* m = MAP(RB);
+                const Slot* e = mapFind(m, &RC);
+                if (m->valuePtrNullable) {
+                    RA.p = e != nullptr ? e[m->keySlots].p : nullptr;
+                } else if (e == nullptr) {
+                    RA.u = 0;
+                } else {
+                    RA.u = 1;
+                    std::memcpy(&RA + 1, e + m->keySlots, m->valueSlots * sizeof(Slot));
+                }
+                NEXT();
+            }
             CASE(MapSet) CHECK(mapSet(MAP(RA), &RB, &RC));
             NEXT();
             CASE(MapHas) RA.u = mapFind(MAP(RB), &RC) != nullptr;
@@ -822,6 +816,14 @@ Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot
                 auto kind = static_cast<TaskOutcome::Kind>(ins.c + 1);
                 SUSPEND(pc, kind, ins.b, t, RA);
             }
+            CASE(MapNext) CHECK((RA.i = mapNext(MAP(RB), RC.i)) != -2);
+            NEXT();
+            CASE(MapEnt) CHECK(mapEntry(MAP(RB), RC.i, ins.pad != 0, &RA));
+            NEXT();
+            CASE(StrDecode) CHECK(decodeChar(STR(RB), RC.i, &RA));
+            NEXT();
+            CASE(StrFmt) CHECK((RA.p = formatValue(RB, ins.pad, RC.i)) != nullptr);
+            NEXT();
 #if QUARTZ_SWITCH_DISPATCH
         case Opc::Count: break;
         }

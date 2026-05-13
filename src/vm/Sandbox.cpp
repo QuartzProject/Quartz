@@ -309,4 +309,13 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     return stack_[0];
 }
 
+bool Sandbox::run(std::uint32_t function, Slot* base) {
+    const CompiledFunction* fn = &program_->functions[function];
+    if (fn->isSuspend) {
+        fail(ir::TrapCode::HostError, "suspend functions run as tasks; use spawn");
+        return false;
+    }
+    return execute(fn, fn->code.data(), base, base, calls_.size()) == Status::Done;
+}
+
 } // namespace quartz::vm

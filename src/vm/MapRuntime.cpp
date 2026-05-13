@@ -161,18 +161,6 @@ Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
     return findWith(m, valueHash(m->keyType, key) | 2, [&](const Slot* e) { return valueEq(m->keyType, e, key); });
 }
 
-void Sandbox::mapGet(const Map* m, const Slot* key, Slot* dst) const {
-    const Slot* e = mapFind(m, key);
-    if (m->valuePtrNullable) {
-        dst->p = e != nullptr ? e[m->keySlots].p : nullptr;
-    } else if (e == nullptr) {
-        dst->u = 0;
-    } else {
-        dst->u = 1;
-        std::memcpy(dst + 1, e + m->keySlots, m->valueSlots * sizeof(Slot));
-    }
-}
-
 // Cursors carry the map's version, so adding or removing a key mid-loop traps instead of skipping entries.
 std::int64_t Sandbox::mapNext(const Map* m, std::int64_t cursor) {
     std::uint64_t stamp = static_cast<std::uint64_t>(m->version & 0x7FFFFFFF) << 32;
