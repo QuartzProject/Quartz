@@ -22,11 +22,10 @@ static bool hostId(qz_call* call, void* user) {
     return true;
 }
 
-// The interpreter copies HostCall::result over a one-slot result after the call, so it is set, not written.
 static bool hostDirect(qz_call* call, const qz_slot* args, qz_slot* result, void* user) {
-    (void)result;
+    (void)call;
     (void)user;
-    qz_call_set_result(call, args[0]);
+    result[0] = args[0];
     return true;
 }
 

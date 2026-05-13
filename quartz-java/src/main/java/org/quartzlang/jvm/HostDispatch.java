@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 
-/** One direct upcall stub serves every host function; {@code user} indexes weak bindings so sandboxes stay collectable. */
+/** One direct upcall stub serves every host function; {@code user} indexes weak bindings. */
 final class HostDispatch {
     static final class Binding {
         final Sandbox sandbox;
@@ -73,7 +73,7 @@ final class HostDispatch {
                 fail(call, "host function was released");
                 return false;
             }
-            return binding.sandbox.runHost(binding, call, args);
+            return binding.sandbox.runHost(binding, call, args, result);
         } catch (Throwable t) {
             fail(call, "host error");
             return false;

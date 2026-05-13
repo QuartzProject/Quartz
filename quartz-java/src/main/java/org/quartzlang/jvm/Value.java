@@ -9,12 +9,18 @@ public final class Value {
     private final Sandbox owner;
     private final long generation;
     private final Type type;
+    private final long[] wide;
 
     Value(long bits, Sandbox owner, long generation, Type type) {
+        this(bits, owner, generation, type, null);
+    }
+
+    Value(long bits, Sandbox owner, long generation, Type type, long[] wide) {
         this.bits = bits;
         this.owner = owner;
         this.generation = generation;
         this.type = type;
+        this.wide = wide;
     }
 
     public Type type() {
@@ -25,9 +31,14 @@ public final class Value {
         return type.kind();
     }
 
-    /** The raw 64 bits of the slot. */
+    /** The raw 64 bits of the slot (the first one of a wider value). */
     public long bits() {
         return bits;
+    }
+
+    /** Every raw slot, as many as {@code type().slots()}: how a struct or tuple result comes back for now. */
+    public long[] slots() {
+        return wide == null ? new long[] {bits} : wide.clone();
     }
 
     /** An integer, handle, char, bool or enum tag, widened to 64 bits as its kind says. */
@@ -88,16 +99,13 @@ public final class Value {
         return owner.readString(bits, generation);
     }
 
-    /** The value boxed by its kind: Long, Double, Float, Boolean, Integer (char), String, byte[], or null for void. */
+    /** The value boxed by its type: Long, Double, Float, Boolean, Integer (char), String, byte[], List, long[] for a
+     wider value, or null for void and an empty nullable. */
     public Object get() {
-        Kind k = kind();
-        if (k == Kind.STR || k == Kind.BYTES) {
-            byte[] b = asBytes();
-            return k == Kind.STR ? new String(b, StandardCharsets.UTF_8) : b;
+        if (wide != null) {
+            return wide.clone();
         }
-        return Slots.box(k, bits, ignored -> {
-            throw new IllegalStateException("unreachable");
-        });
+        return Slots.box(type, bits, owner.readers(generation));
     }
 
     /** Elements of a list result. */
@@ -106,31 +114,34 @@ public final class Value {
         return owner.listLength(bits, generation);
     }
 
-    /** A list result boxed as {@code element} says, which is unchecked: numbers read as STR are undefined. */
-    public List<Object> asList(Kind element) {
+    /** A list result with its elements boxed by the element type, nested lists included. */
+    public List<Object> asList() {
         requireList();
-        return owner.readList(bits, generation, element);
+        return owner.readers(generation).list(type, bits);
     }
 
     @SuppressWarnings("unchecked")
     public List<Long> asLongList() {
-        return (List<Long>) (List<?>) asList(Kind.I64);
+        requireElement(Kind.I64);
+        return (List<Long>) (List<?>) asList();
     }
 
     @SuppressWarnings("unchecked")
     public List<Double> asDoubleList() {
-        return (List<Double>) (List<?>) asList(Kind.F64);
+        requireElement(Kind.F64);
+        return (List<Double>) (List<?>) asList();
     }
 
     @SuppressWarnings("unchecked")
     public List<Boolean> asBooleanList() {
-        return (List<Boolean>) (List<?>) asList(Kind.BOOL);
+        requireElement(Kind.BOOL);
+        return (List<Boolean>) (List<?>) asList();
     }
 
-    /** Only for a {@code List<str>}: see {@link #asList(Kind)}. */
     @SuppressWarnings("unchecked")
     public List<String> asStringList() {
-        return (List<String>) (List<?>) asList(Kind.STR);
+        requireElement(Kind.STR);
+        return (List<String>) (List<?>) asList();
     }
 
     /** False once a later call may have freed what a str or list result points to. */
@@ -144,6 +155,15 @@ public final class Value {
 
     long generation() {
         return generation;
+    }
+
+    private void requireElement(Kind kind) {
+        requireList();
+        Kind e = type.element().kind();
+        boolean fits = kind == Kind.I64 ? e.isInteger() || e == Kind.HANDLE : e == kind;
+        if (!fits) {
+            throw wrong("a list of " + kind.name().toLowerCase(java.util.Locale.ROOT));
+        }
     }
 
     private void requireList() {

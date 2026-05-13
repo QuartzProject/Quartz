@@ -1,5 +1,6 @@
 package org.quartzlang.jvm;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -154,7 +155,8 @@ class SandboxTest {
 
     @Test
     void listsComeOutAndGoIntoWaitingTasks() {
-        String host = "@handle\n@awaitable([int])\nstruct Batch {}\nfn batch() -> Batch\n";
+        String host = "@handle\n@awaitable([int])\nstruct Batch {}\nfn batch() -> Batch\nfn names(n: int) -> [str]\n"
+                + "fn sum(xs: [int]) -> int\n";
         String plugin = """
                 fn words(n: int) -> [str] {
                     var out: [str] = []
@@ -165,7 +167,20 @@ class SandboxTest {
                     }
                     return out
                 }
-                suspend fn total() -> int {
+                fn joined(n: int) -> str {
+                    var out = ""
+                    for s in names(n) {
+                        out = out + s
+                    }
+                    return out
+                }
+                fn total(xs: [int]) -> int {
+                    return sum(xs)
+                }
+                fn pair(a: int) -> (int, int) {
+                    return (a * 2, a + 1)
+                }
+                suspend fn gather() -> int {
                     let got = wait batch()
                     var sum = 0
                     for x in got {
@@ -177,11 +192,19 @@ class SandboxTest {
         try (Program program = Quartz.compile(Source.of("host.qzi", host), Source.of("lists.qz", plugin));
                 Sandbox sandbox = new Sandbox(program)) {
             sandbox.bind("batch", call -> 5L);
+            sandbox.bind("names", call -> List.of("n0", "n1", "n2").subList(0, call.intArg(0)));
+            sandbox.bind("sum", call -> call.listArg(0).stream().mapToLong(x -> (Long) x).sum());
             sandbox.start();
             Value words = sandbox.call("words", 3);
             assertEquals(3, words.listLength());
             assertEquals(List.of("w0", "w1", "w2"), words.asStringList());
-            TaskOutcome waiting = sandbox.spawn("total");
+            assertThrows(IllegalStateException.class, words::asLongList);
+            assertEquals("n0n1", sandbox.call("joined", 2).asString());
+            assertEquals(6, sandbox.call("total", List.of(1L, 2L, 3L)).asLong());
+            assertThrows(IllegalArgumentException.class, () -> sandbox.call("total", List.of("x")));
+            assertArrayEquals(new long[] {14, 8}, sandbox.call("pair", 7).slots());
+            assertTrue(program.imports().stream().anyMatch(Import::builtIn));
+            TaskOutcome waiting = sandbox.spawn("gather");
             assertEquals(1, sandbox.liveTasks());
             TaskOutcome done = sandbox.resume(waiting.task(), List.of(4L, 5L, 6L));
             assertEquals(15, done.value().asLong());

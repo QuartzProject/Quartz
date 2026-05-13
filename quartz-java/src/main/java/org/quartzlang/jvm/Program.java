@@ -22,6 +22,7 @@ public final class Program implements AutoCloseable {
     private final String diagnostics;
     private final ConcurrentHashMap<String, Optional<Export>> exports = new ConcurrentHashMap<>();
     private volatile List<Import> imports;
+    private final ConcurrentHashMap<Integer, Type> types = new ConcurrentHashMap<>();
 
     Program(MemorySegment address, String diagnostics) {
         this.handle = new NativeHandle(address, Program::free);
@@ -107,17 +108,14 @@ public final class Program implements AutoCloseable {
             if (index == -1) {
                 return Optional.empty();
             }
-            MemorySegment slots = arena.allocate(JAVA_INT);
             MemorySegment p = handle.address();
             int arity = (int) Native.FUNCTION_ARITY.invokeExact(p, index);
             List<Type> params = new ArrayList<>(arity);
             for (int i = 0; i < arity; ++i) {
-                int kind = (int) Native.FUNCTION_PARAM.invokeExact(p, index, i, slots);
-                params.add(new Type(Kind.of(kind), slots.get(JAVA_INT, 0)));
+                params.add(type((int) Native.FUNCTION_PARAM_TYPE.invokeExact(p, index, i)));
             }
-            int result = (int) Native.FUNCTION_RESULT.invokeExact(p, index, slots);
-            return Optional.of(new Export(this, name, index,
-                    new Signature(params, new Type(Kind.of(result), slots.get(JAVA_INT, 0)))));
+            Type result = type((int) Native.FUNCTION_RESULT_TYPE.invokeExact(p, index));
+            return Optional.of(new Export(this, name, index, new Signature(params, result)));
         } catch (Throwable t) {
             throw Native.rethrow(t);
         } finally {
@@ -125,15 +123,14 @@ public final class Program implements AutoCloseable {
         }
     }
 
-    /** The host functions this program imports, which a sandbox binds before {@link Sandbox#start()}. */
+    /** What this program imports; a sandbox binds the ones that are not {@link Import#builtIn()} before starting. */
     public List<Import> imports() {
         List<Import> known = imports;
         if (known != null) {
             return known;
         }
         handle.retain();
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment slots = arena.allocate(JAVA_INT);
+        try {
             MemorySegment p = handle.address();
             int count = (int) Native.IMPORT_COUNT.invokeExact(p);
             List<Import> out = new ArrayList<>(count);
@@ -142,17 +139,46 @@ public final class Program implements AutoCloseable {
                 int arity = (int) Native.IMPORT_ARITY.invokeExact(p, i);
                 List<Type> params = new ArrayList<>(arity);
                 for (int k = 0; k < arity; ++k) {
-                    int kind = (int) Native.IMPORT_PARAM.invokeExact(p, i, k, slots);
-                    params.add(new Type(Kind.of(kind), slots.get(JAVA_INT, 0)));
+                    params.add(type((int) Native.IMPORT_PARAM_TYPE.invokeExact(p, i, k)));
                 }
-                int result = (int) Native.IMPORT_RESULT.invokeExact(p, i, slots);
-                out.add(new Import(name, new Signature(params, new Type(Kind.of(result), slots.get(JAVA_INT, 0)))));
+                Type result = type((int) Native.IMPORT_RESULT_TYPE.invokeExact(p, i));
+                boolean builtIn = (boolean) Native.IMPORT_IS_NATIVE.invokeExact(p, i);
+                out.add(new Import(name, new Signature(params, result), builtIn));
             }
             known = List.copyOf(out);
             imports = known;
             return known;
         } catch (Throwable t) {
             throw Native.rethrow(t);
+        } finally {
+            handle.release();
+        }
+    }
+
+    /** The type with id {@code id}, its element resolved; the caller holds the handle. */
+    Type type(int id) {
+        Type known = types.get(id);
+        if (known != null) {
+            return known;
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment slots = arena.allocate(JAVA_INT);
+            MemorySegment p = handle.address();
+            Kind kind = Kind.of((int) Native.TYPE_KIND.invokeExact(p, id, slots));
+            int element = (int) Native.TYPE_ELEM.invokeExact(p, id);
+            Type t = new Type(kind, slots.get(JAVA_INT, 0), id, element == 0 ? null : type(element));
+            types.put(id, t);
+            return t;
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        }
+    }
+
+    /** The type with id {@code id}, for a sandbox of this program. */
+    Type typeOf(int id) {
+        handle.retain();
+        try {
+            return type(id);
         } finally {
             handle.release();
         }

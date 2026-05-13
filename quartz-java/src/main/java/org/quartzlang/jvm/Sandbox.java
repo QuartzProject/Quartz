@@ -32,7 +32,7 @@ public final class Sandbox implements AutoCloseable {
     private final MemorySegment result = scratch.allocate(JAVA_LONG);
     private final MemorySegment outcome = scratch.allocate(Native.TASK_OUTCOME);
     private final MemorySegment length = scratch.allocate(JAVA_LONG);
-    private final MemorySegment element = scratch.allocate(JAVA_LONG);
+    private MemorySegment wide;
     private MemorySegment argv = scratch.allocate(JAVA_LONG, 8);
 
     public Sandbox(Program program) {
@@ -122,11 +122,19 @@ public final class Sandbox implements AutoCloseable {
         Confinement c = begin();
         try {
             MemorySegment slots = slots(function.signature(), args);
+            Type type = function.signature().result();
             c.generation++;
             c.hostFailure = null;
+            if (type.slots() > 1) {
+                MemorySegment out = wideResult(type.slots());
+                check((int) Native.SANDBOX_CALL_WIDE.invokeExact(address, function.index(), slots, (long) args.length,
+                        out, (long) type.slots()), c);
+                long[] wide = out.asSlice(0, (long) type.slots() * Long.BYTES).toArray(JAVA_LONG);
+                return new Value(wide[0], this, c.generation, type, wide);
+            }
             check((int) Native.SANDBOX_CALL.invokeExact(address, function.index(), slots, (long) args.length, result),
                     c);
-            return new Value(result.get(JAVA_LONG, 0), this, c.generation, function.signature().result());
+            return new Value(result.get(JAVA_LONG, 0), this, c.generation, type);
         } catch (Throwable t) {
             throw Native.rethrow(t);
         } finally {
@@ -157,11 +165,12 @@ public final class Sandbox implements AutoCloseable {
         return spawn(program.export(name), args);
     }
 
-    /** Resumes a task with what its {@code wait} produces, sent by its Java type (a {@link List} for a list). */
+    /** Resumes a task with what its {@code wait} produces, checked against the awaited type. */
     public TaskOutcome resume(int task, Object value) {
         Confinement c = begin();
         try {
-            long slot = value == null ? 0 : value instanceof List<?> list ? newList(task, list) : looseSlot(value);
+            Type awaited = program.typeOf((int) Native.SANDBOX_WAIT_TYPE.invokeExact(address, task));
+            long slot = value == null ? 0 : Slots.encode(awaited, value, this, makers);
             c.generation++;
             c.hostFailure = null;
             check((int) Native.SANDBOX_RESUME.invokeExact(address, task, slot, outcome), c);
@@ -437,30 +446,67 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    List<Object> readList(long bits, long generation, Kind kind) {
-        Confinement c = enter();
-        try {
-            requireCurrent(c, generation);
-            return readListSlot(bits, kind);
-        } finally {
-            c.exit();
-        }
+    /** Reads str and list slots, checking that no later call freed them; a negative generation skips the check. */
+    Slots.Readers readers(long generation) {
+        return new Slots.Readers() {
+            @Override
+            public byte[] string(long bits) {
+                return generation < 0 ? readSlotString(bits) : readString(bits, generation);
+            }
+
+            @Override
+            public List<Object> list(Type type, long bits) {
+                if (generation < 0) {
+                    return readListSlot(type, bits, this);
+                }
+                Confinement c = enter();
+                try {
+                    requireCurrent(c, generation);
+                    return readListSlot(type, bits, this);
+                } finally {
+                    c.exit();
+                }
+            }
+        };
     }
 
-    List<Object> readListSlot(long bits, Kind kind) {
-        try {
+    private List<Object> readListSlot(Type type, long bits, Slots.Readers readers) {
+        Type e = type.element();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment cell = arena.allocate(JAVA_LONG, Math.max(1, e.slots()));
             int n = Math.toIntExact((long) Native.LIST_LENGTH.invokeExact(bits));
             List<Object> out = new ArrayList<>(n);
             for (int i = 0; i < n; ++i) {
-                if (!(boolean) Native.LIST_GET.invokeExact(bits, (long) i, element, 1L)) {
-                    throw new UnsupportedOperationException("list elements wider than one slot cannot be read yet");
+                if (!(boolean) Native.LIST_GET.invokeExact(bits, (long) i, cell, (long) e.slots())) {
+                    throw new QuartzException("cannot read element " + i + " of a " + type);
                 }
-                out.add(Slots.box(kind, element.get(JAVA_LONG, 0), this::readSlotString));
+                out.add(e.slots() > 1 ? cell.toArray(JAVA_LONG) : Slots.box(e, cell.get(JAVA_LONG, 0), readers));
             }
             return out;
         } catch (Throwable t) {
             throw Native.rethrow(t);
         }
+    }
+
+    /** A list of {@code type} filled with {@code elements}, as an argument or, in a host function, its result. */
+    long newList(Type type, List<?> elements, Slots.Makers makers) throws Throwable {
+        if (type.element().slots() != 1) {
+            throw new IllegalArgumentException("lists of " + type.element() + " cannot be passed yet");
+        }
+        long list = (long) Native.SANDBOX_LIST.invokeExact(address, type.id());
+        if (list == 0) {
+            throw new TrapException(TrapCode.OUT_OF_MEMORY, "cannot make a " + type);
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment cell = arena.allocate(JAVA_LONG);
+            for (Object e : elements) {
+                cell.set(JAVA_LONG, 0, Slots.encode(type.element(), e, this, makers));
+                if (!(boolean) Native.LIST_PUSH.invokeExact(address, list, cell, 1L)) {
+                    throw new TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list");
+                }
+            }
+        }
+        return list;
     }
 
     byte[] readSlotString(long bits) {
@@ -474,9 +520,9 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    boolean runHost(HostDispatch.Binding binding, long call, long args) {
+    boolean runHost(HostDispatch.Binding binding, long call, long args, long res) {
         HostCall hc = hostCall.active() ? new HostCall(this) : hostCall;
-        hc.begin(binding.signature, call, args);
+        hc.begin(binding.signature, call, args, res);
         try {
             hc.setResult(binding.function.call(hc));
             return true;
@@ -489,38 +535,23 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    /** A slot chosen by the Java type alone, for {@code resume}, whose awaited type the C interface hides. */
-    private long looseSlot(Object value) throws Throwable {
-        Kind kind = switch (value) {
-            case Long _ -> Kind.I64;
-            case Integer _ -> Kind.I64;
-            case Short _ -> Kind.I64;
-            case Byte _ -> Kind.I64;
-            case Double _ -> Kind.F64;
-            case Float _ -> Kind.F32;
-            case Boolean _ -> Kind.BOOL;
-            case Character _ -> Kind.CHAR;
-            case String _ -> Kind.STR;
-            case byte[] _ -> Kind.BYTES;
-            case Value v -> v.kind();
-            default -> throw new IllegalArgumentException("cannot pass a " + value.getClass().getName() + " to Quartz");
-        };
-        return Slots.encode(new Type(kind, 1), value, this, this::newString);
-    }
+    private final Slots.Makers makers = new Slots.Makers() {
+        @Override
+        public long string(byte[] utf8) throws Throwable {
+            return newString(utf8);
+        }
 
-    private long newList(int task, List<?> elements) throws Throwable {
-        int type = (int) Native.SANDBOX_WAIT_TYPE.invokeExact(address, task);
-        long list = (long) Native.SANDBOX_LIST.invokeExact(address, type);
-        if (list == 0) {
-            throw new IllegalArgumentException("task " + task + " does not wait for a list");
+        @Override
+        public long list(Type type, List<?> elements) throws Throwable {
+            return newList(type, elements, this);
         }
-        for (Object e : elements) {
-            element.set(JAVA_LONG, 0, looseSlot(Objects.requireNonNull(e, "list elements cannot be null")));
-            if (!(boolean) Native.LIST_PUSH.invokeExact(address, list, element, 1L)) {
-                throw new TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list (quota or element size)");
-            }
+    };
+
+    private MemorySegment wideResult(int slots) {
+        if (wide == null || wide.byteSize() < (long) slots * Long.BYTES) {
+            wide = scratch.allocate(JAVA_LONG, Math.max(slots, 4));
         }
-        return list;
+        return wide;
     }
 
     private long newString(byte[] utf8) throws Throwable {
@@ -540,7 +571,7 @@ public final class Sandbox implements AutoCloseable {
             argv = scratch.allocate(JAVA_LONG, Math.max(args.length, argv.byteSize() / Long.BYTES * 2));
         }
         for (int i = 0; i < args.length; ++i) {
-            argv.setAtIndex(JAVA_LONG, i, Slots.encode(signature.params().get(i), args[i], this, this::newString));
+            argv.setAtIndex(JAVA_LONG, i, Slots.encode(signature.params().get(i), args[i], this, makers));
         }
         return argv;
     }

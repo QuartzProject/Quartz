@@ -63,18 +63,13 @@ final class Native {
     static final MethodHandle SANDBOX_IMPORT_STATE;
     static final MethodHandle SANDBOX_LINK;
     static final MethodHandle STR;
-    static final MethodHandle CALL_SET_RESULT;
     static final MethodHandle CALL_STR;
     static final MethodHandle CALL_CHARGE;
     static final MethodHandle CALL_FAIL;
     static final MethodHandle FUNCTION_ARITY;
-    static final MethodHandle FUNCTION_PARAM;
-    static final MethodHandle FUNCTION_RESULT;
     static final MethodHandle IMPORT_COUNT;
     static final MethodHandle IMPORT_NAME;
     static final MethodHandle IMPORT_ARITY;
-    static final MethodHandle IMPORT_PARAM;
-    static final MethodHandle IMPORT_RESULT;
     static final MethodHandle PROGRAM_INTERFACE;
     static final MethodHandle SANDBOX_WAIT_TYPE;
     static final MethodHandle SANDBOX_LIST;
@@ -88,6 +83,14 @@ final class Native {
     static final MethodHandle SANDBOX_DROP_HANDLE;
     static final MethodHandle SANDBOX_LIVE_TASKS;
     static final MethodHandle SANDBOX_FUEL_PER_CALL;
+    static final MethodHandle FUNCTION_PARAM_TYPE;
+    static final MethodHandle FUNCTION_RESULT_TYPE;
+    static final MethodHandle IMPORT_PARAM_TYPE;
+    static final MethodHandle IMPORT_RESULT_TYPE;
+    static final MethodHandle TYPE_KIND;
+    static final MethodHandle TYPE_ELEM;
+    static final MethodHandle IMPORT_IS_NATIVE;
+    static final MethodHandle SANDBOX_CALL_WIDE;
 
     static {
         if (ADDRESS.byteSize() != 8) {
@@ -123,22 +126,13 @@ final class Native {
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, SIZE_T));
         SANDBOX_LINK = fn("qz_sandbox_link", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
         STR = fn("qz_str", FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS), CRITICAL);
-        CALL_SET_RESULT = fn("qz_call_set_result", FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG), CRITICAL);
         CALL_STR = fn("qz_call_str", FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS, SIZE_T), CRITICAL_HEAP);
         CALL_CHARGE = fn("qz_call_charge", FunctionDescriptor.of(JAVA_BOOLEAN, JAVA_LONG, JAVA_LONG), CRITICAL);
         CALL_FAIL = fn("qz_call_fail", FunctionDescriptor.ofVoid(JAVA_LONG, ADDRESS), CRITICAL);
         FUNCTION_ARITY = fn("qz_program_function_arity", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
-        FUNCTION_PARAM = fn("qz_program_function_param",
-                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS), CRITICAL);
-        FUNCTION_RESULT = fn("qz_program_function_result",
-                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS), CRITICAL);
         IMPORT_COUNT = fn("qz_program_import_count", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
         IMPORT_NAME = fn("qz_program_import_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
         IMPORT_ARITY = fn("qz_program_import_arity", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
-        IMPORT_PARAM = fn("qz_program_import_param",
-                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS), CRITICAL);
-        IMPORT_RESULT = fn("qz_program_import_result",
-                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS), CRITICAL);
         PROGRAM_INTERFACE = fn("qz_program_interface", FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS, ADDRESS));
         SANDBOX_WAIT_TYPE = fn("qz_sandbox_wait_type", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
         SANDBOX_LIST = fn("qz_sandbox_list", FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT), CRITICAL);
@@ -155,6 +149,20 @@ final class Native {
         SANDBOX_DROP_HANDLE = fn("qz_sandbox_drop_handle", FunctionDescriptor.ofVoid(ADDRESS, JAVA_LONG));
         SANDBOX_LIVE_TASKS = fn("qz_sandbox_live_tasks", FunctionDescriptor.of(SIZE_T, ADDRESS), CRITICAL);
         SANDBOX_FUEL_PER_CALL = fn("qz_sandbox_fuel_per_call", FunctionDescriptor.of(JAVA_LONG, ADDRESS), CRITICAL);
+        FUNCTION_PARAM_TYPE = fn("qz_program_function_param_type",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        FUNCTION_RESULT_TYPE = fn("qz_program_function_result_type", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT),
+                CRITICAL);
+        IMPORT_PARAM_TYPE = fn("qz_program_import_param_type",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        IMPORT_RESULT_TYPE = fn("qz_program_import_result_type", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT),
+                CRITICAL);
+        TYPE_KIND = fn("qz_type_kind", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS), CRITICAL);
+        TYPE_ELEM = fn("qz_type_elem", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
+        IMPORT_IS_NATIVE = fn("qz_program_import_is_native", FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT),
+                CRITICAL);
+        SANDBOX_CALL_WIDE = fn("qz_sandbox_call_wide",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, SIZE_T, ADDRESS, SIZE_T));
         int abi = abiVersion();
         if (abi != ABI_VERSION) {
             throw new UnsatisfiedLinkError("libquartz has ABI " + abi + ", quartz-jvm needs " + ABI_VERSION);

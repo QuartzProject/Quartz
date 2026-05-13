@@ -12,6 +12,7 @@ public final class HostCall {
     private Signature signature;
     private long call;
     private long args;
+    private long result;
     private boolean active;
 
     HostCall(Sandbox sandbox) {
@@ -86,24 +87,22 @@ public final class HostCall {
         return sandbox.readSlotString(rawArg(index));
     }
 
-    /** Argument {@code index} boxed by its kind, as {@link Value#get()} does. */
+    /** Argument {@code index} boxed by its type, as {@link Value#get()} does. */
     public Object arg(int index) {
-        Kind k = kind(index);
-        if (k == Kind.STR || k == Kind.BYTES) {
-            byte[] b = bytesArg(index);
-            return k == Kind.STR ? new String(b, StandardCharsets.UTF_8) : b;
+        kind(index);
+        Type type = signature.params().get(index);
+        if (type.slots() != 1) {
+            throw new UnsupportedOperationException("a " + type + " argument cannot be read yet");
         }
-        return Slots.box(k, rawArg(index), ignored -> {
-            throw new IllegalStateException("unreachable");
-        });
+        return Slots.box(type, rawArg(index), sandbox.readers(-1));
     }
 
-    /** A list argument, boxed as {@code element} says; that is the caller's word, see {@link Value#asList(Kind)}. */
-    public List<Object> listArg(int index, Kind element) {
+    /** A list argument with its elements boxed by the element type. */
+    public List<Object> listArg(int index) {
         if (kind(index) != Kind.LIST) {
             throw wrong(index, "listArg");
         }
-        return sandbox.readListSlot(rawArg(index), element);
+        return sandbox.readers(-1).list(signature.params().get(index), rawArg(index));
     }
 
     /** The first raw slot of parameter {@code index}. */
@@ -129,10 +128,11 @@ public final class HostCall {
         return active;
     }
 
-    void begin(Signature sig, long nativeCall, long nativeArgs) {
+    void begin(Signature sig, long nativeCall, long nativeArgs, long nativeResult) {
         signature = sig;
         call = nativeCall;
         args = nativeArgs;
+        result = nativeResult;
         active = true;
     }
 
@@ -147,10 +147,20 @@ public final class HostCall {
         if (type.kind() == Kind.VOID) {
             return;
         }
-        long bits = Slots.encode(type, value, sandbox, this::string);
-        // A direct binding's one-slot result is overwritten by HostCall::result after it returns, so set that.
-        Native.CALL_SET_RESULT.invokeExact(call, bits);
+        Native.ALL.set(JAVA_LONG, result, Slots.encode(type, value, sandbox, makers));
     }
+
+    private final Slots.Makers makers = new Slots.Makers() {
+        @Override
+        public long string(byte[] utf8) throws Throwable {
+            return HostCall.this.string(utf8);
+        }
+
+        @Override
+        public long list(Type type, List<?> elements) throws Throwable {
+            return sandbox.newList(type, elements, this);
+        }
+    };
 
     private long string(byte[] utf8) throws Throwable {
         long slot = (long) Native.CALL_STR.invokeExact(call, MemorySegment.ofArray(utf8), (long) utf8.length);
