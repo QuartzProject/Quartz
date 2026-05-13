@@ -55,23 +55,23 @@ inline constexpr std::uint8_t kMapKeyFields = 2; // a struct, tuple or enum, has
 struct Map {
     std::uint64_t* hashes; // per bucket: 0 empty, 1 tombstone, otherwise hash | 2
     Slot* entries;         // per bucket: key slots then value slots
-    std::uint32_t* order;  // bucket + 1 of each inserted entry in insertion order, 0 once removed
-    std::uint32_t* place;  // per bucket: its position in `order` (allocated with it)
     std::uint32_t count;
-    std::uint32_t used;    // live + tombstones
-    std::uint32_t cap;     // power of two
-    std::uint32_t ordered; // positions of `order` in use
-    std::uint32_t keyType;
-    std::uint32_t valueType;
-    std::uint32_t version; // changes when a key is added or removed: a `for` over the map checks it
-    std::uint16_t valueSlots;
+    std::uint32_t cap; // power of two
     std::uint16_t keySlots;
+    std::uint16_t valueSlots;
     std::uint8_t keyKind;
     bool keyHasRefs;
     bool valueHasRefs;
     bool valuePtrNullable; // Map.get returns a single pointer slot instead of flag plus payload
+    std::uint32_t used;    // live + tombstones
+    std::uint32_t keyType;
+    std::uint32_t valueType;
     Owner owner;
     std::uint16_t level;
+    std::uint32_t* order;  // bucket + 1 of each inserted entry in insertion order, 0 once removed
+    std::uint32_t* place;  // per bucket: its position in `order` (allocated with it)
+    std::uint32_t ordered; // positions of `order` in use
+    std::uint32_t version; // changes when a key is added or removed: a `for` over the map checks it
 };
 
 /// Calls `f` with each live entry (key slots then value slots) in insertion order.

@@ -125,22 +125,10 @@ std::uint64_t Sandbox::keyHash(const Map* m, const Slot* key) const {
     return (m->keyKind == kMapKeyStr ? strHash(static_cast<Str*>(key->p)) : valueHash(m->keyType, key)) | 2;
 }
 
-bool Sandbox::keyEq(const Map* m, const Slot* a, const Slot* b) const {
-    if (m->keyKind == kMapKeyRaw) {
-        return a->u == b->u;
-    }
-    if (m->keyKind == kMapKeyStr) {
-        return strEq(static_cast<const Str*>(a->p), static_cast<const Str*>(b->p));
-    }
-    return valueEq(m->keyType, a, b);
-}
+namespace {
 
-// Buckets work as before insertion order existed; `order` lists the buckets in insertion order beside them.
-Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
-    if (m->cap == 0) {
-        return nullptr;
-    }
-    std::uint64_t h = keyHash(m, key);
+template <class Same>
+Slot* findWith(const Map* m, std::uint64_t h, Same&& same) {
     std::uint32_t mask = m->cap - 1;
     std::size_t es = entrySlots(m);
     for (std::uint32_t i = static_cast<std::uint32_t>(h) & mask;; i = (i + 1) & mask) {
@@ -149,10 +137,28 @@ Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
             return nullptr;
         }
         Slot* e = m->entries + i * es;
-        if (tag == h && keyEq(m, e, key)) {
+        if (tag == h && same(e)) {
             return e;
         }
     }
+}
+
+} // namespace
+
+// Buckets work as before insertion order existed; `order` lists the buckets in insertion order beside them.
+Slot* Sandbox::mapFind(const Map* m, const Slot* key) const {
+    if (m->cap == 0) {
+        return nullptr;
+    }
+    if (m->keyKind == kMapKeyRaw) {
+        std::uint64_t k = key->u;
+        return findWith(m, mix64(k ^ hashKey().k0) | 2, [k](const Slot* e) { return e->u == k; });
+    }
+    if (m->keyKind == kMapKeyStr) {
+        auto* k = static_cast<Str*>(key->p);
+        return findWith(m, strHash(k) | 2, [k](const Slot* e) { return strEq(static_cast<const Str*>(e->p), k); });
+    }
+    return findWith(m, valueHash(m->keyType, key) | 2, [&](const Slot* e) { return valueEq(m->keyType, e, key); });
 }
 
 void Sandbox::mapGet(const Map* m, const Slot* key, Slot* dst) const {

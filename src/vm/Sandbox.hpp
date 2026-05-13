@@ -223,7 +223,6 @@ private:
     bool growMap(Map* m);
     [[nodiscard]] std::uint64_t keyHash(const Map* m, const Slot* key) const;
     void compactOrder(Map* m);
-    [[nodiscard]] bool keyEq(const Map* m, const Slot* a, const Slot* b) const;
     void* allocFor(Owner owner, std::size_t bytes);
 
     struct Binding {
