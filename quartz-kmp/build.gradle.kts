@@ -3,6 +3,7 @@ import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtensi
 import java.nio.file.Files
 import javax.inject.Inject
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
@@ -13,6 +14,23 @@ plugins {
 // The native targets link libquartz statically, built here from a Quartz checkout given as -Pquartz.source.
 val quartzSource = providers.gradleProperty("quartz.source").orNull
 val staticDir = layout.buildDirectory.dir("quartz-static")
+
+// js and wasmJs load quartz-capi.js and .wasm (Quartz's wasm/ build) as a local npm package made here from -Pquartz.wasm.
+val quartzCapi = providers.gradleProperty("quartz.wasm").orNull?.let { dir ->
+    val pkg = layout.buildDirectory.dir("quartz-capi-npm").get().asFile
+    pkg.mkdirs()
+    for (name in listOf("quartz-capi.js", "quartz-capi.wasm")) {
+        val from = File(dir, name)
+        val to = File(pkg, name)
+        if (!to.exists() || to.lastModified() < from.lastModified()) {
+            from.copyTo(to, overwrite = true)
+        }
+    }
+    File(pkg, "package.json").writeText(
+        """{ "name": "quartz-capi", "version": "0.1.0", "main": "quartz-capi.js", "license": "MIT" }""" + "\n",
+    )
+    pkg
+}
 
 // Android needs the SDK (ANDROID_HOME) and an NDK (-Pquartz.ndk or ANDROID_NDK_HOME) to build libquartz_jni.
 val androidSdk = providers.environmentVariable("ANDROID_HOME").orNull
@@ -82,6 +100,7 @@ val buildQuartzStatic = tasks.register<Exec>("buildQuartzStatic") {
         "sh", "-c",
         """
         set -e
+        grep -qs "CMAKE_HOME_DIRECTORY:INTERNAL=$1$" "$2/CMakeCache.txt" || rm -rf "$2"
         cmake -S "$1" -B "$2" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_POSITION_INDEPENDENT_CODE=ON > "$2.log"
         cmake --build "$2" --target quartz_c >> "$2.log"
@@ -128,6 +147,10 @@ kotlin {
             group("capi") {
                 withNative()
                 withCompilations { it.target.platformType == KotlinPlatformType.androidJvm }
+                group("web") {
+                    withJs()
+                    withWasmJs()
+                }
             }
         }
     }
@@ -157,6 +180,18 @@ kotlin {
         logger.lifecycle("quartz-kmp: set -Pquartz.source=<Quartz checkout> to build the native targets")
     }
 
+    if (quartzCapi != null) {
+        js {
+            nodejs()
+        }
+        @OptIn(ExperimentalWasmDsl::class)
+        wasmJs {
+            nodejs()
+        }
+    } else {
+        logger.lifecycle("quartz-kmp: set -Pquartz.wasm=<dir with quartz-capi.js and .wasm> to build js and wasmJs")
+    }
+
     if (androidEnabled) {
         (this as ExtensionAware).extensions.configure<KotlinMultiplatformAndroidLibraryTarget>("android") {
             namespace = "org.quartzlang.kmp"
@@ -182,9 +217,18 @@ kotlin {
     sourceSets {
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
         }
         jvmMain.dependencies {
             api(project(":quartz-java"))
+        }
+        if (quartzCapi != null) {
+            jsMain.dependencies {
+                implementation(npm("quartz-capi", quartzCapi))
+            }
+            wasmJsMain.dependencies {
+                implementation(npm("quartz-capi", quartzCapi))
+            }
         }
     }
 }

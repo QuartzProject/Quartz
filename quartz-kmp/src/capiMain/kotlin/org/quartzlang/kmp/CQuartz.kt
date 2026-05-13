@@ -1,5 +1,7 @@
 package org.quartzlang.kmp
 
+internal actual suspend fun platformInitialize(): Unit = loadRuntime()
+
 internal actual fun platformAbiVersion(): Int = qzAbiVersion()
 
 internal actual fun platformCompile(sources: List<Source>, options: CompileOptions): Program {
@@ -73,12 +75,21 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
 
     val address: Long get() = handle.address.also { check(it != 0L) { "program is closed" } }
 
+    private val types = mutableMapOf<Int, Type>()
+
     override val imports: List<Import> by lazy {
         val p = address
         List(qzImportCount(p)) { i ->
-            val params = List(qzImportArity(p, i)) { k -> typeOf(qzImportParam(p, i, k)) }
-            Import(qzImportName(p, i), Signature(params, typeOf(qzImportResult(p, i))))
+            val params = List(qzImportArity(p, i)) { k -> type(qzImportParamType(p, i, k)) }
+            Import(qzImportName(p, i), Signature(params, type(qzImportResultType(p, i))), qzImportIsNative(p, i))
         }
+    }
+
+    /** The type with id [id], its element resolved. */
+    fun type(id: Int): Type = types[id] ?: run {
+        val packed = typeOf(qzTypeKind(address, id))
+        val element = qzTypeElem(address, id)
+        Type(packed.kind, packed.slots, id, if (element == 0) null else type(element)).also { types[id] = it }
     }
 
     override fun binary(): ByteArray? = qzProgramBinary(address)
@@ -89,8 +100,8 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
         if (index == -1) {
             null
         } else {
-            val params = List(qzFunctionArity(p, index)) { k -> typeOf(qzFunctionParam(p, index, k)) }
-            CExport(this, name, index, Signature(params, typeOf(qzFunctionResult(p, index))))
+            val params = List(qzFunctionArity(p, index)) { k -> type(qzFunctionParamType(p, index, k)) }
+            CExport(this, name, index, Signature(params, type(qzFunctionResultType(p, index))))
         }
     }
 

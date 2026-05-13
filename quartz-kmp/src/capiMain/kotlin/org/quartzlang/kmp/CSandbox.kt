@@ -16,7 +16,6 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
     private val hostCall = CHostCall(this)
     private val result = LongArray(1)
     private val outcome = LongArray(3)
-    private val element = LongArray(1)
     private var argv = LongArray(8)
 
     init {
@@ -53,9 +52,16 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
     override fun call(function: Export, vararg args: Any?): Value = begin {
         val f = own(function)
         val n = slots(f.signature, args)
+        val type = f.signature.result
         group.generation++
-        check(qzCall(address, f.index, argv, n, result))
-        CValue(result[0], this, group.generation, f.signature.result)
+        if (type.slots > 1) {
+            val wide = LongArray(type.slots)
+            check(qzCallWide(address, f.index, argv, n, wide, type.slots))
+            CValue(wide[0], this, group.generation, type, wide)
+        } else {
+            check(qzCall(address, f.index, argv, n, result))
+            CValue(result[0], this, group.generation, type)
+        }
     }
 
     override fun spawn(function: Export, vararg args: Any?): TaskOutcome = begin {
@@ -68,11 +74,7 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
     }
 
     override fun resume(task: Int, value: Any?): TaskOutcome = begin {
-        val slot = when (value) {
-            null -> 0L
-            is List<*> -> newList(task, value)
-            else -> loose(value)
-        }
+        val slot = if (value == null) 0L else Slots.encode(current.type(qzWaitType(address, task)), value, makers)
         group.generation++
         check(qzResume(address, task, slot, outcome))
         outcome()
@@ -163,21 +165,49 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
         return qzListLength(bits).toInt()
     }
 
-    fun readList(bits: Long, generation: Long, element: Kind): List<Any?> {
-        requireCurrent(generation)
-        return readListSlot(bits, element)
-    }
-
-    fun readListSlot(bits: Long, kind: Kind): List<Any?> = List(qzListLength(bits).toInt()) { i ->
-        if (!qzListGet(bits, i.toLong(), element)) {
-            throw UnsupportedOperationException("list elements wider than one slot cannot be read yet")
+    /** Reads str and list slots, checking no later call freed them; a negative generation skips the check. */
+    fun readers(generation: Long): Slots.Readers = object : Slots.Readers {
+        override fun string(bits: Long): ByteArray {
+            if (generation >= 0) {
+                requireCurrent(generation)
+            }
+            return qzStr(bits)
         }
-        Slots.box(kind, element[0], ::qzStr)
+
+        override fun list(type: Type, bits: Long): List<Any?> {
+            if (generation >= 0) {
+                requireCurrent(generation)
+            }
+            val e = type.element!!
+            val cell = LongArray(maxOf(1, e.slots))
+            return List(qzListLength(bits).toInt()) { i ->
+                if (!qzListGet(bits, i.toLong(), cell, e.slots)) {
+                    throw QuartzException("cannot read element $i of a $type")
+                }
+                if (e.slots > 1) cell.copyOf() else Slots.box(e, cell[0], this)
+            }
+        }
     }
 
-    fun runHost(binding: CBinding, call: Long, args: Long): Boolean {
+    /** A list of [type] filled with [elements], as an argument or, in a host function, its result. */
+    fun newList(type: Type, elements: List<*>, makers: Slots.Makers): Long {
+        val e = type.element!!
+        require(e.slots == 1) { "lists of $e cannot be passed yet" }
+        val list = qzSandboxList(address, type.id)
+        if (list == 0L) {
+            throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot make a $type")
+        }
+        for (x in elements) {
+            if (!qzListPush(address, list, Slots.encode(e, x, makers))) {
+                throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list")
+            }
+        }
+        return list
+    }
+
+    fun runHost(binding: CBinding, call: Long, args: Long, res: Long): Boolean {
         val hc = if (hostCall.active) CHostCall(this) else hostCall
-        hc.begin(binding.signature, call, args)
+        hc.begin(binding.signature, call, args, res)
         return try {
             hc.setResult(binding.function.call(hc))
             true
@@ -212,34 +242,29 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
             argv = LongArray(maxOf(args.size, argv.size * 2))
         }
         for (i in args.indices) {
-            argv[i] = Slots.encode(signature.params[i], args[i], ::passBack, ::newString)
+            argv[i] = Slots.encode(signature.params[i], args[i], makers)
         }
         return args.size
     }
 
-    private fun passBack(v: Value): Long {
-        val kind = v.kind
-        if (kind.isInteger) {
-            return v.bits
-        }
-        require(kind != Kind.LIST && kind != Kind.MAP && kind != Kind.FUNCTION) { "a $kind result cannot be passed" }
-        if (kind == Kind.STR || kind == Kind.BYTES) {
-            require(v is CValue && v.ownedBy(this)) { "a str result is only valid in its sandbox until the next call" }
-        }
-        return v.bits
-    }
+    private val makers = object : Slots.Makers {
+        override fun string(utf8: ByteArray): Long = newString(utf8)
 
-    private fun loose(value: Any): Long = Slots.encode(Type(Slots.looseKind(value)), value, ::passBack, ::newString)
+        override fun list(type: Type, elements: List<*>): Long = newList(type, elements, this)
 
-    private fun newList(task: Int, elements: List<*>): Long {
-        val list = qzSandboxList(address, qzWaitType(address, task))
-        require(list != 0L) { "task $task does not wait for a list" }
-        for (e in elements) {
-            if (!qzListPush(address, list, loose(requireNotNull(e) { "list elements cannot be null" }))) {
-                throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list (quota or element size)")
+        override fun passBack(type: Type, value: Value): Long {
+            val kind = value.kind
+            require(kind == type.kind || (kind.isInteger && type.kind.isInteger)) { "a $kind cannot be passed as $type" }
+            require(kind != Kind.MAP && kind != Kind.FUNCTION && (kind != Kind.LIST || value.type == type)) {
+                "a $kind result cannot be passed as $type"
             }
+            if (kind == Kind.STR || kind == Kind.BYTES || kind == Kind.LIST) {
+                require(value is CValue && value.ownedBy(this@CSandbox)) {
+                    "a str or list result is only valid in its sandbox until the next call"
+                }
+            }
+            return if (kind.isInteger) Slots.checkedInteger(type.kind, Slots.widen(kind, value.bits)) else value.bits
         }
-        return list
     }
 
     private fun newString(utf8: ByteArray): Long {

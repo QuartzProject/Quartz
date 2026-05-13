@@ -2,6 +2,9 @@
 
 package org.quartzlang.kmp
 
+import cnames.structs.qz_call
+import cnames.structs.qz_program
+import cnames.structs.qz_sandbox
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CPointed
@@ -10,8 +13,8 @@ import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.StableRef
 import kotlinx.cinterop.UByteVar
-import kotlinx.cinterop.ULongVar
 import kotlinx.cinterop.UIntVar
+import kotlinx.cinterop.ULongVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
@@ -32,7 +35,6 @@ import kotlinx.cinterop.toLong
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import org.quartzlang.kmp.cinterop.qz_abi_version
-import cnames.structs.qz_call
 import org.quartzlang.kmp.cinterop.qz_call_charge
 import org.quartzlang.kmp.cinterop.qz_call_fail
 import org.quartzlang.kmp.cinterop.qz_compile
@@ -40,22 +42,22 @@ import org.quartzlang.kmp.cinterop.qz_compile_options
 import org.quartzlang.kmp.cinterop.qz_free
 import org.quartzlang.kmp.cinterop.qz_limits
 import org.quartzlang.kmp.cinterop.qz_load
-import cnames.structs.qz_program
 import org.quartzlang.kmp.cinterop.qz_program_binary
 import org.quartzlang.kmp.cinterop.qz_program_free
 import org.quartzlang.kmp.cinterop.qz_program_function
 import org.quartzlang.kmp.cinterop.qz_program_function_arity
-import org.quartzlang.kmp.cinterop.qz_program_function_param
-import org.quartzlang.kmp.cinterop.qz_program_function_result
+import org.quartzlang.kmp.cinterop.qz_program_function_param_type
+import org.quartzlang.kmp.cinterop.qz_program_function_result_type
 import org.quartzlang.kmp.cinterop.qz_program_import_arity
 import org.quartzlang.kmp.cinterop.qz_program_import_count
+import org.quartzlang.kmp.cinterop.qz_program_import_is_native
 import org.quartzlang.kmp.cinterop.qz_program_import_name
-import org.quartzlang.kmp.cinterop.qz_program_import_param
-import org.quartzlang.kmp.cinterop.qz_program_import_result
+import org.quartzlang.kmp.cinterop.qz_program_import_param_type
+import org.quartzlang.kmp.cinterop.qz_program_import_result_type
 import org.quartzlang.kmp.cinterop.qz_program_interface
-import cnames.structs.qz_sandbox
 import org.quartzlang.kmp.cinterop.qz_sandbox_bind_direct
 import org.quartzlang.kmp.cinterop.qz_sandbox_call
+import org.quartzlang.kmp.cinterop.qz_sandbox_call_wide
 import org.quartzlang.kmp.cinterop.qz_sandbox_cancel
 import org.quartzlang.kmp.cinterop.qz_sandbox_drop_handle
 import org.quartzlang.kmp.cinterop.qz_sandbox_error
@@ -79,7 +81,8 @@ import org.quartzlang.kmp.cinterop.qz_sandbox_wait_type
 import org.quartzlang.kmp.cinterop.qz_slot
 import org.quartzlang.kmp.cinterop.qz_source
 import org.quartzlang.kmp.cinterop.qz_task_outcome
-import org.quartzlang.kmp.cinterop.qzk_call_set_result
+import org.quartzlang.kmp.cinterop.qz_type_elem
+import org.quartzlang.kmp.cinterop.qz_type_kind
 import org.quartzlang.kmp.cinterop.qzk_call_str
 import org.quartzlang.kmp.cinterop.qzk_list_get
 import org.quartzlang.kmp.cinterop.qzk_list_length
@@ -105,6 +108,8 @@ private fun take(text: CPointer<ByteVar>?): String? = text?.let {
 }
 
 private fun pack(kind: UInt, slots: UInt): Long = (kind.toLong() shl 32) or slots.toLong()
+
+internal actual suspend fun loadRuntime() {}
 
 internal actual fun qzAbiVersion(): Int = qz_abi_version().toInt()
 
@@ -170,15 +175,11 @@ internal actual fun qzProgramFunction(program: Long, name: String): Int =
 internal actual fun qzFunctionArity(program: Long, function: Int): Int =
     qz_program_function_arity(program(program), function.toUInt()).toInt()
 
-internal actual fun qzFunctionParam(program: Long, function: Int, index: Int): Long = memScoped {
-    val slots = alloc<UIntVar>()
-    pack(qz_program_function_param(program(program), function.toUInt(), index.toUInt(), slots.ptr), slots.value)
-}
+internal actual fun qzFunctionParamType(program: Long, function: Int, index: Int): Int =
+    qz_program_function_param_type(program(program), function.toUInt(), index.toUInt()).toInt()
 
-internal actual fun qzFunctionResult(program: Long, function: Int): Long = memScoped {
-    val slots = alloc<UIntVar>()
-    pack(qz_program_function_result(program(program), function.toUInt(), slots.ptr), slots.value)
-}
+internal actual fun qzFunctionResultType(program: Long, function: Int): Int =
+    qz_program_function_result_type(program(program), function.toUInt()).toInt()
 
 internal actual fun qzImportCount(program: Long): Int = qz_program_import_count(program(program)).toInt()
 
@@ -188,15 +189,21 @@ internal actual fun qzImportName(program: Long, import: Int): String =
 internal actual fun qzImportArity(program: Long, import: Int): Int =
     qz_program_import_arity(program(program), import.toUInt()).toInt()
 
-internal actual fun qzImportParam(program: Long, import: Int, index: Int): Long = memScoped {
+internal actual fun qzImportParamType(program: Long, import: Int, index: Int): Int =
+    qz_program_import_param_type(program(program), import.toUInt(), index.toUInt()).toInt()
+
+internal actual fun qzImportResultType(program: Long, import: Int): Int =
+    qz_program_import_result_type(program(program), import.toUInt()).toInt()
+
+internal actual fun qzImportIsNative(program: Long, import: Int): Boolean =
+    qz_program_import_is_native(program(program), import.toUInt())
+
+internal actual fun qzTypeKind(program: Long, type: Int): Long = memScoped {
     val slots = alloc<UIntVar>()
-    pack(qz_program_import_param(program(program), import.toUInt(), index.toUInt(), slots.ptr), slots.value)
+    pack(qz_type_kind(program(program), type.toUInt(), slots.ptr), slots.value)
 }
 
-internal actual fun qzImportResult(program: Long, import: Int): Long = memScoped {
-    val slots = alloc<UIntVar>()
-    pack(qz_program_import_result(program(program), import.toUInt(), slots.ptr), slots.value)
-}
+internal actual fun qzTypeElem(program: Long, type: Int): Int = qz_type_elem(program(program), type.toUInt()).toInt()
 
 internal actual fun qzProgramInterface(program: Long, manifest: String?, error: Array<String?>): String? = memScoped {
     val out = alloc<CPointerVar<ByteVar>>()
@@ -217,8 +224,8 @@ internal actual fun qzSandboxNew(program: Long, memory: Long, fuel: Long, depth:
 internal actual fun qzSandboxFree(sandbox: Long) = qz_sandbox_free(sandbox(sandbox))
 
 private val trampoline = staticCFunction {
-    call: CPointer<qz_call>?, args: CPointer<qz_slot>?, _: CPointer<qz_slot>?, user: COpaquePointer? ->
-    user!!.asStableRef<CBinding>().get().dispatch(call.toLong(), args.toLong())
+    call: CPointer<qz_call>?, args: CPointer<qz_slot>?, result: CPointer<qz_slot>?, user: COpaquePointer? ->
+    user!!.asStableRef<CBinding>().get().dispatch(call.toLong(), args.toLong(), result.toLong())
 }
 
 internal actual fun qzBind(sandbox: Long, name: String, binding: CBinding): Long {
@@ -244,6 +251,20 @@ internal actual fun qzCall(sandbox: Long, function: Int, args: LongArray, count:
         result[0] = out.value.toLong()
         status.toInt()
     }
+
+internal actual fun qzCallWide(
+    sandbox: Long,
+    function: Int,
+    args: LongArray,
+    count: Int,
+    result: LongArray,
+    slots: Int,
+): Int = args.usePinned { pinned ->
+    result.usePinned { out ->
+        qz_sandbox_call_wide(sandbox(sandbox), function.toUInt(), pinned.addressOf(0).reinterpret(), count.toULong(),
+            out.addressOf(0).reinterpret(), slots.toULong()).toInt()
+    }
+}
 
 private fun store(o: qz_task_outcome, outcome: LongArray) {
     outcome[0] = o.kind.toLong()
@@ -333,7 +354,9 @@ internal actual fun qzCallStr(call: Long, utf8: ByteArray): Long = if (utf8.isEm
     utf8.usePinned { qzk_call_str(qzCallOf(call), it.addressOf(0), utf8.size.toULong()).toLong() }
 }
 
-internal actual fun qzCallSetResult(call: Long, bits: Long) = qzk_call_set_result(qzCallOf(call), bits.toULong())
+internal actual fun qzSetSlot(address: Long, index: Int, bits: Long) {
+    address.toCPointer<ULongVar>()!![index] = bits.toULong()
+}
 
 internal actual fun qzCallCharge(call: Long, units: Long): Boolean = qz_call_charge(qzCallOf(call), units)
 
@@ -350,9 +373,6 @@ internal actual fun qzListPush(sandbox: Long, list: Long, element: Long): Boolea
 
 internal actual fun qzListLength(list: Long): Long = qzk_list_length(list.toULong()).toLong()
 
-internal actual fun qzListGet(list: Long, index: Long, out: LongArray): Boolean = memScoped {
-    val e = alloc<ULongVar>()
-    val ok = qzk_list_get(list.toULong(), index.toULong(), e.ptr)
-    out[0] = e.value.toLong()
-    ok
+internal actual fun qzListGet(list: Long, index: Long, out: LongArray, slots: Int): Boolean = out.usePinned {
+    qzk_list_get(list.toULong(), index.toULong(), it.addressOf(0).reinterpret(), slots.toULong())
 }

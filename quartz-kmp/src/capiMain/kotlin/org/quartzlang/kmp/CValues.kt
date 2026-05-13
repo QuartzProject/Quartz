@@ -5,6 +5,7 @@ internal class CValue(
     private val owner: CSandbox,
     private val generation: Long,
     override val type: Type,
+    private val wide: LongArray? = null,
 ) : Value {
     override val isCurrent: Boolean get() = owner.isCurrent(generation)
 
@@ -39,21 +40,19 @@ internal class CValue(
         return owner.readString(bits, generation)
     }
 
-    override fun get(): Any? = when (kind) {
-        Kind.STR -> asString()
-        Kind.BYTES -> asBytes()
-        else -> Slots.box(kind, bits) { error("unreachable") }
-    }
+    override fun get(): Any? = wide?.copyOf() ?: Slots.box(type, bits, owner.readers(generation))
 
     override fun listLength(): Int {
         check(kind == Kind.LIST) { "the value is $type, not a list" }
         return owner.listLength(bits, generation)
     }
 
-    override fun asList(element: Kind): List<Any?> {
+    override fun asList(): List<Any?> {
         check(kind == Kind.LIST) { "the value is $type, not a list" }
-        return owner.readList(bits, generation, element)
+        return owner.readers(generation).list(type, bits)
     }
+
+    override fun slots(): LongArray = wide?.copyOf() ?: longArrayOf(bits)
 
     private fun require(to: Kind, what: String) {
         check(Slots.readable(kind, to)) { "the value is $type, $what does not apply" }
@@ -64,8 +63,8 @@ internal class CValue(
 
 internal class CBinding(val sandbox: CSandbox, val function: HostFunction, val name: String, var signature: Signature) {
     /** Called from native code; never throws, since nothing can catch it there. */
-    fun dispatch(call: Long, args: Long): Boolean = try {
-        sandbox.runHost(this, call, args)
+    fun dispatch(call: Long, args: Long, result: Long): Boolean = try {
+        sandbox.runHost(this, call, args, result)
     } catch (t: Throwable) {
         qzCallFail(call, "host error")
         false
@@ -76,14 +75,16 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
     private var sig: Signature? = null
     private var call = 0L
     private var args = 0L
+    private var result = 0L
     val active: Boolean get() = sig != null
 
     override val signature: Signature get() = sig ?: throw IllegalStateException("the host call is over")
 
-    fun begin(s: Signature, nativeCall: Long, nativeArgs: Long) {
+    fun begin(s: Signature, nativeCall: Long, nativeArgs: Long, nativeResult: Long) {
         sig = s
         call = nativeCall
         args = nativeArgs
+        result = nativeResult
     }
 
     fun end() {
@@ -114,15 +115,18 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
         return qzStr(raw(index))
     }
 
-    override fun arg(index: Int): Any? = when (kindAt(index)) {
-        Kind.STR -> string(index)
-        Kind.BYTES -> bytes(index)
-        else -> Slots.box(kindAt(index), raw(index)) { error("unreachable") }
+    override fun arg(index: Int): Any? {
+        kindAt(index)
+        val type = signature.params[index]
+        if (type.slots != 1) {
+            throw UnsupportedOperationException("a $type argument cannot be read yet")
+        }
+        return Slots.box(type, raw(index), sandbox.readers(-1))
     }
 
-    override fun list(index: Int, element: Kind): List<Any?> {
+    override fun list(index: Int): List<Any?> {
         check(kindAt(index) == Kind.LIST) { "argument $index is ${kindAt(index)}, not a list" }
-        return sandbox.readListSlot(raw(index), element)
+        return sandbox.readers(-1).list(signature.params[index], raw(index))
     }
 
     override fun charge(units: Long): Boolean {
@@ -135,11 +139,20 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
         if (type.kind == Kind.VOID) {
             return
         }
-        val bits = Slots.encode(type, value, { throw IllegalArgumentException("a Value cannot be returned") }) {
-            qzCallStr(call, it).also { s -> if (s == 0L) throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory") }
+        qzSetSlot(result, 0, Slots.encode(type, value, makers))
+    }
+
+    private val makers = object : Slots.Makers {
+        override fun string(utf8: ByteArray): Long = qzCallStr(call, utf8).also {
+            if (it == 0L) {
+                throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning a string")
+            }
         }
-        // A direct binding's one-slot result is overwritten by HostCall::result after it returns, so set that.
-        qzCallSetResult(call, bits)
+
+        override fun list(type: Type, elements: List<*>): Long = sandbox.newList(type, elements, this)
+
+        override fun passBack(type: Type, value: Value): Long =
+            throw IllegalArgumentException("a Value cannot be returned from a host function")
     }
 
     private fun kindAt(index: Int): Kind {

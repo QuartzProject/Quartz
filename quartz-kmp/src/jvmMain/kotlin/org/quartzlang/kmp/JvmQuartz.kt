@@ -14,6 +14,8 @@ import org.quartzlang.jvm.TaskOutcome as JTaskOutcome
 import org.quartzlang.jvm.TrapException as JTrapException
 import org.quartzlang.jvm.Value as JValue
 
+internal actual suspend fun platformInitialize() {}
+
 internal actual fun platformAbiVersion(): Int = JQuartz.abiVersion()
 
 internal actual fun platformCompile(sources: List<Source>, options: CompileOptions): Program = translated {
@@ -46,9 +48,8 @@ internal inline fun <R> translated(block: () -> R): R = try {
 
 internal fun kindOf(kind: JKind): Kind = Kind.entries[kind.ordinal]
 
-internal fun jkind(kind: Kind): JKind = JKind.entries[kind.ordinal]
-
-internal fun typeOf(t: org.quartzlang.jvm.Type): Type = Type(kindOf(t.kind()), t.slots())
+internal fun typeOf(t: org.quartzlang.jvm.Type): Type =
+    Type(kindOf(t.kind()), t.slots(), t.id(), t.element()?.let(::typeOf))
 
 internal fun signatureOf(s: JSignature): Signature = Signature(s.params().map(::typeOf), typeOf(s.result()))
 
@@ -57,7 +58,7 @@ internal class JvmProgram(val java: JProgram) : Program {
 
     override val diagnostics: String get() = java.diagnostics()
     override val imports: List<Import> by lazy {
-        translated { java.imports().map { Import(it.name(), signatureOf(it.signature())) } }
+        translated { java.imports().map { Import(it.name(), signatureOf(it.signature()), it.builtIn()) } }
     }
 
     override fun binary(): ByteArray? = translated { java.binary().orElse(null) }
@@ -78,7 +79,7 @@ internal class JvmExport(val program: JvmProgram, val java: JExport) : Export {
 }
 
 internal class JvmValue(val java: JValue) : Value {
-    override val type: Type = Type(kindOf(java.kind()), java.type().slots())
+    override val type: Type = typeOf(java.type())
     override val bits: Long get() = java.bits()
     override val isCurrent: Boolean get() = java.isCurrent
     override fun asLong(): Long = java.asLong()
@@ -88,9 +89,10 @@ internal class JvmValue(val java: JValue) : Value {
     override fun asCodePoint(): Int = java.asCodePoint()
     override fun asString(): String = java.asString()
     override fun asBytes(): ByteArray = java.asBytes()
-    override fun get(): Any? = java.get()
+    override fun get(): Any? = translated { java.get() }
     override fun listLength(): Int = java.listLength()
-    override fun asList(element: Kind): List<Any?> = java.asList(jkind(element))
+    override fun asList(): List<Any?> = translated { java.asList() }
+    override fun slots(): LongArray = java.slots()
 }
 
 internal class JvmHostCall(val java: org.quartzlang.jvm.HostCall) : HostCall {
@@ -103,7 +105,7 @@ internal class JvmHostCall(val java: org.quartzlang.jvm.HostCall) : HostCall {
     override fun string(index: Int): String = java.stringArg(index)
     override fun bytes(index: Int): ByteArray = java.bytesArg(index)
     override fun arg(index: Int): Any? = java.arg(index)
-    override fun list(index: Int, element: Kind): List<Any?> = java.listArg(index, jkind(element))
+    override fun list(index: Int): List<Any?> = java.listArg(index)
     override fun charge(units: Long): Boolean = java.charge(units)
 }
 

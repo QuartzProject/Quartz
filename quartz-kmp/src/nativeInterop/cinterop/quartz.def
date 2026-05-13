@@ -21,12 +21,6 @@ static inline uint64_t qzk_call_str(qz_call* call, const char* utf8, size_t leng
     return qz_call_str(call, utf8, length).u;
 }
 
-static inline void qzk_call_set_result(qz_call* call, uint64_t bits) {
-    qz_slot s;
-    s.u = bits;
-    qz_call_set_result(call, s);
-}
-
 static inline qz_status qzk_resume(qz_sandbox* sandbox, uint32_t task, uint64_t bits, qz_task_outcome* outcome) {
     qz_slot s;
     s.u = bits;
@@ -51,11 +45,8 @@ static inline size_t qzk_list_length(uint64_t list) {
     return qz_list_length(l);
 }
 
-static inline bool qzk_list_get(uint64_t list, size_t index, uint64_t* out) {
+static inline bool qzk_list_get(uint64_t list, size_t index, qz_slot* out, size_t slots) {
     qz_slot l;
-    qz_slot e;
     l.u = list;
-    bool ok = qz_list_get(l, index, &e, 1);
-    *out = e.u;
-    return ok;
+    return qz_list_get(l, index, out, slots);
 }

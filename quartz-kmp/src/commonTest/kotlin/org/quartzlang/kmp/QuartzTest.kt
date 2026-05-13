@@ -1,12 +1,14 @@
 package org.quartzlang.kmp
 
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class QuartzTest {
-    private val host = "fn greet(name: str) -> str\nfn fail(code: int) -> int\n"
+    private val host = "fn greet(name: str) -> str\nfn fail(code: int) -> int\nfn sum(xs: [int]) -> int\n" +
+        "fn names(n: int) -> [str]\n"
     private val plugin = """
         state Counter {
             total: int
@@ -24,6 +26,19 @@ class QuartzTest {
         fn check(code: int) -> int {
             return fail(code) + 1
         }
+        fn total(xs: [int]) -> int {
+            return sum(xs)
+        }
+        fn joined(n: int) -> str {
+            var out = ""
+            for s in names(n) {
+                out = out + s
+            }
+            return out
+        }
+        fn pair(a: int) -> (int, int) {
+            return (a * 2, a + 1)
+        }
         fn words(n: int) -> [str] {
             var out: [str] = []
             var i = 0
@@ -38,11 +53,14 @@ class QuartzTest {
     private fun started(program: Program): Sandbox = Quartz.sandbox(program).apply {
         bind("greet") { "hi " + it.string(0) }
         bind("fail") { if (it.long(0) != 0L) throw IllegalStateException("boom ${it.long(0)}") else 0L }
+        bind("sum") { call -> call.list(0).sumOf { it as Long } }
+        bind("names") { call -> List(call.int(0)) { "n$it" } }
         start()
     }
 
     @Test
-    fun callsAreTypedAndTrapsKeepTheSandbox() {
+    fun callsAreTypedAndTrapsKeepTheSandbox() = runTest {
+        Quartz.initialize()
         compileQuartz("host.qzi" to host, "plugin.qz" to plugin).use { program ->
             started(program).use { sandbox ->
                 assertEquals(5L, sandbox.callAs<Long>("add", 5))
@@ -58,16 +76,22 @@ class QuartzTest {
                 assertTrue(host.cause is IllegalStateException)
                 assertEquals(3L, sandbox.callAs<Long>("divide", 7, 2))
                 val words = sandbox.call("words", 3)
-                assertEquals(listOf("w0", "w1", "w2"), words.asList(Kind.STR))
+                assertEquals(listOf("w0", "w1", "w2"), words.asList())
+                assertEquals(6L, sandbox.callAs<Long>("total", listOf(1L, 2L, 3L)))
+                assertFailsWith<IllegalArgumentException> { sandbox.call("total", listOf("x")) }
+                assertEquals("n0n1", sandbox.callAs<String>("joined", 2))
+                assertEquals(listOf(14L, 8L), sandbox.call("pair", 7).slots().toList())
+                assertTrue(program.imports.any { it.builtIn } && program.imports.none { it.name == "greet" && it.builtIn })
                 sandbox.call("add", 0)
-                assertFailsWith<IllegalStateException> { words.asList(Kind.STR) }
+                assertFailsWith<IllegalStateException> { words.asList() }
             }
             assertFailsWith<CompileException> { compileQuartz("bad.qz" to "fn f() -> int {\n    return \"x\"\n}\n") }
         }
     }
 
     @Test
-    fun tasksHandlesAndReload() {
+    fun tasksHandlesAndReload() = runTest {
+        Quartz.initialize()
         val tasks = "@handle\n@awaitable([int])\nstruct Batch {}\nfn batch() -> Batch\n" +
             "@handle\nstruct Player {\n    id: int\n}\n"
         val v1 = """

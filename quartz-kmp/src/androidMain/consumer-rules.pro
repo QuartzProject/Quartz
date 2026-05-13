@@ -2,5 +2,5 @@
     native <methods>;
 }
 -keep class org.quartzlang.kmp.CBinding {
-    boolean dispatch(long, long);
+    boolean dispatch(long, long, long);
 }

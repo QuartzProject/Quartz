@@ -33,9 +33,21 @@ public enum class TrapCode {
     }
 }
 
-/** A parameter or result type: its kind and how many slots it takes (a struct takes one per field). */
-public data class Type(val kind: Kind, val slots: Int = 1) {
-    override fun toString(): String = if (slots == 1) kind.name.lowercase() else "${kind.name.lowercase()}[$slots]"
+/** A type: its kind, the slots it takes (a struct takes one per field), its id and the element of a list or nullable. */
+public data class Type(val kind: Kind, val slots: Int = 1, val id: Int = 0, val element: Type? = null) {
+    /** A one-slot nullable str, Bytes or list, which is null or a pointer. */
+    val isNullableReference: Boolean
+        get() = kind == Kind.NULLABLE && slots == 1 && element?.kind in setOf(Kind.STR, Kind.BYTES, Kind.LIST, Kind.MAP)
+
+    override fun equals(other: Any?): Boolean =
+        other is Type && other.kind == kind && other.slots == slots && other.element == element
+
+    override fun hashCode(): Int = kind.hashCode() * 31 + slots
+
+    override fun toString(): String {
+        val name = kind.name.lowercase() + (element?.let { "<$it>" } ?: "")
+        return if (slots == 1) name else "$name[$slots]"
+    }
 }
 
 /** What a caller passes (`state` parameters left out) and what comes back. */
@@ -48,8 +60,8 @@ public data class Signature(val params: List<Type>, val result: Type) {
     override fun toString(): String = "$params -> $result"
 }
 
-/** A host function a program imports, by the name it is bound with (`log`, `Player.health`). */
-public data class Import(val name: String, val signature: Signature)
+/** A host function a program imports, by its binding name; the runtime binds [builtIn] ones (the standard library). */
+public data class Import(val name: String, val signature: Signature, val builtIn: Boolean = false)
 
 /** One source file; a name ending in `.qzi` is a host interface. */
 public data class Source(val name: String, val text: String)

@@ -49,8 +49,8 @@ public interface HostCall {
     /** Argument [index] boxed by its kind. */
     public fun arg(index: Int): Any?
 
-    /** A list argument read as [element], which is unchecked: the C interface does not describe list elements. */
-    public fun list(index: Int, element: Kind): List<Any?>
+    /** A list argument with its elements boxed by the element type. */
+    public fun list(index: Int): List<Any?>
 
     /** Charges fuel for native work; false when the budget is gone. */
     public fun charge(units: Long): Boolean
@@ -76,13 +76,16 @@ public interface Value {
     public fun asString(): String
     public fun asBytes(): ByteArray
 
-    /** The value boxed by its kind: Long, Double, Float, Boolean, Int (char), String, ByteArray, or null for void. */
+    /** The value boxed by its type: Long, Double, Float, Boolean, Int (char), String, ByteArray, List, LongArray. */
     public fun get(): Any?
 
     public fun listLength(): Int
 
-    /** A list result read as [element]: the caller's word, reading numbers as [Kind.STR] is undefined. */
-    public fun asList(element: Kind): List<Any?>
+    /** A list result with its elements boxed by the element type, nested lists included. */
+    public fun asList(): List<Any?>
+
+    /** Every raw slot, as many as `type.slots`: how a struct or tuple result comes back for now. */
+    public fun slots(): LongArray
 }
 
 /** An isolated instance of a program with its own memory, fuel and state, used by one thread at a time. */
@@ -103,7 +106,7 @@ public interface Sandbox : AutoCloseable {
     public fun spawn(function: Export, vararg args: Any?): TaskOutcome
     public fun spawn(name: String, vararg args: Any?): TaskOutcome = spawn(program.export(name), *args)
 
-    /** Resumes a task with what its `wait` produces, by Java type, or a List for a list awaitable. */
+    /** Resumes a task with what its `wait` produces, checked against the awaited type. */
     public fun resume(task: Int, value: Any?): TaskOutcome
     public fun cancel(task: Int)
 
@@ -128,6 +131,9 @@ public interface Sandbox : AutoCloseable {
 
 /** Entry point: compiles sources and loads modules on whatever runtime this platform has. */
 public object Quartz {
+    /** Loads the runtime where that is asynchronous (WebAssembly in JavaScript); does nothing on other targets. */
+    public suspend fun initialize(): Unit = platformInitialize()
+
     /** The ABI version of the loaded libquartz. */
     public val abiVersion: Int get() = platformAbiVersion()
 
@@ -143,6 +149,8 @@ public object Quartz {
 
     public fun sandbox(program: Program, limits: Limits = Limits.DEFAULT): Sandbox = platformSandbox(program, limits)
 }
+
+internal expect suspend fun platformInitialize()
 
 internal expect fun platformAbiVersion(): Int
 

@@ -135,18 +135,17 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* javaVm, void* reserved) {
     if (binding == NULL) {
         return JNI_ERR;
     }
-    dispatchMethod = (*env)->GetMethodID(env, binding, "dispatch", "(JJ)Z");
+    dispatchMethod = (*env)->GetMethodID(env, binding, "dispatch", "(JJJ)Z");
     return dispatchMethod == NULL ? JNI_ERR : JNI_VERSION_1_6;
 }
 
 static bool trampoline(qz_call* call, const qz_slot* args, qz_slot* result, void* user) {
-    (void)result;
     JNIEnv* env;
     if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
         qz_call_fail(call, "host function called on a thread the JVM does not know");
         return false;
     }
-    jboolean ok = (*env)->CallBooleanMethod(env, (jobject)user, dispatchMethod, addr(call), addr(args));
+    jboolean ok = (*env)->CallBooleanMethod(env, (jobject)user, dispatchMethod, addr(call), addr(args), addr(result));
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
         qz_call_fail(call, "host error");
@@ -243,20 +242,16 @@ JNIEXPORT jint QZ_JNI(qzFunctionArity)(JNIEnv* env, jclass cls, jlong program, j
     return (jint)qz_program_function_arity(ptr(program), (uint32_t)function);
 }
 
-JNIEXPORT jlong QZ_JNI(qzFunctionParam)(JNIEnv* env, jclass cls, jlong program, jint function, jint index) {
+JNIEXPORT jint QZ_JNI(qzFunctionParamType)(JNIEnv* env, jclass cls, jlong program, jint function, jint index) {
     (void)env;
     (void)cls;
-    uint32_t slots = 0;
-    qz_kind kind = qz_program_function_param(ptr(program), (uint32_t)function, (uint32_t)index, &slots);
-    return packType(kind, slots);
+    return (jint)qz_program_function_param_type(ptr(program), (uint32_t)function, (uint32_t)index);
 }
 
-JNIEXPORT jlong QZ_JNI(qzFunctionResult)(JNIEnv* env, jclass cls, jlong program, jint function) {
+JNIEXPORT jint QZ_JNI(qzFunctionResultType)(JNIEnv* env, jclass cls, jlong program, jint function) {
     (void)env;
     (void)cls;
-    uint32_t slots = 0;
-    qz_kind kind = qz_program_function_result(ptr(program), (uint32_t)function, &slots);
-    return packType(kind, slots);
+    return (jint)qz_program_function_result_type(ptr(program), (uint32_t)function);
 }
 
 JNIEXPORT jint QZ_JNI(qzImportCount)(JNIEnv* env, jclass cls, jlong program) {
@@ -277,20 +272,36 @@ JNIEXPORT jint QZ_JNI(qzImportArity)(JNIEnv* env, jclass cls, jlong program, jin
     return (jint)qz_program_import_arity(ptr(program), (uint32_t)import);
 }
 
-JNIEXPORT jlong QZ_JNI(qzImportParam)(JNIEnv* env, jclass cls, jlong program, jint import, jint index) {
+JNIEXPORT jint QZ_JNI(qzImportParamType)(JNIEnv* env, jclass cls, jlong program, jint import, jint index) {
+    (void)env;
+    (void)cls;
+    return (jint)qz_program_import_param_type(ptr(program), (uint32_t)import, (uint32_t)index);
+}
+
+JNIEXPORT jint QZ_JNI(qzImportResultType)(JNIEnv* env, jclass cls, jlong program, jint import) {
+    (void)env;
+    (void)cls;
+    return (jint)qz_program_import_result_type(ptr(program), (uint32_t)import);
+}
+
+JNIEXPORT jboolean QZ_JNI(qzImportIsNative)(JNIEnv* env, jclass cls, jlong program, jint import) {
+    (void)env;
+    (void)cls;
+    return qz_program_import_is_native(ptr(program), (uint32_t)import);
+}
+
+JNIEXPORT jlong QZ_JNI(qzTypeKind)(JNIEnv* env, jclass cls, jlong program, jint type) {
     (void)env;
     (void)cls;
     uint32_t slots = 0;
-    qz_kind kind = qz_program_import_param(ptr(program), (uint32_t)import, (uint32_t)index, &slots);
+    qz_kind kind = qz_type_kind(ptr(program), (uint32_t)type, &slots);
     return packType(kind, slots);
 }
 
-JNIEXPORT jlong QZ_JNI(qzImportResult)(JNIEnv* env, jclass cls, jlong program, jint import) {
+JNIEXPORT jint QZ_JNI(qzTypeElem)(JNIEnv* env, jclass cls, jlong program, jint type) {
     (void)env;
     (void)cls;
-    uint32_t slots = 0;
-    qz_kind kind = qz_program_import_result(ptr(program), (uint32_t)import, &slots);
-    return packType(kind, slots);
+    return (jint)qz_type_elem(ptr(program), (uint32_t)type);
 }
 
 JNIEXPORT jstring QZ_JNI(qzProgramInterface)(JNIEnv* env, jclass cls, jlong program, jstring manifest,
@@ -359,6 +370,24 @@ JNIEXPORT jint QZ_JNI(qzCall)(JNIEnv* env, jclass cls, jlong sandbox, jint funct
         free(a);
     }
     (*env)->SetLongArrayRegion(env, result, 0, 1, (const jlong*)&r);
+    return (jint)status;
+}
+
+JNIEXPORT jint QZ_JNI(qzCallWide)(JNIEnv* env, jclass cls, jlong sandbox, jint function, jlongArray args, jint count,
+                                  jlongArray result, jint slots) {
+    (void)cls;
+    qz_slot* a = malloc(((size_t)count + 1) * sizeof(qz_slot));
+    qz_slot* r = malloc(((size_t)slots + 1) * sizeof(qz_slot));
+    qz_status status = QZ_ERROR;
+    if (a != NULL && r != NULL) {
+        (*env)->GetLongArrayRegion(env, args, 0, count, (jlong*)a);
+        status = qz_sandbox_call_wide(ptr(sandbox), (uint32_t)function, a, (size_t)count, r, (size_t)slots);
+        if (status == QZ_OK) {
+            (*env)->SetLongArrayRegion(env, result, 0, slots, (const jlong*)r);
+        }
+    }
+    free(a);
+    free(r);
     return (jint)status;
 }
 
@@ -520,10 +549,10 @@ JNIEXPORT jlong QZ_JNI(qzCallStr)(JNIEnv* env, jclass cls, jlong call, jbyteArra
     return out;
 }
 
-JNIEXPORT void QZ_JNI(qzCallSetResult)(JNIEnv* env, jclass cls, jlong call, jlong bits) {
+JNIEXPORT void QZ_JNI(qzSetSlot)(JNIEnv* env, jclass cls, jlong address, jint index, jlong bits) {
     (void)env;
     (void)cls;
-    qz_call_set_result(ptr(call), slot(bits));
+    ((qz_slot*)ptr(address))[index].i = bits;
 }
 
 JNIEXPORT jboolean QZ_JNI(qzCallCharge)(JNIEnv* env, jclass cls, jlong call, jlong units) {
@@ -564,10 +593,19 @@ JNIEXPORT jlong QZ_JNI(qzListLength)(JNIEnv* env, jclass cls, jlong list) {
     return (jlong)qz_list_length(slot(list));
 }
 
-JNIEXPORT jboolean QZ_JNI(qzListGet)(JNIEnv* env, jclass cls, jlong list, jlong index, jlongArray out) {
+JNIEXPORT jboolean QZ_JNI(qzListGet)(JNIEnv* env, jclass cls, jlong list, jlong index, jlongArray out, jint slots) {
     (void)cls;
-    qz_slot e = {0};
-    bool ok = qz_list_get(slot(list), (size_t)index, &e, 1);
-    (*env)->SetLongArrayRegion(env, out, 0, 1, (const jlong*)&e);
+    qz_slot e[8];
+    qz_slot* cell = slots <= 8 ? e : malloc((size_t)slots * sizeof(qz_slot));
+    if (cell == NULL) {
+        return false;
+    }
+    bool ok = qz_list_get(slot(list), (size_t)index, cell, (size_t)slots);
+    if (ok) {
+        (*env)->SetLongArrayRegion(env, out, 0, slots, (const jlong*)cell);
+    }
+    if (cell != e) {
+        free(cell);
+    }
     return ok;
 }

@@ -7,6 +7,8 @@ package org.quartzlang.kmp
 @Suppress("unused")
 private val loaded = System.loadLibrary("quartz_jni")
 
+internal actual suspend fun loadRuntime() {}
+
 internal actual external fun qzAbiVersion(): Int
 
 internal actual external fun qzCompile(
@@ -33,9 +35,9 @@ internal actual external fun qzProgramFunction(program: Long, name: String): Int
 
 internal actual external fun qzFunctionArity(program: Long, function: Int): Int
 
-internal actual external fun qzFunctionParam(program: Long, function: Int, index: Int): Long
+internal actual external fun qzFunctionParamType(program: Long, function: Int, index: Int): Int
 
-internal actual external fun qzFunctionResult(program: Long, function: Int): Long
+internal actual external fun qzFunctionResultType(program: Long, function: Int): Int
 
 internal actual external fun qzImportCount(program: Long): Int
 
@@ -43,9 +45,15 @@ internal actual external fun qzImportName(program: Long, import: Int): String
 
 internal actual external fun qzImportArity(program: Long, import: Int): Int
 
-internal actual external fun qzImportParam(program: Long, import: Int, index: Int): Long
+internal actual external fun qzImportParamType(program: Long, import: Int, index: Int): Int
 
-internal actual external fun qzImportResult(program: Long, import: Int): Long
+internal actual external fun qzImportResultType(program: Long, import: Int): Int
+
+internal actual external fun qzImportIsNative(program: Long, import: Int): Boolean
+
+internal actual external fun qzTypeKind(program: Long, type: Int): Long
+
+internal actual external fun qzTypeElem(program: Long, type: Int): Int
 
 internal actual external fun qzProgramInterface(program: Long, manifest: String?, error: Array<String?>): String?
 
@@ -60,6 +68,15 @@ internal actual external fun qzUnbind(token: Long)
 internal actual external fun qzStart(sandbox: Long): Int
 
 internal actual external fun qzCall(sandbox: Long, function: Int, args: LongArray, count: Int, result: LongArray): Int
+
+internal actual external fun qzCallWide(
+    sandbox: Long,
+    function: Int,
+    args: LongArray,
+    count: Int,
+    result: LongArray,
+    slots: Int,
+): Int
 
 internal actual external fun qzSpawn(sandbox: Long, function: Int, args: LongArray, count: Int, outcome: LongArray): Int
 
@@ -103,7 +120,7 @@ internal actual external fun qzSlot(args: Long, index: Int): Long
 
 internal actual external fun qzCallStr(call: Long, utf8: ByteArray): Long
 
-internal actual external fun qzCallSetResult(call: Long, bits: Long)
+internal actual external fun qzSetSlot(address: Long, index: Int, bits: Long)
 
 internal actual external fun qzCallCharge(call: Long, units: Long): Boolean
 
@@ -117,4 +134,4 @@ internal actual external fun qzListPush(sandbox: Long, list: Long, element: Long
 
 internal actual external fun qzListLength(list: Long): Long
 
-internal actual external fun qzListGet(list: Long, index: Long, out: LongArray): Boolean
+internal actual external fun qzListGet(list: Long, index: Long, out: LongArray, slots: Int): Boolean

@@ -2,13 +2,32 @@ package org.quartzlang.kmp
 
 /** Converts between Kotlin values and one qz_slot by the kind the program declares. */
 internal object Slots {
+    /** Makes str and list slots in whatever arena is current, and checks values passed back. */
+    interface Makers {
+        fun string(utf8: ByteArray): Long
+
+        fun list(type: Type, elements: List<*>): Long
+
+        fun passBack(type: Type, value: Value): Long
+    }
+
+    /** Reads what str and list slots point to. */
+    interface Readers {
+        fun string(bits: Long): ByteArray
+
+        fun list(type: Type, bits: Long): List<Any?>
+    }
+
     /** A slot the program reads as [type]; throws IllegalArgumentException when [value] does not fit. */
-    fun encode(type: Type, value: Any?, passBack: (Value) -> Long, strings: (ByteArray) -> Long): Long {
+    fun encode(type: Type, value: Any?, makers: Makers): Long {
         val kind = type.kind
         require(type.slots == 1) { "a $type value cannot cross the C interface yet" }
-        requireNotNull(value) { "null cannot be passed as $type" }
+        if (value == null) {
+            require(type.isNullableReference) { "null cannot be passed as $type" }
+            return 0
+        }
         if (value is Value) {
-            return passBack(value)
+            return makers.passBack(type, value)
         }
         if (kind.isInteger) {
             return integer(kind, value)
@@ -18,8 +37,13 @@ internal object Slots {
             Kind.F64 -> floating(type, value).toRawBits()
             Kind.F32 -> floating(type, value).toFloat().toRawBits().toLong() and 0xFFFF_FFFFL
             Kind.CHAR -> codePoint(type, value)
-            Kind.STR -> if (value is String) strings(value.encodeToByteArray()) else throw mismatch(type, value)
-            Kind.BYTES -> if (value is ByteArray) strings(value) else throw mismatch(type, value)
+            Kind.STR -> if (value is String) makers.string(value.encodeToByteArray()) else throw mismatch(type, value)
+            Kind.BYTES -> if (value is ByteArray) makers.string(value) else throw mismatch(type, value)
+            Kind.LIST -> if (value is List<*>) makers.list(type, value) else throw mismatch(type, value)
+            Kind.NULLABLE -> {
+                require(type.isNullableReference) { "a $type value cannot cross the C interface yet" }
+                encode(type.element!!, value, makers)
+            }
             Kind.HANDLE -> when (value) {
                 is Long -> value
                 is Int -> value.toLong()
@@ -29,21 +53,9 @@ internal object Slots {
         }
     }
 
-    /** The kind a value of unknown destination type travels as, chosen by its Kotlin type. */
-    fun looseKind(value: Any): Kind = when (value) {
-        is Long, is Int, is Short, is Byte -> Kind.I64
-        is Double -> Kind.F64
-        is Float -> Kind.F32
-        is Boolean -> Kind.BOOL
-        is Char -> Kind.CHAR
-        is String -> Kind.STR
-        is ByteArray -> Kind.BYTES
-        is Value -> value.kind
-        else -> throw IllegalArgumentException("cannot pass a ${value::class.simpleName} to Quartz")
-    }
-
-    /** The slot boxed as its kind says: Long, Float, Double, Boolean, Int (char), String, ByteArray, null for void. */
-    fun box(kind: Kind, bits: Long, read: (Long) -> ByteArray): Any? {
+    /** The slot boxed as its type says: Long, Float, Double, Boolean, Int (char), String, ByteArray, List or null. */
+    fun box(type: Type, bits: Long, readers: Readers): Any? {
+        val kind = type.kind
         if (kind.isInteger || kind == Kind.HANDLE) {
             return widen(kind, bits)
         }
@@ -53,8 +65,15 @@ internal object Slots {
             Kind.F64 -> Double.fromBits(bits)
             Kind.F32 -> Float.fromBits(bits.toInt())
             Kind.CHAR -> bits.toInt()
-            Kind.STR -> read(bits).decodeToString()
-            Kind.BYTES -> read(bits)
+            Kind.STR -> readers.string(bits).decodeToString()
+            Kind.BYTES -> readers.string(bits)
+            Kind.LIST -> readers.list(type, bits)
+            Kind.NULLABLE -> {
+                if (!type.isNullableReference) {
+                    throw UnsupportedOperationException("a $type value cannot be read through the C interface yet")
+                }
+                if (bits == 0L) null else box(type.element!!, bits, readers)
+            }
             else -> throw UnsupportedOperationException("a $kind value cannot be read through the C interface yet")
         }
     }
