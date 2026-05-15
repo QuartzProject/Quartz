@@ -484,7 +484,10 @@ TEST_CASE("native code runs the benchmark plugin like the interpreter") {
 }
 
 TEST_CASE("cached native objects are reused, and ignored when damaged") {
-    fs::path dir = fs::path(QUARTZ_COMPILER_PATH).parent_path() / "native-cache-test";
+    // One directory per linker, so the ctest variants of this binary can run at the same time.
+    const char* linker = std::getenv("QUARTZ_NATIVE_LINKER");
+    fs::path dir = fs::path(QUARTZ_COMPILER_PATH).parent_path() /
+                   (std::string("native-cache-test-") + (linker != nullptr ? linker : "default"));
     fs::remove_all(dir);
     std::vector<quartz::SourceInput> src{{"host.qzi", readFile("bench/plugin/host.qzi")},
                                          {"plugin.qz", readFile("bench/plugin/plugin.qz")}};
