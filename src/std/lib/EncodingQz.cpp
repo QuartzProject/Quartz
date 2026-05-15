@@ -18,6 +18,7 @@ import org.quartzlang.bytes.{bytesOf, concatBytes, readUInt, writeUInt}
 import org.quartzlang.crypto.sha1
 
 /// A 128-bit UUID (RFC 9562) as two big-endian halves.
+@derive(Eq, Hash)
 pub struct Uuid {
     high: int
     low: int
@@ -31,6 +32,18 @@ const NamespaceLow: u64 = 0x80b400c04fd430c8
 pub const NAMESPACE_DNS: Uuid = Uuid(DnsHigh, NamespaceLow as int)
 pub const NAMESPACE_URL: Uuid = Uuid(UrlHigh, NamespaceLow as int)
 pub const NIL_UUID: Uuid = Uuid(0, 0)
+
+impl Show for Uuid {
+    fn show(self) -> str {
+        return self.toStr()
+    }
+}
+
+impl Ord for Uuid {
+    fn cmp(self, other: Uuid) -> int {
+        return self.compareTo(other)
+    }
+}
 
 impl Uuid {
     pub fn version(self) -> int {

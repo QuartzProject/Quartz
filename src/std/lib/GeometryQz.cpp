@@ -6,11 +6,13 @@ const std::string_view kGeometryQz = R"qz(package org.quartzlang.geometry
 
 import org.quartzlang.math.{PI, atan2, cos, pow, sin, sqrt}
 
+@derive(Eq)
 pub struct Vec2 {
     x: float
     y: float
 }
 
+@derive(Eq)
 pub struct Vec3 {
     x: float
     y: float
@@ -31,6 +33,12 @@ pub fn inverseLerp(a: float, b: float, value: float) -> float {
 pub fn smoothstep(edge0: float, edge1: float, x: float) -> float {
     let t = inverseLerp(edge0, edge1, x).clamp(0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
+}
+
+impl Show for Vec2 {
+    fn show(self) -> str {
+        return self.toStr()
+    }
 }
 
 impl Vec2 {
@@ -103,6 +111,12 @@ impl Vec2 {
 
     pub fn toStr(self) -> str {
         return "({self.x}, {self.y})"
+    }
+}
+
+impl Show for Vec3 {
+    fn show(self) -> str {
+        return self.toStr()
     }
 }
 

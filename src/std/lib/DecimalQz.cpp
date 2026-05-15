@@ -105,6 +105,24 @@ pub fn parseDecimal(text: str) -> Result<Decimal, str> {
     return Ok(Decimal(value, s))
 }
 
+impl Show for Decimal {
+    fn show(self) -> str {
+        return self.toStr()
+    }
+}
+
+impl Eq for Decimal {
+    fn eq(self, other: Decimal) -> bool {
+        return self.compareTo(other) == 0
+    }
+}
+
+impl Ord for Decimal {
+    fn cmp(self, other: Decimal) -> int {
+        return self.compareTo(other)
+    }
+}
+
 impl Decimal {
     /// The same number with `scale` digits after the point, rounded with `mode` when digits are dropped.
     pub fn rescale(self, scale: int, mode: Rounding = Rounding.HalfEven) -> Decimal {

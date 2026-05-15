@@ -1,0 +1,24 @@
+// expect: 1m30s 500ms true true a 1970-01-01T00:00:00Z
+// expect: 1.50 1.5 true true
+// expect: (1.0, 2.0) true
+// expect: 1.2.3 true 00000000-0000-0000-0000-000000000000 true true
+import org.quartzlang.time.*
+import org.quartzlang.decimal.*
+import org.quartzlang.geometry.*
+import org.quartzlang.semver.*
+import org.quartzlang.encoding.*
+
+fn main() -> int {
+    let a = seconds(90)
+    let b = millis(500)
+    var m: Map<Duration, str> = Map()
+    m[a] = "a"
+    print("{a} {b} {a > b} {a == seconds(90)} {m[seconds(90)]} {fromEpochMillis(0)}")
+    let x = decimalOfUnscaled(150, 2)
+    let y = decimalOfUnscaled(15, 1)
+    print("{x} {y} {x == y} {x < decimalOf(2)}")
+    print("{Vec2(1.0, 2.0)} {Vec3(1.0, 2.0, 3.0) == Vec3(1.0, 2.0, 3.0)}")
+    let v = parseSemver("1.2.3").unwrap()
+    print("{v} {v < parseSemver("1.10").unwrap()} {NIL_UUID} {NIL_UUID == Uuid(0, 0)} {NAMESPACE_DNS > NIL_UUID}")
+    return 0
+}

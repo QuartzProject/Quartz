@@ -12,10 +12,17 @@ fn satisfiesRange(major: int, minor: int, patch: int, range: str) -> Result<bool
 const std::string_view kSemverQz = R"qz(package org.quartzlang.semver
 
 /// A version as the package manager orders and matches them.
+@derive(Eq, Hash, Ord)
 pub struct Semver {
     major: int
     minor: int
     patch: int
+}
+
+impl Show for Semver {
+    fn show(self) -> str {
+        return self.toStr()
+    }
 }
 
 impl Semver {

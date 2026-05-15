@@ -29,6 +29,7 @@ fn floorMod(a: int, b: int) -> int {
 }
 
 /// A signed span of time in nanoseconds, up to about 292 years either way; overflowing it is a panic.
+@derive(Eq, Hash, Ord)
 pub struct Duration {
     nanos: int
 }
@@ -178,6 +179,12 @@ fn scaled(n: int, unit: int, digits: int, suffix: str) -> str {
     return "{n / unit}.{fraction(rest, digits)}{suffix}"
 }
 
+impl Show for Duration {
+    fn show(self) -> str {
+        return self.toStr()
+    }
+}
+
 impl Duration {
     pub fn toNanos(self) -> int {
         return self.nanos
@@ -288,6 +295,7 @@ impl Duration {
 
 /// A point in time as nanoseconds since 1970-01-01T00:00:00Z without leap seconds (Unix time), from 1677 to 2262.
 /// Quartz has no clock: the host hands instants in, through a function of its interface.
+@derive(Eq, Hash, Ord)
 pub struct Instant {
     nanos: int
 }
@@ -375,6 +383,12 @@ pub fn instantOf(year: int, month: int, day: int, hour: int = 0, minute: int = 0
         return Ok(Instant(v))
     }
     return Err("{year}-{month}-{day} is outside the range of an instant")
+}
+
+impl Show for Instant {
+    fn show(self) -> str {
+        return self.toStr()
+    }
 }
 
 impl Instant {
