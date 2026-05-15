@@ -46,5 +46,7 @@ inline bool isComparableElement(const TypeTable& t, TypeId elem) {
 
 /// Operand and result types of the intrinsics added after `Panic`; false when they do not match.
 bool builtinSignatureOk(const TypeTable& t, Intrinsic op, std::span<const TypeId> args, TypeId dst);
+/// The same for map iteration, `str.decode` and `str.format` (ir/ValidateLanguage.cpp).
+bool languageIntrinsicOk(const TypeTable& t, Intrinsic op, std::span<const TypeId> args, TypeId dst);
 
 } // namespace quartz::ir

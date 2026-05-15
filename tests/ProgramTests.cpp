@@ -219,7 +219,8 @@ TEST_CASE("builtin intrinsics given another builtin's operands are rejected") {
             inst.imm = own;
         }
     }
-    CHECK(checked == 2 * 40);
+    CHECK(checked == 2 * static_cast<int>(static_cast<std::uint32_t>(Intrinsic::Count) -
+                                          static_cast<std::uint32_t>(Intrinsic::StrToInt)));
 }
 
 TEST_CASE("invalid programs report the expected diagnostics") {
