@@ -70,7 +70,7 @@ std::uint64_t Sandbox::valueHash(TypeId type, const Slot* v) const {
         std::uint64_t h = combine(2, v[0].u);
         if (v[0].u < info.variants.size()) {
             std::uint32_t off = 1;
-            for (TypeId p : info.variants[v[0].u].payload) {
+            for (TypeId p : info.variants[static_cast<std::size_t>(v[0].u)].payload) {
                 h = combine(h, valueHash(p, v + off));
                 off += lay.slots(p);
             }
@@ -105,7 +105,7 @@ bool Sandbox::valueEq(TypeId type, const Slot* a, const Slot* b) const {
             return a[0].u == b[0].u;
         }
         std::uint32_t off = 1;
-        for (TypeId p : info.variants[a[0].u].payload) {
+        for (TypeId p : info.variants[static_cast<std::size_t>(a[0].u)].payload) {
             if (!valueEq(p, a + off, b + off)) {
                 return false;
             }
