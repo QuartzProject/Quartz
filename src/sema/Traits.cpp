@@ -123,18 +123,25 @@ bool Checker::builtinImplements(TypeId t, LangTrait lang) {
                 return true; // payload-free enums compare their tags, as before traits existed
             }
         }
-        if (info.kind == ir::TypeKind::Nullable) {
+        if (info.kind == ir::TypeKind::Nullable || info.kind == ir::TypeKind::List) {
             return implements(info.elem, langTraits_[std::size_t(lang)]);
         }
         return hashable || types_->isFloat(t) || (info.kind == ir::TypeKind::Tuple && all(info.elems));
     case LangTrait::Hash:
         return hashable || (info.kind == ir::TypeKind::Tuple && all(info.elems));
     case LangTrait::Ord:
+        if (info.kind == ir::TypeKind::List) {
+            return implements(info.elem, langTraits_[std::size_t(lang)]);
+        }
         return types_->isNumeric(t) || t == ir::kChar || t == ir::kStr ||
                (info.kind == ir::TypeKind::Tuple && all(info.elems));
     case LangTrait::Show:
         if (info.kind == ir::TypeKind::Nullable || info.kind == ir::TypeKind::List) {
             return implements(info.elem, langTraits_[std::size_t(lang)]);
+        }
+        if (info.kind == ir::TypeKind::Map) {
+            return implements(info.key, langTraits_[std::size_t(lang)]) &&
+                   implements(info.elem, langTraits_[std::size_t(lang)]);
         }
         return types_->isNumeric(t) || t == ir::kBool || t == ir::kChar || t == ir::kStr ||
                (info.kind == ir::TypeKind::Tuple && all(info.elems));

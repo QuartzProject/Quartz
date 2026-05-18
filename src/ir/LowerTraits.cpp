@@ -27,6 +27,36 @@ bool Lowerer::vmEquatable(TypeId t) const {
 
 bool Lowerer::vmOrdered(TypeId t) const { return types_->isNumeric(t) || t == kChar || t == kStr; }
 
+Reg Lowerer::listLength(Reg list) {
+    Reg n = newReg(kI64);
+    emitArgs(Op::Intrinsic, n, static_cast<std::uint32_t>(Intrinsic::ListLen), {list});
+    return n;
+}
+
+Reg Lowerer::listAt(Reg list, Reg index, TypeId elem) {
+    Reg x = newReg(elem);
+    emitArgs(Op::Intrinsic, x, static_cast<std::uint32_t>(Intrinsic::ListGet), {list, index});
+    return x;
+}
+
+template <class Body>
+void Lowerer::forEachIndex(Reg n, Body&& body) {
+    Reg i = newReg(kI64);
+    emit(Op::Move, i, constInt(0, kI64));
+    std::size_t end = depth_;
+    open(Op::Block);
+    std::size_t loop = depth_;
+    open(Op::Loop);
+    Reg past = newReg(kBool);
+    emit(Op::Ge, past, i, n);
+    brIf(past, end);
+    body(i);
+    emit(Op::Add, i, i, constInt(1, kI64));
+    br(loop);
+    close();
+    close();
+}
+
 sema::FnInfo* Lowerer::userMethod(TypeId t, std::string_view name, std::vector<TypeId>& targs) const {
     const TypeInfo& info = types_->info(t);
     if (info.kind != TypeKind::Struct && info.kind != TypeKind::Enum) {
@@ -94,6 +124,19 @@ Reg Lowerer::equalsOf(Reg a, Reg b, TypeId t) {
             emit(Op::Not, differ, res);
             brIf(differ, done);
         }
+    } else if (info.kind == TypeKind::List) {
+        TypeId elem = info.elem;
+        Reg na = listLength(a);
+        emit(Op::Eq, res, na, listLength(b));
+        Reg differ = newReg(kBool);
+        emit(Op::Not, differ, res);
+        brIf(differ, done);
+        forEachIndex(na, [&](Reg i) {
+            emit(Op::Move, res, equalsOf(listAt(a, i, elem), listAt(b, i, elem), elem));
+            Reg unequal = newReg(kBool);
+            emit(Op::Not, unequal, res);
+            brIf(unequal, done);
+        });
     } else {
         diags_.error({}, std::format("internal: no equality for '{}'", types_->name(t)));
         emit(Op::Move, res, constInt(0, kBool));
@@ -181,6 +224,26 @@ Reg Lowerer::compareOf(Reg a, Reg b, TypeId t) {
             emit(Op::Ne, differ, res, constInt(0, kI64));
             brIf(differ, done);
         }
+    } else if (types_->kind(t) == TypeKind::List) {
+        // Lexicographic, like tuples; a list that is a prefix of the other comes first.
+        TypeId elem = types_->info(t).elem;
+        Reg na = listLength(a);
+        Reg nb = listLength(b);
+        Reg shorter = newReg(kI64);
+        Reg aFirst = newReg(kBool);
+        emit(Op::Lt, aFirst, na, nb);
+        open(Op::If, aFirst);
+        emit(Op::Move, shorter, na);
+        emit(Op::Else);
+        emit(Op::Move, shorter, nb);
+        close();
+        forEachIndex(shorter, [&](Reg i) {
+            emit(Op::Move, res, compareOf(listAt(a, i, elem), listAt(b, i, elem), elem));
+            Reg differ = newReg(kBool);
+            emit(Op::Ne, differ, res, constInt(0, kI64));
+            brIf(differ, done);
+        });
+        emit(Op::Move, res, compareOf(na, nb, kI64));
     } else {
         diags_.error({}, std::format("internal: no ordering for '{}'", types_->name(t)));
     }
@@ -260,6 +323,35 @@ Reg Lowerer::showOf(Reg r, TypeId t) {
         Reg joined = newReg(kStr);
         emitArgs(Op::Intrinsic, joined, static_cast<std::uint32_t>(Intrinsic::ListJoin), {texts, constStr(", ")});
         return concatParts({constStr("["), joined, constStr("]")});
+    }
+    if (info.kind == TypeKind::Map) {
+        // "{k=v, k2=v2}" in insertion order, as Kotlin prints a map.
+        TypeId key = info.key;
+        TypeId value = info.elem;
+        Reg texts = newReg(types_->list(kStr));
+        emitArgs(Op::Intrinsic, texts, static_cast<std::uint32_t>(Intrinsic::ListNew), {});
+        Reg cursor = newReg(kI64);
+        emitArgs(Op::Intrinsic, cursor, static_cast<std::uint32_t>(Intrinsic::MapNext), {r, constInt(-1, kI64)});
+        std::size_t exit = depth_;
+        open(Op::Block);
+        std::size_t loop = depth_;
+        open(Op::Loop);
+        Reg end = newReg(kBool);
+        emit(Op::Lt, end, cursor, constInt(0, kI64));
+        brIf(end, exit);
+        Reg k = newReg(key);
+        emitArgs(Op::Intrinsic, k, static_cast<std::uint32_t>(Intrinsic::MapKeyAt), {r, cursor});
+        Reg v = newReg(value);
+        emitArgs(Op::Intrinsic, v, static_cast<std::uint32_t>(Intrinsic::MapValueAt), {r, cursor});
+        Reg entry = concatParts({showOf(k, key), constStr("="), showOf(v, value)});
+        emitArgs(Op::Intrinsic, kNoReg, static_cast<std::uint32_t>(Intrinsic::ListPush), {texts, entry});
+        emitArgs(Op::Intrinsic, cursor, static_cast<std::uint32_t>(Intrinsic::MapNext), {r, cursor});
+        br(loop);
+        close();
+        close();
+        Reg joined = newReg(kStr);
+        emitArgs(Op::Intrinsic, joined, static_cast<std::uint32_t>(Intrinsic::ListJoin), {texts, constStr(", ")});
+        return concatParts({constStr("{"), joined, constStr("}")});
     }
     diags_.error({}, std::format("internal: no text form for '{}'", types_->name(t)));
     emit(Op::Move, res, constStr(""));

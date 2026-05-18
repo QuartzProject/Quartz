@@ -70,6 +70,11 @@ public:
     Reg signOf(Reg lt, Reg gt);
     Reg showOf(Reg r, TypeId t);
     Reg concatParts(const std::vector<Reg>& parts);
+    Reg listLength(Reg list);
+    Reg listAt(Reg list, Reg index, TypeId elem);
+    /// Emits `body(i)` for i in 0..n.
+    template <class Body>
+    void forEachIndex(Reg n, Body&& body);
     Reg formatted(Reg v, TypeId t, std::uint64_t spec);
     Reg langTraitCall(CallExpr* e, TypeId recvType, Reg dst);
     Reg lowerTraitCompare(BinaryOp op, Reg l, Reg r, TypeId t);
