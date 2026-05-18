@@ -23,7 +23,7 @@ extern "C" {
 /* Bumped on any incompatible change to this header; compare with qz_abi_version() at run time. */
 #define QZ_ABI_VERSION 1
 /* Raised when functions are added; a host needing newer ones checks qz_api_level() before looking them up. */
-#define QZ_API_LEVEL 2
+#define QZ_API_LEVEL 3
 
 typedef struct qz_program qz_program;
 typedef struct qz_sandbox qz_sandbox;
@@ -191,7 +191,7 @@ QZ_API uint32_t qz_program_function_result_type(const qz_program* program, uint3
 QZ_API uint32_t qz_program_import_param_type(const qz_program* program, uint32_t import, uint32_t index);
 QZ_API uint32_t qz_program_import_result_type(const qz_program* program, uint32_t import);
 QZ_API qz_kind qz_type_kind(const qz_program* program, uint32_t type, uint32_t* slots);
-/* Element of a list or nullable, 0 for other types. */
+/* Element of a list or nullable, value of a map, 0 for other types. */
 QZ_API uint32_t qz_type_elem(const qz_program* program, uint32_t type);
 /* True for imports the runtime binds itself (the standard library); the host binds the others. */
 QZ_API bool qz_program_import_is_native(const qz_program* program, uint32_t import);
@@ -232,6 +232,28 @@ QZ_API qz_status qz_sandbox_resume_at(qz_sandbox* sandbox, uint32_t task, const 
                                       qz_task_outcome* outcome);
 QZ_API void qz_call_str_into(qz_call* call, const char* utf8, size_t length, qz_slot* out);
 QZ_API void qz_sandbox_str_into(qz_sandbox* sandbox, const char* utf8, size_t length, qz_slot* out);
+
+/* Waits that produce a struct, tuple, enum or nullable take several slots: resume with all of them. */
+QZ_API qz_status qz_sandbox_resume_wide(qz_sandbox* sandbox, uint32_t task, const qz_slot* value, size_t slots,
+                                        qz_task_outcome* outcome);
+
+/* Maps iterate in insertion order. Keys and values are given and read as their slots (qz_type_kind counts them). */
+QZ_API uint32_t qz_type_key(const qz_program* program, uint32_t type);
+/* An empty map built like qz_sandbox_list; 0 slot when the type is not a map. */
+QZ_API qz_slot qz_sandbox_map(qz_sandbox* sandbox, uint32_t map_type);
+/* Inserts or replaces an entry; false when the quota is exhausted or the map is not one the host may change. */
+QZ_API bool qz_map_set(qz_sandbox* sandbox, qz_slot map, const qz_slot* key, const qz_slot* value);
+QZ_API size_t qz_map_length(qz_slot map);
+/* Copies entry `index` in insertion order; false out of range. Reading the indexes in order is linear overall. */
+QZ_API bool qz_map_entry(qz_sandbox* sandbox, qz_slot map, size_t index, qz_slot* key_out, qz_slot* value_out);
+/* Copies the value stored under `key`; false when it is absent. */
+QZ_API bool qz_map_get(qz_sandbox* sandbox, qz_slot map, const qz_slot* key, qz_slot* value_out);
+QZ_API bool qz_map_set_at(qz_sandbox* sandbox, const qz_slot* map, const qz_slot* key, const qz_slot* value);
+QZ_API size_t qz_map_length_at(const qz_slot* map);
+QZ_API bool qz_map_entry_at(qz_sandbox* sandbox, const qz_slot* map, size_t index, qz_slot* key_out,
+                            qz_slot* value_out);
+QZ_API bool qz_map_get_at(qz_sandbox* sandbox, const qz_slot* map, const qz_slot* key, qz_slot* value_out);
+QZ_API void qz_sandbox_map_into(qz_sandbox* sandbox, uint32_t map_type, qz_slot* out);
 
 /* Trap codes, for hosts that react to the kind of failure. */
 typedef enum qz_trap {

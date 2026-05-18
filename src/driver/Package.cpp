@@ -274,6 +274,12 @@ public:
         case ir::TypeKind::List:
         case ir::TypeKind::Nullable:
             return visit(info.elem);
+        case ir::TypeKind::Map:
+            if (!visit(info.key) || !visit(info.elem)) {
+                return false;
+            }
+            markKey(info.key);
+            return true;
         case ir::TypeKind::Tuple:
             for (ir::TypeId e : info.elems) {
                 if (!visit(e)) {
@@ -314,6 +320,7 @@ public:
         for (ir::TypeId t : order_) {
             const ir::TypeInfo& info = types_.info(t);
             out += info.reprC ? "\n@repr(C)\n" : "\n";
+            out += keys_.contains(t) ? "@derive(Eq, Hash)\n" : "";
             if (info.kind == ir::TypeKind::Struct) {
                 out += std::format("struct {} {{\n", info.name);
                 for (const ir::Field& f : info.fields) {
@@ -335,9 +342,32 @@ public:
     }
 
 private:
+    // A struct or enum used as a map key has Hash in the provider, so the client declares it with the same derive.
+    void markKey(ir::TypeId t) {
+        const ir::TypeInfo& info = types_.info(t);
+        if (info.kind == ir::TypeKind::Tuple) {
+            for (ir::TypeId e : info.elems) {
+                markKey(e);
+            }
+            return;
+        }
+        if ((info.kind != ir::TypeKind::Struct && info.kind != ir::TypeKind::Enum) || !keys_.insert(t).second) {
+            return;
+        }
+        for (const ir::Field& f : info.fields) {
+            markKey(f.type);
+        }
+        for (const ir::VariantInfo& v : info.variants) {
+            for (ir::TypeId p : v.payload) {
+                markKey(p);
+            }
+        }
+    }
+
     const ir::TypeTable& types_;
     std::vector<ir::TypeId> order_;
     std::set<ir::TypeId> visiting_;
+    std::set<ir::TypeId> keys_;
 };
 
 } // namespace
@@ -352,8 +382,8 @@ std::expected<std::string, std::string> interfaceOf(const vm::Program& program, 
             return std::unexpected(std::format("export '{}' is not an exported non-suspend function", name));
         }
         const vm::CompiledFunction& fn = program.functions[f];
-        constexpr std::string_view kCross = "only scalars, str, Bytes, lists, tuples and non-generic structs and enums "
-                                            "cross packages";
+        constexpr std::string_view kCross = "only scalars, str, Bytes, lists, maps, tuples and non-generic structs and "
+                                            "enums cross packages";
         fns += std::format("\nfn {}(", name);
         std::size_t n = 0;
         for (ir::TypeId p : fn.params) {

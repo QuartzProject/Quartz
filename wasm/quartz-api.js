@@ -1,6 +1,8 @@
 // The embedding API of Quartz for JavaScript, over quartz-capi.js (the C interface built with Emscripten).
 // Types and documentation are in quartz-api.d.ts.
 
+import { Values } from "./quartz-values.js";
+
 export const Kind = Object.freeze(["void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64",
     "char", "str", "bytes", "list", "map", "struct", "enum", "nullable", "tuple", "handle", "function", "other"]);
 export const TrapCode = Object.freeze(["none", "unreachable", "divide_by_zero", "index_out_of_bounds", "null_unwrap",
@@ -8,8 +10,6 @@ export const TrapCode = Object.freeze(["none", "unreachable", "divide_by_zero", 
 const Tier = { default: 0, interpreter: 1, automatic: 2, native: 3 };
 const OK = 0;
 const TRAP = 2;
-const BITS = { i8: 8, i16: 16, i32: 32, u8: 8, u16: 16, u32: 32 };
-const REFERENCES = new Set(["str", "bytes", "list", "map"]);
 
 export class QuartzError extends Error {
     constructor(message, options) {
@@ -46,7 +46,6 @@ export async function loadQuartz(options = {}) {
 }
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 class Quartz {
     #m;
@@ -206,12 +205,36 @@ class Quartz {
         if (cache.has(id)) {
             return cache.get(id);
         }
-        const kind = Kind[this.#m._qz_type_kind(program, id, this.scratch)] ?? "other";
+        const m = this.#m;
+        const kind = Kind[m._qz_type_kind(program, id, this.scratch)] ?? "other";
         const type = { kind, slots: this.u32(this.scratch), id };
         cache.set(id, type);
-        const element = this.#m._qz_type_elem(program, id);
+        const element = m._qz_type_elem(program, id);
         if (element !== 0) {
             type.element = this.type(program, element, cache);
+        }
+        if (kind === "map") {
+            type.key = this.type(program, m._qz_type_key(program, id), cache);
+        } else if (kind === "nullable") {
+            type.pointer = !!m._qz_type_nullable_is_pointer(program, id);
+        } else if (kind === "struct" || kind === "tuple") {
+            type.fields = [];
+            for (let i = 0; i < m._qz_type_field_count(program, id); ++i) {
+                const field = m._qz_type_field(program, id, i, this.scratch);
+                const offset = this.u32(this.scratch);
+                const name = kind === "struct" ? m.UTF8ToString(m._qz_type_field_name(program, id, i)) : undefined;
+                type.fields.push({ name, offset, type: this.type(program, field, cache) });
+            }
+        } else if (kind === "enum") {
+            type.variants = [];
+            for (let v = 0; v < m._qz_type_variant_count(program, id); ++v) {
+                const payload = [];
+                for (let k = 0; k < m._qz_type_variant_payload_count(program, id, v); ++k) {
+                    const p = m._qz_type_variant_payload(program, id, v, k, this.scratch);
+                    payload.push({ offset: this.u32(this.scratch), type: this.type(program, p, cache) });
+                }
+                type.variants.push({ name: m.UTF8ToString(m._qz_type_variant_name(program, id, v)), payload });
+            }
         }
         return type;
     }
@@ -325,10 +348,12 @@ class Sandbox {
     #argCapacity = 0;
     #active = false;
     #failure;
+    #values;
 
     constructor(quartz, program, limits) {
         this.#q = quartz;
         this.#program = program;
+        this.#values = new Values(quartz, this);
         const q = quartz;
         q.setSlot(q.scratch, BigInt(limits.fuelPerCall ?? 0));
         const tier = Tier[limits.tier ?? "default"];
@@ -383,7 +408,7 @@ class Sandbox {
                 const status = width === 1 ? m._qz_sandbox_call(this.address, f.index, this.#args, n, out)
                     : m._qz_sandbox_call_wide(this.address, f.index, this.#args, n, out, width);
                 this.#check(status);
-                return this.#decodeAt(f.signature.result, out);
+                return this.#values.decodeAt(f.signature.result, out);
             } finally {
                 m._free(out);
             }
@@ -406,9 +431,16 @@ class Sandbox {
         return this.#run(() => {
             const m = this.#q.module;
             const type = this.#q.type(this.#program.address, m._qz_sandbox_wait_type(this.address, task));
-            const bits = value === undefined || value === null ? 0n : this.#encode(type, value, false);
-            this.#q.setSlot(this.#q.scratch, bits);
-            this.#check(m._qzw_resume(this.address, task, this.#q.scratch, this.#q.scratch + 16));
+            const slots = type.kind === "void" ? 0 : type.slots;
+            const cell = m._malloc(8 * Math.max(1, slots));
+            try {
+                if (slots !== 0) {
+                    this.#values.encodeInto(type, value, false, cell);
+                }
+                this.#check(m._qz_sandbox_resume_wide(this.address, task, cell, slots, this.#q.scratch + 16));
+            } finally {
+                m._free(cell);
+            }
             return this.#outcome();
         });
     }
@@ -523,7 +555,7 @@ class Sandbox {
             const values = [];
             let at = args;
             for (const p of sig.params) {
-                values.push(this.#decodeAt(p, at));
+                values.push(this.#values.decodeAt(p, at));
                 at += 8 * p.slots;
             }
             values.push({ signature: sig, charge: (units) => {
@@ -532,7 +564,7 @@ class Sandbox {
             } });
             const value = binding.fn(...values);
             if (sig.result.kind !== "void") {
-                q.setSlot(result, this.#encode(sig.result, value, call));
+                this.#values.encodeInto(sig.result, value, call, result);
             }
             return true;
         } catch (e) {
@@ -569,170 +601,20 @@ class Sandbox {
         if (args.length !== signature.params.length) {
             throw new TypeError(`expected ${signature.params.length} arguments, got ${args.length}`);
         }
-        if (args.length > this.#argCapacity) {
+        const slots = signature.params.reduce((n, p) => n + p.slots, 0);
+        if (slots > this.#argCapacity) {
             if (this.#args) {
                 this.#q.module._free(this.#args);
             }
-            this.#argCapacity = Math.max(8, args.length);
+            this.#argCapacity = Math.max(8, slots);
             this.#args = this.#q.module._malloc(8 * this.#argCapacity);
         }
-        args.forEach((a, i) => this.#q.setSlot(this.#args + 8 * i, this.#encode(signature.params[i], a, false)));
-        return args.length;
-    }
-
-    /** One slot the program reads as `type`; `call` is the host call being answered, or false outside one. */
-    #encode(type, value, call) {
-        const { kind } = type;
-        if (type.slots !== 1) {
-            throw new TypeError(`a ${kind} value cannot cross the C interface yet`);
-        }
-        const fail = () => new TypeError(`${typeof value} ${String(value)} cannot be passed as ${kind}`);
-        switch (kind) {
-        case "bool":
-            if (typeof value !== "boolean") throw fail();
-            return value ? 1n : 0n;
-        case "i8": case "i16": case "i32": case "u8": case "u16": case "u32": case "i64": case "u64": case "handle": {
-            let n;
-            if (typeof value === "bigint") {
-                n = value;
-            } else if (Number.isSafeInteger(value)) {
-                n = BigInt(value);
-            } else {
-                throw fail();
-            }
-            const bits = BITS[kind];
-            const signed = kind.startsWith("i");
-            const width = bits ?? 64;
-            const fits = signed ? BigInt.asIntN(width, n) === n : n >= 0n && BigInt.asUintN(width, n) === n;
-            if (!fits) throw new RangeError(`${n} does not fit in ${kind}`);
-            return BigInt.asUintN(64, n);
-        }
-        case "f64":
-            if (typeof value !== "number") throw fail();
-            return new BigUint64Array(new Float64Array([value]).buffer)[0];
-        case "f32":
-            if (typeof value !== "number") throw fail();
-            return BigInt(new Uint32Array(new Float32Array([value]).buffer)[0]);
-        case "char": {
-            const cp = typeof value === "string" && [...value].length === 1 ? value.codePointAt(0) : value;
-            if (!Number.isInteger(cp) || cp < 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) throw fail();
-            return BigInt(cp);
-        }
-        case "str":
-            if (typeof value !== "string") throw fail();
-            return this.#newStr(encoder.encode(value), call);
-        case "bytes":
-            if (!(value instanceof Uint8Array)) throw fail();
-            return this.#newStr(value, call);
-        case "list":
-            if (!Array.isArray(value)) throw fail();
-            return this.#newList(type, value, call);
-        case "nullable":
-            if (value === null || value === undefined) {
-                if (!REFERENCES.has(type.element?.kind)) throw fail();
-                return 0n;
-            }
-            if (!REFERENCES.has(type.element?.kind)) {
-                throw new TypeError(`a ${kind} value cannot cross the C interface yet`);
-            }
-            return this.#encode(type.element, value, call);
-        default:
-            throw new TypeError(`a ${kind} value cannot cross the C interface yet`);
-        }
-    }
-
-    #newStr(bytes, call) {
-        const q = this.#q;
-        const data = q.bytesIn(bytes);
-        const out = q.scratch + 40;
-        if (call) {
-            q.module._qzw_call_str(call, data, bytes.length, out);
-        } else {
-            q.module._qzw_sandbox_str(this.address, data, bytes.length, out);
-        }
-        q.module._free(data);
-        const bits = q.slot(out);
-        if (bits === 0n) {
-            throw new TrapError("out_of_memory", "out of memory passing a string");
-        }
-        return bits;
-    }
-
-    #newList(type, values, call) {
-        const q = this.#q;
-        const m = q.module;
-        const cell = m._malloc(16);
-        try {
-            m._qzw_sandbox_list(this.address, type.id, cell);
-            if (q.slot(cell) === 0n) {
-                throw new TrapError("out_of_memory", "cannot make a list");
-            }
-            for (const v of values) {
-                q.setSlot(cell + 8, this.#encode(type.element, v, call));
-                if (!m._qzw_list_push(this.address, cell, cell + 8, 1)) {
-                    throw new TrapError("out_of_memory", "cannot grow the list");
-                }
-            }
-            return q.slot(cell);
-        } finally {
-            m._free(cell);
-        }
-    }
-
-    #decodeAt(type, ptr) {
-        if (type.slots > 1) {
-            const raw = [];
-            for (let i = 0; i < type.slots; ++i) {
-                raw.push(this.#q.slot(ptr + 8 * i));
-            }
-            return raw;
-        }
-        return type.kind === "void" ? undefined : this.#decode(type, this.#q.slot(ptr));
-    }
-
-    #decode(type, bits) {
-        const q = this.#q;
-        switch (type.kind) {
-        case "void": return undefined;
-        case "bool": return bits !== 0n;
-        case "i8": case "i16": case "i32": return Number(BigInt.asIntN(BITS[type.kind], bits));
-        case "u8": case "u16": case "u32": return Number(BigInt.asUintN(BITS[type.kind], bits));
-        case "i64": return BigInt.asIntN(64, bits);
-        case "u64": case "handle": return BigInt.asUintN(64, bits);
-        case "f64": return new Float64Array(new BigUint64Array([bits]).buffer)[0];
-        case "f32": return new Float32Array(new Uint32Array([Number(BigInt.asUintN(32, bits))]).buffer)[0];
-        case "char": return String.fromCodePoint(Number(bits));
-        case "str": return decoder.decode(q.strBytes(bits));
-        case "bytes": return q.strBytes(bits);
-        case "list": return this.#readList(type, bits);
-        case "nullable":
-            if (type.slots === 1 && REFERENCES.has(type.element?.kind)) {
-                return bits === 0n ? null : this.#decode(type.element, bits);
-            }
-            return bits;
-        default: return bits;
-        }
-    }
-
-    #readList(type, bits) {
-        const q = this.#q;
-        const m = q.module;
-        const width = Math.max(1, type.element.slots);
-        const cell = m._malloc(8 + 8 * width);
-        try {
-            q.setSlot(cell, bits);
-            const out = [];
-            const n = m._qzw_list_length(cell) >>> 0;
-            for (let i = 0; i < n; ++i) {
-                if (!m._qzw_list_get(cell, i, cell + 8, width)) {
-                    throw new QuartzError(`cannot read element ${i}`);
-                }
-                out.push(this.#decodeAt(type.element, cell + 8));
-            }
-            return out;
-        } finally {
-            m._free(cell);
-        }
+        let at = this.#args;
+        args.forEach((a, i) => {
+            this.#values.encodeInto(signature.params[i], a, false, at);
+            at += 8 * signature.params[i].slots;
+        });
+        return slots;
     }
 
     #outcome() {
@@ -745,7 +627,7 @@ class Sandbox {
         if (kind === "done") {
             const type = this.#tasks.get(task);
             this.#tasks.delete(task);
-            value = type === undefined ? bits : this.#decode(type, bits);
+            value = type === undefined || type.slots > 1 ? bits : this.#values.decodeAt(type, q.scratch + 24);
         } else {
             value = bits;
         }

@@ -1,3 +1,4 @@
+#include "capi/CApiImpl.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 #include "quartz/quartz.h"
@@ -12,40 +13,13 @@
 #include <string>
 #include <vector>
 
-struct qz_program {
-    std::shared_ptr<const quartz::vm::Program> program;
-    std::vector<std::uint8_t> binary;
-};
-
-struct qz_call {
-    quartz::vm::HostCall& call;
-    qz_sandbox* owner;
-    std::size_t argSlots;
-};
-
-struct qz_sandbox {
-    struct Binding {
-        qz_host_fn fn;
-        void* user;
-        qz_sandbox* owner;
-        qz_host_fn_direct direct = nullptr;
-        std::size_t argSlots = 0;
-    };
-
-    std::unique_ptr<quartz::vm::Sandbox> sandbox;
-    std::vector<std::unique_ptr<Binding>> bindings;
-    std::string error;
-    qz_trap trap = QZ_TRAP_NONE;
-};
-
 namespace {
 
-static_assert(sizeof(qz_slot) == sizeof(quartz::vm::Slot));
-static_assert(static_cast<int>(quartz::ir::TrapCode::HostError) + 1 == QZ_TRAP_HOST_ERROR);
-
-quartz::vm::Slot toVm(qz_slot s) { return std::bit_cast<quartz::vm::Slot>(s); }
-
-qz_slot toC(quartz::vm::Slot s) { return std::bit_cast<qz_slot>(s); }
+using quartz::capi::guarded;
+using quartz::capi::outcomeOf;
+using quartz::capi::toC;
+using quartz::capi::toVm;
+using quartz::capi::trapped;
 
 char* copyOut(std::string_view text) {
     auto* out = static_cast<char*>(std::malloc(text.size() + 1));
@@ -68,10 +42,6 @@ std::vector<quartz::vm::Slot> slots(const qz_slot* args, std::size_t count) {
         out[i] = toVm(args[i]);
     }
     return out;
-}
-
-qz_task_outcome outcomeOf(const quartz::vm::TaskOutcome& o) {
-    return {static_cast<qz_task_kind>(o.kind), o.task, toC(o.value)};
 }
 
 qz_slot* resultSlots(quartz::vm::HostCall& call) {
@@ -196,26 +166,6 @@ std::vector<quartz::ir::TypeId> callerParams(const quartz::vm::Program& p, uint3
         }
     }
     return out;
-}
-
-// A C caller cannot catch C++ exceptions, so every entry point turns them into an error.
-template <typename F>
-qz_status guarded(qz_sandbox* sb, F&& body) {
-    sb->trap = QZ_TRAP_NONE;
-    try {
-        return body();
-    } catch (const std::bad_alloc&) {
-        sb->error = "out of memory";
-    } catch (...) {
-        sb->error = "internal error";
-    }
-    return QZ_ERROR;
-}
-
-qz_status trapped(qz_sandbox* sb, const quartz::vm::Trap& trap) {
-    sb->error = trap.describe();
-    sb->trap = static_cast<qz_trap>(static_cast<int>(trap.code) + 1);
-    return QZ_TRAP;
 }
 
 } // namespace
@@ -573,7 +523,9 @@ uint32_t qz_type_elem(const qz_program* program, uint32_t type) {
         return 0;
     }
     auto k = types.kind(type);
-    return k == quartz::ir::TypeKind::List || k == quartz::ir::TypeKind::Nullable ? types.info(type).elem : 0;
+    return k == quartz::ir::TypeKind::List || k == quartz::ir::TypeKind::Nullable || k == quartz::ir::TypeKind::Map
+               ? types.info(type).elem
+               : 0;
 }
 
 bool qz_program_import_is_native(const qz_program* program, uint32_t import) {

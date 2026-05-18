@@ -49,7 +49,7 @@ target_link_options(quartz-capi PRIVATE -sMODULARIZE=1 -sEXPORT_NAME=createQuart
     -sALLOW_TABLE_GROWTH=1 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB
     -sEXPORTED_FUNCTIONS=${quartz_capi_exports}
     -sEXPORTED_RUNTIME_METHODS=addFunction,removeFunction,HEAPU8,HEAP32,UTF8ToString)
-foreach(file quartz-api.js quartz-api.d.ts)
+foreach(file quartz-api.js quartz-values.js quartz-api.d.ts)
     configure_file(${file} ${CMAKE_CURRENT_BINARY_DIR}/${file} COPYONLY)
 endforeach()
 add_test(NAME quartz_wasm_api COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/test-api.mjs

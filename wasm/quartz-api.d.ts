@@ -12,12 +12,21 @@ export type TrapCode = "none" | "unreachable" | "divide_by_zero" | "index_out_of
 export declare const Kind: readonly Kind[];
 export declare const TrapCode: readonly TrapCode[];
 
-/** A parameter or result type: its kind, the slots it takes, its id, and the element of a list or nullable. */
+/** A parameter or result type: its kind, the slots it takes, its id, and what it is made of. */
 export interface Type {
     kind: Kind;
     slots: number;
     id: number;
+    /** The element of a list or nullable, the value of a map. */
     element?: Type;
+    /** The key of a map. */
+    key?: Type;
+    /** A nullable of a reference type is one slot, null when 0. */
+    pointer?: boolean;
+    /** Fields of a struct (named) or elements of a tuple, with their slot offsets. */
+    fields?: { name?: string; offset: number; type: Type }[];
+    /** Variants of an enum; slot 0 holds the index and payloads start at slot 1. */
+    variants?: { name: string; payload: { offset: number; type: Type }[] }[];
 }
 
 export interface Signature {
@@ -39,9 +48,11 @@ export interface Import {
     signature: Signature;
 }
 
-// bool: boolean; i8..u32, f32, f64: number; i64, u64, handle: bigint; char, str: string; bytes: Uint8Array; list: array;
-// a nullable str, bytes or list: null or the value; results wider than one slot (struct, tuple): their raw bigint slots.
-export type QuartzValue = undefined | null | boolean | number | bigint | string | Uint8Array | QuartzValue[];
+// bool: boolean; i8..u32, f32, f64: number; i64, u64, handle: bigint; char, str: string; bytes: Uint8Array; list and
+// tuple: array; map: Map in insertion order; struct: object by field name; enum: { variant, values } (a variant without
+// payload may be passed as its name); nullable: null or the value.
+export type QuartzValue = undefined | null | boolean | number | bigint | string | Uint8Array | QuartzValue[] |
+    Map<QuartzValue, QuartzValue> | { variant: string; values: QuartzValue[] } | { [field: string]: QuartzValue };
 
 /** What a running host function gets after its arguments. */
 export interface HostCall {
@@ -74,7 +85,7 @@ export interface CompileOptions {
 export interface TaskOutcome {
     kind: "done" | "wait" | "at_enter" | "at_leave" | "yield";
     task: number;
-    /** done: the result; otherwise the awaited handle. */
+    /** done: the result (its raw slot when it is wider than one); otherwise the awaited handle. */
     value: QuartzValue;
 }
 

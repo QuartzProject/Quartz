@@ -46,6 +46,110 @@ static const char kPlugin[] = "state Counter {\n"
                               "    return a / b\n"
                               "}\n";
 
+static const char kMapHost[] = "struct Pt {\n    x: int\n    y: int\n}\n@handle\n@awaitable(Pt)\nstruct AskPt {}\n"
+                               "@handle\n@awaitable(Map::<str, int>)\nstruct AskMap {}\n"
+                               "fn askPt() -> AskPt\nfn askMap() -> AskMap\n";
+static const char kMapPlugin[] = "fn sum(m: Map<str, int>) -> int {\n"
+                                 "    var s = 0\n"
+                                 "    for k, v in m {\n"
+                                 "        s += v * k.len()\n"
+                                 "    }\n"
+                                 "    return s\n"
+                                 "}\n"
+                                 "fn table() -> Map<str, int> {\n"
+                                 "    var m: Map<str, int> = Map()\n"
+                                 "    for i in 0..6 {\n"
+                                 "        m[\"k{i}\"] = i\n"
+                                 "    }\n"
+                                 "    m.remove(\"k1\")\n"
+                                 "    m.remove(\"k4\")\n"
+                                 "    return m\n"
+                                 "}\n"
+                                 "suspend fn task() -> int {\n"
+                                 "    let p = wait askPt()\n"
+                                 "    let m = wait askMap()\n"
+                                 "    return p.x * 100 + p.y + sum(m)\n"
+                                 "}\n";
+
+static bool handle(qz_call* call, const qz_slot* args, qz_slot* result, void* user) {
+    (void)call;
+    (void)args;
+    (void)user;
+    result[0].u = 1;
+    return true;
+}
+
+static void maps(void) {
+    qz_source sources[] = {{"host.qzi", kMapHost, sizeof kMapHost - 1},
+                           {"plugin.qz", kMapPlugin, sizeof kMapPlugin - 1}};
+    char* diagnostics = NULL;
+    qz_program* program = qz_compile(sources, 2, NULL, &diagnostics);
+    CHECK(program != NULL);
+    if (program == NULL) {
+        fprintf(stderr, "%s\n", diagnostics);
+    }
+    qz_free(diagnostics);
+    if (program == NULL) {
+        return;
+    }
+    CHECK(qz_api_level() >= 3);
+    uint32_t sum = qz_program_function(program, "sum");
+    uint32_t mapType = qz_program_function_param_type(program, sum, 0);
+    CHECK(qz_type_kind(program, mapType, NULL) == QZ_KIND_MAP);
+    CHECK(qz_type_kind(program, qz_type_key(program, mapType), NULL) == QZ_KIND_STR);
+    CHECK(qz_type_kind(program, qz_type_elem(program, mapType), NULL) == QZ_KIND_I64);
+    qz_limits limits = {0, 0, 0, 0};
+    qz_sandbox* sb = qz_sandbox_new(program, &limits);
+    CHECK(qz_sandbox_bind_direct(sb, "askPt", handle, NULL) && qz_sandbox_bind_direct(sb, "askMap", handle, NULL));
+    CHECK(qz_sandbox_start(sb) == QZ_OK);
+
+    qz_slot table = {0};
+    CHECK(qz_sandbox_call(sb, qz_program_function(program, "table"), NULL, 0, &table) == QZ_OK);
+    CHECK(qz_map_length(table) == 4);
+    const char* order[] = {"k0", "k2", "k3", "k5"};
+    for (size_t i = 0; i < 4; ++i) {
+        qz_slot key = {0};
+        qz_slot value = {0};
+        size_t len = 0;
+        CHECK(qz_map_entry_at(sb, &table, i, &key, &value));
+        CHECK(memcmp(qz_str(key, &len), order[i], 2) == 0 && len == 2 && value.i == (int64_t)(order[i][1] - '0'));
+    }
+    qz_slot key = {0};
+    qz_slot value = {0};
+    CHECK(!qz_map_entry(sb, table, 4, &key, &value));
+    qz_sandbox_str_into(sb, "k3", 2, &key);
+    CHECK(qz_map_get(sb, table, &key, &value) && value.i == 3);
+    qz_sandbox_str_into(sb, "k1", 2, &key);
+    CHECK(!qz_map_get_at(sb, &table, &key, &value));
+
+    qz_slot built = qz_sandbox_map(sb, mapType);
+    const char* words[] = {"ab", "c", "ab"};
+    for (int i = 0; i < 3; ++i) {
+        qz_slot k = qz_sandbox_str(sb, words[i], strlen(words[i]));
+        qz_slot v = {.i = i + 2};
+        CHECK(qz_map_set(sb, built, &k, &v));
+    }
+    CHECK(qz_map_length_at(&built) == 2);
+    qz_slot total = {0};
+    CHECK(qz_sandbox_call(sb, sum, &built, 1, &total) == QZ_OK && total.i == 4 * 2 + 3);
+
+    qz_task_outcome t;
+    CHECK(qz_sandbox_spawn(sb, qz_program_function(program, "task"), NULL, 0, &t) == QZ_OK && t.kind == QZ_TASK_WAIT);
+    uint32_t pt = qz_sandbox_wait_type(sb, t.task);
+    CHECK(qz_type_kind(program, pt, NULL) == QZ_KIND_STRUCT);
+    qz_slot point[2] = {{.i = 4}, {.i = 2}};
+    CHECK(qz_sandbox_resume_wide(sb, t.task, point, 1, &t) != QZ_OK);
+    CHECK(qz_sandbox_resume_wide(sb, t.task, point, 2, &t) == QZ_OK && t.kind == QZ_TASK_WAIT);
+    qz_slot m = {0};
+    qz_sandbox_map_into(sb, qz_sandbox_wait_type(sb, t.task), &m);
+    qz_slot k = qz_sandbox_str(sb, "xyz", 3);
+    qz_slot one = {.i = 1};
+    CHECK(qz_map_set_at(sb, &m, &k, &one));
+    CHECK(qz_sandbox_resume_wide(sb, t.task, &m, 1, &t) == QZ_OK && t.kind == QZ_TASK_DONE && t.value.i == 405);
+    qz_sandbox_free(sb);
+    qz_program_free(program);
+}
+
 int main(void) {
     CHECK(qz_abi_version() == QZ_ABI_VERSION);
     qz_source sources[] = {{"host.qzi", kHost, sizeof kHost - 1}, {"plugin.qz", kPlugin, sizeof kPlugin - 1}};
@@ -128,6 +232,7 @@ int main(void) {
     CHECK(diagnostics != NULL && strstr(diagnostics, "error") != NULL);
     qz_free(diagnostics);
 
+    maps();
     if (failures == 0) {
         printf("C interface: all checks passed\n");
     }

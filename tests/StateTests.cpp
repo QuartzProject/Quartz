@@ -646,3 +646,54 @@ suspend fn talk() -> str {
     REQUIRE(done->kind == quartz::vm::TaskOutcome::Kind::Done);
     CHECK(static_cast<const quartz::vm::Str*>(done->value.p)->view() == "ana x+y 7 5:good ana=10/A,bo=2/b,cy=3/c n");
 }
+
+TEST_CASE("maps cross linked packages, struct keys included") {
+    quartz::SourceInput shopSrc[] = {{"shop.qz", R"(package org.example.stock
+@derive(Eq, Hash)
+pub struct Spot {
+    x: int
+    y: int
+}
+pub fn tally(words: [str]) -> Map<str, int> {
+    var m: Map<str, int> = Map()
+    for w in words {
+        m[w] = (m.get(w) ?? 0) + 1
+    }
+    m.remove("skip")
+    return m
+}
+pub fn where(spots: Map<Spot, str>, x: int) -> str {
+    return spots.get(Spot(x, x)) ?? "none"
+}
+)"}};
+    auto manifest =
+        quartz::parseManifest("name = \"org.example.stock\"\nversion = \"1.0.0\"\nexports = [\"tally\", \"where\"]\n");
+    REQUIRE(manifest.has_value());
+    quartz::CompileOutput shop = quartz::compile(shopSrc);
+    REQUIRE_MESSAGE(shop.program, shop.diagnostics);
+    auto iface = quartz::interfaceOf(*shop.program, *manifest);
+    REQUIRE_MESSAGE(iface.has_value(), (iface ? "" : iface.error()));
+    quartz::SourceInput clientSrc[] = {{"stock.qzi", *iface}, {"client.qz", R"(import org.example.stock.*
+fn run() -> str {
+    let t = tally(["b", "skip", "a", "b"])
+    var parts: [str] = []
+    for k, v in t {
+        parts.push("{k}{v}")
+    }
+    var spots: Map<Spot, str> = Map()
+    spots[Spot(1, 1)] = "one"
+    spots[Spot(2, 2)] = "two"
+    return "{parts.join(",")} {where(spots, 2)} {where(spots, 3)}"
+}
+)"}};
+    quartz::CompileOutput client = quartz::compile(clientSrc);
+    REQUIRE_MESSAGE(client.program, client.diagnostics, *iface);
+    quartz::vm::Sandbox provider(shop.program);
+    quartz::vm::Sandbox user(client.program);
+    REQUIRE(user.link("org.example.stock", provider).has_value());
+    REQUIRE(provider.start().has_value());
+    REQUIRE(user.start().has_value());
+    auto r = user.call(client.program->findFunction("run"), {});
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "b2,a1 two none");
+}

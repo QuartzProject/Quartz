@@ -32,6 +32,8 @@ public:
         case TypeKind::List:
         case TypeKind::Nullable:
             return same(p.elem, q.elem);
+        case TypeKind::Map:
+            return same(p.key, q.key) && same(p.elem, q.elem);
         case TypeKind::Struct:
             if (p.name != q.name || p.fields.size() != q.fields.size() || p.reprC != q.reprC) {
                 return false;
@@ -70,7 +72,7 @@ public:
             }
             return true;
         default:
-            return false; // maps, states, handles and functions stay inside their sandbox
+            return false; // states, handles and functions stay inside their sandbox
         }
     }
 
@@ -204,6 +206,28 @@ bool Sandbox::copyAcross(const Sandbox& from, TypeId fromType, const Slot* src, 
         }
         dst->p = out;
         return true;
+    }
+    case TypeKind::Map: {
+        const auto* m = static_cast<const Map*>(src->p);
+        if (m == nullptr) {
+            dst->p = nullptr;
+            return true;
+        }
+        Map* out = hostMap(toType);
+        if (out == nullptr) {
+            return false;
+        }
+        const ir::TypeInfo& fi = ft.info(fromType);
+        const ir::TypeInfo& ti = tt.info(toType);
+        std::vector<Slot> key(tl.slots(ti.key));
+        std::vector<Slot> value(tl.slots(ti.elem));
+        bool ok = true;
+        forEachEntry(m, [&](const Slot* e) {
+            ok = ok && copyAcross(from, fi.key, e, ti.key, key.data()) &&
+                 copyAcross(from, fi.elem, e + m->keySlots, ti.elem, value.data()) && hostMapSet(out, key, value);
+        });
+        dst->p = out;
+        return ok;
     }
     case TypeKind::Nullable: {
         TypeId fe = ft.info(fromType).elem;

@@ -1,4 +1,4 @@
-// Checks quartz-api.js under Node: compile, host functions, typed calls, traps, lists, tasks, state, reload, handles.
+// Checks quartz-api.js under Node: compile, host functions, values of every kind, traps, tasks, state, reload, handles.
 // usage: node wasm/test-api.mjs build/wasm/wasm/quartz-api.js
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
@@ -134,4 +134,69 @@ tasks.close();
 first.close();
 second.close();
 program.close();
+
+const wideHost = `struct Pt {
+    x: int
+    y: int
+}
+enum Mood {
+    Calm
+    Loud(int)
+}
+@handle
+@awaitable(Pt)
+struct AskPt {}
+@handle
+@awaitable(Map::<str, [int]>)
+struct AskMap {}
+fn askPt() -> AskPt
+fn askMap() -> AskMap
+fn scale(m: Map<str, int>) -> Map<str, int>
+`;
+const wide = `fn counts(words: [str]) -> Map<str, int> {
+    var m: Map<str, int> = Map()
+    for w in words {
+        m[w] = (m.get(w) ?? 0) + 1
+    }
+    m.remove("skip")
+    return m
+}
+fn echo(p: Pt, m: Mood, o: int?) -> (Pt, Mood, int?) {
+    return (p, m, o)
+}
+fn viaHost() -> int {
+    var m: Map<str, int> = Map()
+    m["a"] = 1
+    m["b"] = 2
+    return scale(m).get("b") ?? 0
+}
+suspend fn gather() -> str {
+    let p = wait askPt()
+    let m = wait askMap()
+    var out = "{p.x},{p.y}"
+    for k, v in m {
+        out += " {k}:{v.len()}"
+    }
+    return out
+}
+`;
+const wideProgram = quartz.compile({ "host.qzi": wideHost, "w.qz": wide });
+const values = quartz.sandbox(wideProgram);
+values.bind("askPt", () => 1n);
+values.bind("askMap", () => 2n);
+values.bind("scale", (m) => new Map([...m].map(([k, v]) => [k, v * 10n])));
+values.start();
+assert.deepEqual(values.call("counts", ["b", "skip", "a", "b"]), new Map([["b", 2n], ["a", 1n]]));
+assert.deepEqual(values.call("echo", { x: 1, y: 2 }, { variant: "Loud", values: [5] }, null),
+    [{ x: 1n, y: 2n }, { variant: "Loud", values: [5n] }, null]);
+assert.deepEqual(values.call("echo", { x: 0, y: 0 }, "Calm", 7)[1], { variant: "Calm", values: [] });
+assert.throws(() => values.call("echo", { x: 0, y: 0 }, "Sad", 7), TypeError);
+assert.equal(values.call("viaHost"), 20n);
+const asking = values.spawn("gather");
+const next = values.resume(asking.task, { x: 3, y: 4 });
+assert.equal(next.kind, "wait");
+assert.deepEqual(values.resume(asking.task, new Map([["k", [1, 2]], ["j", []]])),
+    { kind: "done", task: asking.task, value: "3,4 k:2 j:0" });
+values.close();
+wideProgram.close();
 console.log("quartz-api.js: all checks passed");
