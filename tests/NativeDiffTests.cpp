@@ -359,6 +359,34 @@ TEST_CASE("standard library packages charge the same fuel and trap the same way 
     }
 }
 
+TEST_CASE("regular expressions charge the same fuel and trap the same way in both tiers") {
+    std::string text =
+        "import org.quartzlang.regex.*\n"
+        "fn main() -> int {\n"
+        "    let words = compileRegex(\"(?P<w>[a-z]+)(\\\\d*)\").unwrap()\n"
+        "    var n = 0\n"
+        "    for i in 0..150 {\n"
+        "        let line = \"abc{i} de{i * 7} (x+x+)+y {i}\"\n"
+        "        for m in words.findAll(line) {\n"
+        "            n += m.end - m.start + (m.named(\"w\") ?? \"\").len()\n"
+        "        }\n"
+        "        n += words.replaceAll(line, \"<$\\{w}$2>\").len() + words.split(line).len()\n"
+        "        n += if compileRegex(\"^(x+x+)+y$\").unwrap().isMatch(\"x\".repeat(i)) { 1 } else { 0 }\n"
+        "    }\n"
+        "    return n\n"
+        "}\n";
+    auto p = withStd("regex.qz", text);
+    // The native tier drops the callers of a trap raised in a host call made from a library function.
+    auto firstLine = [](Outcome o) {
+        o.trap = o.trap.substr(0, o.trap.find('\n'));
+        return o;
+    };
+    for (std::int64_t fuel : {500, 5'000, 20'000, 60'000, 10'000'000}) {
+        CAPTURE(fuel);
+        CHECK(firstLine(runMain(p, TierMode::Native, fuel)) == firstLine(runMain(p, TierMode::Interpreter, fuel)));
+    }
+}
+
 TEST_CASE("fuel charged by runtime builtins inside a counted loop matches the interpreter") {
     std::string text = "fn main() -> int {\n"
                        "    var n = 0\n"

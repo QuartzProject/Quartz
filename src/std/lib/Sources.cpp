@@ -12,7 +12,7 @@ void addLibrarySources(std::vector<std::pair<std::string_view, std::string_view>
             {"<std>/bytes.qz", kBytesQz},     {"<std>/bits.qzi", kBitsQzi},       {"<std>/geometry.qz", kGeometryQz},
             {"<std>/noise.qz", kNoiseQz},     {"<std>/semver.qz", kSemverQz},     {"<std>/semver.qzi", kSemverQzi},
             {"<std>/http.qz", kHttpQz},       {"<std>/http.qzi", kHttpQzi},       {"<std>/log.qz", kLogQz},
-            {"<std>/log.qzi", kLogQzi},
+            {"<std>/log.qzi", kLogQzi},       {"<std>/regex.qz", kRegexQz},       {"<std>/regex.qzi", kRegexQzi},
         });
 }
 

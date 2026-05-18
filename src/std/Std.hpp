@@ -2,6 +2,7 @@
 
 #include "vm/Sandbox.hpp"
 
+#include <memory>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -14,6 +15,8 @@ const std::vector<std::pair<std::string_view, std::string_view>>& sources();
 std::size_t coreSourceCount();
 /// The package a source declares on its first line.
 std::string_view packageOf(std::string_view source);
+
+struct RegexCache;
 
 struct Native {
     std::string_view name;
@@ -40,6 +43,7 @@ struct DataTypes {
     ir::TypeId list = 0;
     ir::TypeId table = 0;
     std::uint32_t valueSlots = 2;
+    mutable std::shared_ptr<RegexCache> regex; // compiled patterns of this sandbox (Regex.cpp)
 };
 
 } // namespace quartz::stdlib

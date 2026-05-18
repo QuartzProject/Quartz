@@ -115,6 +115,9 @@ public:
     std::expected<void, std::string> link(std::string_view package, Sandbox& provider);
     [[nodiscard]] std::size_t memoryUsed() const { return quota_.used; }
     [[nodiscard]] std::size_t memoryLimit() const { return quota_.limit; }
+    /// Memory a native keeps across calls outside the arena and the state heap (compiled patterns), in the quota.
+    bool takeMemory(std::size_t bytes) { return quota_.take(bytes); }
+    void giveMemory(std::size_t bytes) { quota_.give(bytes); }
     [[nodiscard]] TierMode tierMode() const { return tierMode_; }
     /// Changes the fuel each call and each task slice gets, so a host can keep a wall-clock budget as the tier changes.
     void setFuelPerCall(std::int64_t fuel) { limits_.fuelPerCall = fuel; }

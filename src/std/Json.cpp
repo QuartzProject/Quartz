@@ -469,6 +469,7 @@ const std::vector<Native>& natives() {
         addBitsNatives(v);
         addSemverNatives(v);
         addHttpNatives(v);
+        addRegexNatives(v);
         return v;
     }();
     return kNatives;

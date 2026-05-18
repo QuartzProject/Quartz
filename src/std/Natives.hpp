@@ -77,5 +77,6 @@ void addFormatNatives(std::vector<Native>& out);
 void addBitsNatives(std::vector<Native>& out);
 void addSemverNatives(std::vector<Native>& out);
 void addHttpNatives(std::vector<Native>& out);
+void addRegexNatives(std::vector<Native>& out);
 
 } // namespace quartz::stdlib

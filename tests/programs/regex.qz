@@ -1,0 +1,264 @@
+// expect: missing ')' at position 1
+// expect: unmatched ')' at position 1
+// expect: missing ']' at position 0
+// expect: invalid class range at position 1
+// expect: nothing to repeat at position 0
+// expect: nested quantifier at position 2
+// expect: nested quantifier at position 4
+// expect: repetition count above 1000 at position 1
+// expect: invalid repetition: the minimum is above the maximum at position 1
+// expect: invalid group name at position 0
+// expect: duplicate group name 'n' at position 7
+// expect: backreferences are not supported (they make matching non-linear) at position 3
+// expect: lookaround is not supported (it makes matching non-linear) at position 0
+// expect: lookaround is not supported (it makes matching non-linear) at position 0
+// expect: Unicode classes such as \p{L} are not supported at position 0
+// expect: unknown escape at position 0
+// expect: trailing backslash at position 1
+// expect: unknown group flag or syntax at position 0
+// expect: POSIX classes such as [:alpha:] are not supported at position 1
+// expect: escape is not a Unicode scalar value at position 0
+// expect: nothing to repeat at position 0
+// expect: compiled ((((((((((a))))))))))
+// expect: compiled (?i)
+// expect: compiled a{,2}
+// expect: compiled x{1}
+// expect: groups nested more than 200 deep at position 200
+// expect: pattern too large (more than 50000 instructions) at position 1
+// expect: 9 24 ada@example.org ada example.org ada@example.org 2
+// expect: null b
+// expect: 1\+1=2\? \[a\] \{b\} \(c\) \^\$ a\|b \\ \.
+// expect: true false
+// expect: false true
+// expect: <1> <2>
+// expect: find 0 2-5 | 2-5 7-10 | 0
+// expect: find 1 0-1 | 0-1 | 1
+// expect: find 2 0-4,0-1,1-4,4-4 | 0-4 | 1
+// expect: find 3 0-3,0-3,x | 0-3 | 0
+// expect: find 4 0-0,0-0 | 0-0 1-1 | 0
+// expect: find 5 0-0,0-0 | 0-0 1-1 | 0
+// expect: find 6 0-4,2-3 | 0-4 | 1
+// expect: find 7 0-0 | 0-0 1-1 2-3 3-3 4-4 | 0
+// expect: find 8 0-0 | 0-0 0-1 1-1 1-2 2-2 2-3 3-3 | 1
+// expect: find 9 0-4 | 0-4 | 1
+// expect: find 10 0-6 | 0-6 | 0
+// expect: find 11 0-2 | 0-2 2-4 | 0
+// expect: find 12 0-5 | 0-5 | 1
+// expect: find 13 0-1 | 0-1 1-2 2-3 | 0
+// expect: find 14 2-7 | 2-7 | 0
+// expect: find 15 3-6 | 3-6 | 0
+// expect: find 16 0-3 | 0-3 | 0
+// expect: find 17 0-4 | 0-4 | 0
+// expect: find 18 4-7 | 4-7 8-10 | 0
+// expect: find 19 0-5 | 0-5 7-14 | 0
+// expect: find 20 1-6 | 1-6 | 0
+// expect: find 21 2-5 | 2-5 | 0
+// expect: find 22 0-3 | 0-3 18-21 | 0
+// expect: find 23 5-7 | 5-7 | 0
+// expect: find 24 0-3 | 0-3 | 0
+// expect: find 25 0-3 | 0-3 4-7 | 0
+// expect: find 26 3-6 | 3-6 | 0
+// expect: find 27 0-3 | 0-3 | 1
+// expect: find 28 none |  | 0
+// expect: find 29 0-5 | 0-5 6-11 | 0
+// expect: find 30 0-6 | 0-6 | 0
+// expect: find 31 0-2 | 0-2 6-8 | 0
+// expect: find 32 3-10,3-7,8-10 | 3-10 | 0
+// expect: find 33 1-3 | 1-3 | 0
+// expect: find 34 0-3 | 0-3 4-8 9-15 | 0
+// expect: find 35 1-7 | 1-7 | 0
+// expect: find 36 1-7 | 1-7 | 0
+// expect: find 37 0-2 | 0-2 | 1
+// expect: find 38 0-4 | 0-4 | 1
+// expect: find 39 0-0 | 0-0 1-1 2-2 3-3 | 0
+// expect: find 40 1-2 | 1-2 3-4 | 0
+// expect: find 41 0-1,x,0-1 | 0-1 | 1
+// expect: find 42 0-2,0-1 | 0-2 | 1
+// expect: find 43 none |  | 0
+// expect: find 44 5-11 | 5-11 15-20 | 0
+// expect: find 45 0-3,1-2 | 0-3 | 1
+// expect: find 46 0-3,1-2,0-1 | 0-3 | 1
+// expect: find 47 0-2 | 0-2 3-4 | 0
+// expect: find 48 1-1 | 1-1 3-3 | 0
+// expect: find 49 1-4 | 1-4 | 0
+// expect: find 50 2-3 | 2-3 | 0
+// expect: find 51 3-5 | 3-5 | 0
+// expect: find 52 1-2 | 1-2 | 0
+// expect: find 53 1-2 | 1-2 | 0
+// expect: find 54 0-2 | 0-2 2-2 | 1
+// expect: find 55 0-3 | 0-3 | 1
+// expect: replace 0 b at a c@d | b at a d at c
+// expect: replace 1 1=x;y=2 | 1=x;2=y
+// expect: replace 2 []b | [][b]
+// expect: replace 3  a  b   |  a b 
+// expect: replace 4 -abc | -a-b-c-
+// expect: replace 5 -abxd | -a-b--d-
+// expect: replace 6 a$b2 | a$b$
+// expect: replace 7 2134 | 2143
+// expect: replace 8 cafe é | cafe e
+// expect: replace 9 <>baaa | <>b<aaa><>
+// expect: split 0 a|b|c||d
+// expect: split 1 |a||b|c|
+// expect: split 2 a|b|c|
+// expect: split 3 |a|b|c|
+// expect: split 4 a|c
+// expect: split 5 a|b,c,d
+// expect: split 6 a,b,c,d
+// expect: split 7 |a|b|
+
+import org.quartzlang.regex.*
+
+fn spans(m: Match) -> str {
+    var out: [str] = []
+    for i in 0..m.groupCount() + 1 {
+        if let s = m.span(i) {
+            out.push("{s.0}-{s.1}")
+        } else {
+            out.push("x")
+        }
+    }
+    return out.join(",")
+}
+
+fn find(i: int, pattern: str, text: str) {
+    let r = compileRegex(pattern).unwrap()
+    var first = "none"
+    if let m = r.find(text) {
+        first = spans(m)
+    }
+    var all: [str] = []
+    for m in r.findAll(text) {
+        all.push("{m.start}-{m.end}")
+    }
+    let full = if r.fullMatch(text) { "1" } else { "0" }
+    print("find {i} {first} | {all.join(" ")} | {full}")
+}
+
+fn replace(i: int, pattern: str, text: str, replacement: str) {
+    let r = compileRegex(pattern).unwrap()
+    print("replace {i} {r.replace(text, replacement)} | {r.replaceAll(text, replacement)}")
+}
+
+fn split(i: int, pattern: str, text: str, limit: int) {
+    print("split {i} {compileRegex(pattern).unwrap().split(text, limit).join("|")}")
+}
+
+fn error(pattern: str) {
+    match compileRegex(pattern) {
+        Ok(r) => print("compiled {pattern}")
+        Err(e) => print(e)
+    }
+}
+
+fn errors() {
+    for p in ["a(b", "a)b", "[a-", "[z-a]", "*a", "a**", "a\{2}\{3}", "a\{1001}", "a\{3,2}", "(?P<1x>a)", "(?<n>a)(?<n>b)", "(a)\\1", "(?=a)", "(?<!a)b", "\\p\{L}", "\\q", "a\\", "(?x)a", "[[:alpha:]]", "\\x\{110000}", "^*", "((((((((((a))))))))))", "(?i)", "a\{,2}", "x\{1}"] {
+        error(p)
+    }
+    var deep = ""
+    for i in 0..201 {
+        deep = deep + "("
+    }
+    error(deep)
+    error("(a\{1000})\{1000}")
+}
+
+fn api() {
+    let r = compileRegex("(?P<user>\\w+)@(?<host>[\\w.]+)").unwrap()
+    let m = r.find("write to ada@example.org today").unwrap()
+    print("{m.start} {m.end} {m.text} {m.named("user") ?? "-"} {m.named("host") ?? "-"} {m.group(0) ?? "-"} {r.groupCount()}")
+    let opt = compileRegex("(a)|(b)").unwrap().find("b").unwrap()
+    print("{opt.group(1) ?? "null"} {opt.group(2) ?? "null"}")
+    print(escapeRegex("1+1=2? [a] \{b} (c) ^$ a|b \\ ."))
+    let lit = compileRegex(escapeRegex("1+1=2? [a] \{b} (c) ^$ a|b \\ .")).unwrap()
+    print("{lit.fullMatch("1+1=2? [a] \{b} (c) ^$ a|b \\ .")} {lit.isMatch("1+1=2")}")
+    print("{compileRegex("^\\d+$").unwrap().isMatch("12\n")} {compileRegex("(?m)^\\d+$").unwrap().isMatch("12\n")}")
+}
+
+state Kept {
+    pattern: Regex = compileRegex("k(\\d)").unwrap()
+}
+
+fn kept(k: Kept) {
+    print(k.pattern.replaceAll("k1 k2", "<$1>"))
+}
+
+fn main(k: Kept) -> int {
+    errors()
+    api()
+    kept(k)
+    find(0, "abc", "xxabcxxabc")
+    find(1, "a|ab", "ab")
+    find(2, "(a|ab)(c|bcd)(d*)", "abcd")
+    find(3, "(a+)(b+)?", "aaac")
+    find(4, "(a*)*", "b")
+    find(5, "(a*)+", "b")
+    find(6, "(a|b)*c", "abac")
+    find(7, "x*", "abxd")
+    find(8, "a*?", "aaa")
+    find(9, "a+?b", "aaab")
+    find(10, "(?:ab)\{2,3\}", "abababab")
+    find(11, "a\{2\}", "aaaaa")
+    find(12, "a\{2,\}", "aaaaa")
+    find(13, "a\{1,2\}?", "aaa")
+    find(14, "[a-c]+", "xxabcabd")
+    find(15, "[^a-c]+", "abcxyzabc")
+    find(16, "[]a]+", "]a]b")
+    find(17, "[a-]+", "a-a-b")
+    find(18, "\\d+", "abc 123 45")
+    find(19, "\\w+", "hello, world_1!")
+    find(20, "\\s+", "a \t\n\u{b} b")
+    find(21, "\\D\\W\\S", "a1 .b")
+    find(22, "\\bfoo\\b", "foo foobar barfoo foo")
+    find(23, "\\Boo\\B", "foo boot")
+    find(24, "^abc", "abc\nabc")
+    find(25, "(?m)^abc$", "abc\nabc\nab")
+    find(26, "abc$", "abcabc")
+    find(27, "(?s)a.b", "a\nb")
+    find(28, "a.b", "a\nb")
+    find(29, "(?i)hello", "HeLLo hello")
+    find(30, "(?i)[a-c]+", "ABCabcD")
+    find(31, "(?i:a)b", "Ab AB ab")
+    find(32, "(?P<year>\\d\{4\})-(?<month>\\d\{2\})", "on 2024-05-17")
+    find(33, "\\x41\\x42", "zABz")
+    find(34, "a.c", "abc aéc a😀c")
+    find(35, "é+", "xééé")
+    find(36, "[à-ü]+", "xàéüy")
+    find(37, "[^a]", "é")
+    find(38, "^.$", "😀")
+    find(39, "", "abc")
+    find(40, "\\.", "a.b.c")
+    find(41, "(a)|(b)", "b")
+    find(42, "(?:(a)|b)+", "ab")
+    find(43, "(a+)+b", "aaaaaaaaaaaaaaaaac")
+    find(44, "\\$\\d+\\.\\d\\d", "cost $12.50 or $3.00")
+    find(45, "(a|)+b", "aab")
+    find(46, "((a)|b)*?c", "abc")
+    find(47, "\\Aab|b\\z", "abab")
+    find(48, "(?m)$", "a\nb")
+    find(49, "[\\d\\s]+", "a1 2b")
+    find(50, "[^\\w]", "ab-c")
+    find(51, "(?i)ß|é", "É é")
+    find(52, "(?-i:a)", "Aa")
+    find(53, "a\{0\}b", "ab")
+    find(54, "(?:a?)\{3\}", "aa")
+    find(55, "(?s:.)+", "a\nb")
+    replace(0, "(\\w+)@(\\w+)", "a@b c@d", "$2 at $1")
+    replace(1, "(?P<k>\\w+)=(?P<v>\\w+)", "x=1;y=2", "$\{v\}=$\{k\}")
+    replace(2, "a|(b)", "ab", "[$1]")
+    replace(3, "\\s+", "  a  b  ", " ")
+    replace(4, "", "abc", "-")
+    replace(5, "x*", "abxd", "-")
+    replace(6, "\\d", "a1b2", "$$")
+    replace(7, "(\\d)(\\d)", "1234", "$\{2\}$\{1\}")
+    replace(8, "é", "café é", "e")
+    replace(9, "a*", "baaa", "<$0>")
+    split(0, ",\\s*", "a, b,c,,d", 0)
+    split(1, "x*", "axbc", 0)
+    split(2, "\\d", "a1b2c3", 0)
+    split(3, "", "abc", 0)
+    split(4, "b", "abc", 0)
+    split(5, ",", "a,b,c,d", 2)
+    split(6, ",", "a,b,c,d", 1)
+    split(7, "\\s+", " a b ", 0)
+    return 0
+}
