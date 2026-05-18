@@ -156,24 +156,54 @@ void Checker::completeTypes() {
                 diags_.error(a.span, "@awaitable needs a @handle type");
                 continue;
             }
-            TypeId produced = ir::kVoid;
-            if (!a.args.empty()) {
-                Expr* v = a.args[0].value;
-                auto* list = v->kind == ExprKind::ListLit ? static_cast<ListLitExpr*>(v) : nullptr;
-                if (v->kind == ExprKind::Ident) {
-                    produced = lookupTypeName(static_cast<IdentExpr*>(v)->name, v->span, true);
-                } else if (list != nullptr && list->elems.size() == 1 && list->elems[0]->kind == ExprKind::Ident) {
-                    // `@awaitable([str])`: the element type in brackets, as in a type position.
-                    TypeId elem = lookupTypeName(static_cast<IdentExpr*>(list->elems[0])->name, v->span, true);
-                    produced = elem == ir::kError ? elem : types_->list(elem);
-                } else {
-                    diags_.error(a.span, "@awaitable takes the type that 'wait' produces");
+            // Attribute arguments are expressions: `[T]`, `(A, B)`, `T?` (a propagation), `Map::<K, V>` (spec 3.6).
+            auto typeOf = [&](this auto& self, Expr* v) -> TypeId {
+                switch (v->kind) {
+                case ExprKind::Ident: {
+                    auto* id = static_cast<IdentExpr*>(v);
+                    if (id->typeArgs.empty()) {
+                        return lookupTypeName(id->name, v->span, true);
+                    }
+                    NamedTypeExpr named{};
+                    named.kind = TypeExprKind::Named;
+                    named.span = v->span;
+                    named.path = std::span<Symbol>(&id->name, 1);
+                    named.args = id->typeArgs;
+                    return resolveType(&named);
                 }
-            }
-            if (produced != ir::kVoid && produced != ir::kError && !types_->isScalar(produced) &&
-                produced != ir::kStr && types_->kind(produced) != ir::TypeKind::Handle &&
-                types_->kind(produced) != ir::TypeKind::List) {
-                diags_.error(a.span, "an awaitable can only produce a scalar, a str, a handle or a list");
+                case ExprKind::ListLit: {
+                    auto* list = static_cast<ListLitExpr*>(v);
+                    if (list->elems.size() == 1) {
+                        TypeId elem = self(list->elems[0]);
+                        return elem == ir::kError ? elem : types_->list(elem);
+                    }
+                    break;
+                }
+                case ExprKind::TupleLit: {
+                    std::vector<TypeId> elems;
+                    for (Expr* e : static_cast<TupleLitExpr*>(v)->elems) {
+                        elems.push_back(self(e));
+                        if (elems.back() == ir::kError) {
+                            return ir::kError;
+                        }
+                    }
+                    return types_->tuple(elems);
+                }
+                case ExprKind::Propagate: {
+                    TypeId inner = self(static_cast<PropagateExpr*>(v)->inner);
+                    return inner == ir::kError || types_->kind(inner) == ir::TypeKind::Nullable
+                               ? ir::kError
+                               : types_->nullable(inner);
+                }
+                default:
+                    break;
+                }
+                diags_.error(v->span, "@awaitable takes the type that 'wait' produces");
+                return ir::kError;
+            };
+            TypeId produced = a.args.empty() ? ir::kVoid : typeOf(a.args[0].value);
+            if (produced != ir::kVoid && produced != ir::kError && !types_->hostBuildable(produced)) {
+                diags_.error(a.span, "an awaitable cannot produce a state or a function value");
             }
             awaitable_[entry.type] = produced;
         }

@@ -1,6 +1,7 @@
 #include "quartz/Bind.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
+#include "vm/Layout.hpp"
 
 #include <doctest/doctest.h>
 
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -532,4 +534,115 @@ fn run() -> str {
     auto r = user.call(client.program->findFunction("run"), {});
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "7 pear,fig fig big 7");
+}
+
+TEST_CASE("a wait can produce a struct, a map and a nullable tuple the host builds") {
+    quartz::SourceInput in[] = {{"host.qzi", R"(enum Kind {
+    Plain
+    Rated(int, str)
+}
+struct Reply {
+    name: str
+    tags: [str]
+    score: int?
+    kind: Kind
+}
+@handle
+@awaitable(Reply)
+struct Ask {}
+@handle
+@awaitable(Map::<str, (int, str)>)
+struct Scores {}
+@handle
+@awaitable((int, str)?)
+struct Maybe {}
+fn ask() -> Ask
+fn scores() -> Scores
+fn maybe() -> Maybe
+)"},
+                                {"plugin.qz", R"(fn noise() -> str {
+    var s = ""
+    for i in 0..300 {
+        s = s + "zzzzzzzz"
+    }
+    return s
+}
+suspend fn talk() -> str {
+    let r = wait ask()
+    let m = wait scores()
+    let p = wait maybe()
+    let k = match r.kind {
+        Rated(n, why) => "{n}:{why}"
+        Plain => "plain"
+    }
+    var parts: [str] = []
+    for name, v in m {
+        parts.push("{name}={v.0}/{v.1}")
+    }
+    return "{r.name} {r.tags.join("+")} {r.score ?? -1} {k} {parts.join(",")} {(p ?? (0, "-")).1}"
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    const quartz::vm::Layouts& lay = *out.program->layouts;
+    const quartz::ir::TypeTable& types = out.program->module->types;
+    quartz::vm::Sandbox sb(out.program);
+    for (const char* name : {"ask", "scores", "maybe"}) {
+        sb.bind(name, [](quartz::vm::HostCall& c, void*) {
+            c.result.u = 1;
+            return true;
+        });
+    }
+    REQUIRE(sb.start().has_value());
+    using quartz::vm::Slot;
+    auto str = [&](const char* s) {
+        Slot v{};
+        v.p = sb.newStr(s);
+        return v;
+    };
+    auto noise = [&] { REQUIRE(sb.call(out.program->findFunction("noise"), {}).has_value()); };
+    auto t = sb.spawn(out.program->findFunction("talk"), {});
+    REQUIRE(t.has_value());
+    noise();
+    quartz::ir::TypeId reply = sb.waitType(t->task);
+    REQUIRE(types.kind(reply) == quartz::ir::TypeKind::Struct);
+    CHECK(!sb.resume(t->task, str("short")).has_value());
+    std::vector<Slot> r(lay.slots(reply));
+    r[lay.fieldOffset(reply, 0)] = str("ana");
+    quartz::vm::List* tags = sb.hostList(types.info(reply).fields[1].type);
+    for (const char* tag : {"x", "y"}) {
+        Slot s = str(tag);
+        REQUIRE(sb.hostListPush(tags, std::span<const Slot>(&s, 1)));
+    }
+    r[lay.fieldOffset(reply, 1)].p = tags;
+    std::uint32_t score = lay.fieldOffset(reply, 2);
+    r[score].u = 1;
+    r[score + 1].i = 7;
+    std::uint32_t kind = lay.fieldOffset(reply, 3);
+    r[kind].u = 1;
+    r[kind + 1].i = 5;
+    r[kind + 2] = str("good");
+    t = sb.resume(t->task, r);
+    REQUIRE_MESSAGE(t.has_value(), (t ? "" : t.error().describe()));
+    noise();
+    quartz::vm::Map* m = sb.hostMap(sb.waitType(t->task));
+    REQUIRE(m != nullptr);
+    for (auto [name, n, s] : {std::tuple{"ana", 1, "a"}, {"bo", 2, "b"}, {"cy", 3, "c"}, {"ana", 10, "A"}}) {
+        Slot key = str(name);
+        Slot value[2] = {{}, str(s)};
+        value[0].i = n;
+        REQUIRE(sb.hostMapSet(m, std::span<const Slot>(&key, 1), value));
+    }
+    Slot mv{};
+    mv.p = m;
+    t = sb.resume(t->task, mv);
+    REQUIRE_MESSAGE(t.has_value(), (t ? "" : t.error().describe()));
+    noise();
+    Slot maybe[3] = {{}, {}, str("n")};
+    maybe[0].u = 1;
+    maybe[1].i = 9;
+    auto done = sb.resume(t->task, maybe);
+    REQUIRE_MESSAGE(done.has_value(), (done ? "" : done.error().describe()));
+    REQUIRE(done->kind == quartz::vm::TaskOutcome::Kind::Done);
+    CHECK(static_cast<const quartz::vm::Str*>(done->value.p)->view() == "ana x+y 7 5:good ana=10/A,bo=2/b,cy=3/c n");
 }

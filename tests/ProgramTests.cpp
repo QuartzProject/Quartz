@@ -342,3 +342,30 @@ TEST_CASE("the validator rejects map iteration, text decoding and formatting wit
         std::swap(f.args[in.argBegin], f.args[in.argBegin + 1]);
     });
 }
+
+TEST_CASE("the validator rejects a wait producing a state or a function value") {
+    quartz::SourceInput src[] = {{"host.qzi", "struct R {\n    n: int\n}\n@handle\n@awaitable(R)\nstruct Ask {}\n"
+                                              "fn ask() -> Ask\n"},
+                                 {"w.qz", "state S {\n    n: int = 0\n}\nsuspend fn run(s: S) -> int {\n"
+                                          "    let r = wait ask()\n    return r.n + s.n\n}\n"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto reject = [&](auto produced) {
+        auto mod = quartz::ir::deserialize(out.binary);
+        REQUIRE(mod.has_value());
+        quartz::ir::Function& run = (*mod)->functions[out.program->findFunction("run")];
+        quartz::ir::Inst* wait = nullptr;
+        for (quartz::ir::Inst& in : run.code) {
+            wait = in.op == quartz::ir::Op::Wait && wait == nullptr ? &in : wait;
+        }
+        REQUIRE(wait != nullptr);
+        run.regs[wait->dst] = produced(**mod);
+        auto loaded = quartz::load(quartz::ir::serialize(**mod));
+        REQUIRE_FALSE(loaded.has_value());
+        CHECK_MESSAGE(loaded.error().find("wait cannot produce") != std::string::npos, loaded.error());
+    };
+    using quartz::ir::kI64;
+    reject([](quartz::ir::Module& m) { return m.states[0]; });
+    reject([](quartz::ir::Module& m) { return m.types.fn({kI64}, kI64); });
+    reject([](quartz::ir::Module& m) { return m.types.list(m.types.fn({kI64}, kI64)); });
+}

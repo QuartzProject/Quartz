@@ -722,9 +722,9 @@ private:
                     return fail("register out of range");
                 }
                 TypeId d = ty(in.dst);
-                // One slot each: the host hands a single value to `resume`, deep-copied into the task's arena.
-                if (!t_.isScalar(d) && d != kStr && t_.kind(d) != TypeKind::Handle && t_.kind(d) != TypeKind::List) {
-                    return fail("wait can only produce a scalar, a str, a handle or a list");
+                // The host builds the value and `resume` deep-copies it into the task's arena; it cannot build these.
+                if (!t_.hostBuildable(d)) {
+                    return fail("wait cannot produce a state, a function or no value");
                 }
                 return def(in.dst);
             }

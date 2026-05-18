@@ -322,29 +322,31 @@ bool TypeTable::isRefKind(TypeId id) const {
 
 namespace {
 
-bool containsFnFrom(const TypeTable& t, TypeId id, std::vector<bool>& seen) {
+template <class Bad>
+bool containsFrom(const TypeTable& t, TypeId id, std::vector<bool>& seen, const Bad& bad) {
     if (id >= t.size() || seen[id]) {
         return false;
     }
     seen[id] = true;
     const TypeInfo& info = t.info(id);
+    if (bad(info.kind)) {
+        return true;
+    }
     auto any = [&](const std::vector<TypeId>& ids) {
-        return std::any_of(ids.begin(), ids.end(), [&](TypeId x) { return containsFnFrom(t, x, seen); });
+        return std::any_of(ids.begin(), ids.end(), [&](TypeId x) { return containsFrom(t, x, seen, bad); });
     };
     switch (info.kind) {
-    case TypeKind::Fn:
-        return true;
     case TypeKind::List:
     case TypeKind::Nullable:
-        return containsFnFrom(t, info.elem, seen);
+        return containsFrom(t, info.elem, seen, bad);
     case TypeKind::Map:
-        return containsFnFrom(t, info.key, seen) || containsFnFrom(t, info.elem, seen);
+        return containsFrom(t, info.key, seen, bad) || containsFrom(t, info.elem, seen, bad);
     case TypeKind::Tuple:
         return any(info.elems);
     case TypeKind::Struct:
     case TypeKind::State:
         return std::any_of(info.fields.begin(), info.fields.end(),
-                           [&](const Field& f) { return containsFnFrom(t, f.type, seen); });
+                           [&](const Field& f) { return containsFrom(t, f.type, seen, bad); });
     case TypeKind::Enum:
         return std::any_of(info.variants.begin(), info.variants.end(),
                            [&](const VariantInfo& v) { return any(v.payload); });
@@ -357,7 +359,16 @@ bool containsFnFrom(const TypeTable& t, TypeId id, std::vector<bool>& seen) {
 
 bool TypeTable::containsFn(TypeId id) const {
     std::vector<bool> seen(types_.size(), false);
-    return containsFnFrom(*this, id, seen);
+    return containsFrom(*this, id, seen, [](TypeKind k) { return k == TypeKind::Fn; });
+}
+
+bool TypeTable::hostBuildable(TypeId id) const {
+    if (id >= types_.size() || id == kVoid || id == kError || id == kNull || id == kNever) {
+        return false;
+    }
+    std::vector<bool> seen(types_.size(), false);
+    return !containsFrom(*this, id, seen,
+                         [](TypeKind k) { return k == TypeKind::Fn || k == TypeKind::State || k == TypeKind::Param; });
 }
 
 bool TypeTable::hasRefs(TypeId id) const {

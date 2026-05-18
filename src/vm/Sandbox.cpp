@@ -269,6 +269,7 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     arena_.reset();
     hostArena_ ^= 1;
     hostArenas_[hostArena_ ^ 1].reset();
+    mapCursor_.map = nullptr;
     trapped_ = false;
     std::vector<Slot*>& resolved = resolved_;
     if (!resolveStates(fn, args, resolved)) {

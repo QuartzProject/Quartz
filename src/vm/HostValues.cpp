@@ -70,4 +70,72 @@ ir::TypeId Sandbox::waitType(std::uint32_t task) const {
     return task < tasks_.size() && tasks_[task].live ? tasks_[task].waitType : ir::kVoid;
 }
 
+// Outside a call the map grows where `newStr` strings live (region 0 is the host arena); failing leaves no trap.
+Map* Sandbox::hostMap(ir::TypeId mapType) {
+    const ir::TypeTable& types = program_->module->types;
+    if (mapType >= types.size() || types.kind(mapType) != ir::TypeKind::Map) {
+        return nullptr;
+    }
+    bool wasTrapped = trapped_;
+    if (!inCall_) {
+        resetRegions(&hostArenas_[hostArena_ ^ 1]);
+    }
+    Map* m = newMap(mapType);
+    if (!inCall_) {
+        resetRegions(&arena_);
+    }
+    trapped_ = wasTrapped;
+    return m;
+}
+
+bool Sandbox::hostMapSet(Map* m, std::span<const Slot> key, std::span<const Slot> value) {
+    if (m == nullptr || m->owner != Owner::Arena || key.size() != m->keySlots || value.size() != m->valueSlots) {
+        return false;
+    }
+    bool wasTrapped = trapped_;
+    if (!inCall_) {
+        resetRegions(&hostArenas_[hostArena_ ^ 1]);
+    }
+    bool ok = mapSet(m, key.data(), value.data());
+    if (!inCall_) {
+        resetRegions(&arena_);
+    }
+    trapped_ = wasTrapped;
+    return ok;
+}
+
+bool Sandbox::hostMapEntry(const Map* m, std::size_t index, std::span<Slot> key, std::span<Slot> value) {
+    if (m == nullptr || index >= m->count || key.size() != m->keySlots || value.size() != m->valueSlots) {
+        return false;
+    }
+    auto at = static_cast<std::uint32_t>(index);
+    std::uint32_t pos = at;
+    if (m->ordered != m->count) {
+        MapCursor& c = mapCursor_;
+        bool next = c.map == m && c.version == m->version && c.index + 1 == at;
+        pos = next ? c.pos + 1 : 0;
+        for (std::uint32_t seen = next ? at : 0; pos < m->ordered; ++pos) {
+            if (m->order[pos] != 0 && seen++ == at) {
+                break;
+            }
+        }
+        if (pos >= m->ordered) {
+            return false;
+        }
+        c = {m, m->version, at, pos};
+    }
+    const Slot* e = m->entries + static_cast<std::size_t>(m->order[pos] - 1) * (m->keySlots + m->valueSlots);
+    std::copy_n(e, m->keySlots, key.begin());
+    std::copy_n(e + m->keySlots, m->valueSlots, value.begin());
+    return true;
+}
+
+const Slot* Sandbox::hostMapGet(const Map* m, std::span<const Slot> key) const {
+    if (m == nullptr || key.size() != m->keySlots) {
+        return nullptr;
+    }
+    const Slot* e = mapFind(m, key.data());
+    return e != nullptr ? e + m->keySlots : nullptr;
+}
+
 } // namespace quartz::vm

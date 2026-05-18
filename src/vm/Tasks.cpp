@@ -303,6 +303,7 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     arena_.reset();
     hostArena_ ^= 1;
     hostArenas_[hostArena_ ^ 1].reset();
+    mapCursor_.map = nullptr;
     retired_.clear();
     std::uint32_t id = 0;
     while (id < tasks_.size() && tasks_[id].live) {
@@ -352,7 +353,7 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     task.root = function;
     task.native = taskEntry(function);
     task.saved.clear();
-    auto r = task.native != nullptr ? runNativeTask(id, Slot{})
+    auto r = task.native != nullptr ? runNativeTask(id, nullptr)
                                     : runTask(id, &fn, fn.code.data(), stack_.data(), calls_.size());
     if (task.native == nullptr && tierMode_ == TierMode::Auto) {
         program_->tier->charge(program_, function, static_cast<std::uint64_t>(limits_.fuelPerCall - fuel_),
@@ -373,7 +374,7 @@ NativeEntry Sandbox::taskEntry(std::uint32_t function) {
     return e;
 }
 
-std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, Slot resumeValue) {
+std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, const Slot* resumeValue) {
     Task& task = tasks_[id];
     const CompiledFunction& fn = program_->functions[task.root];
     const Slot* stackEnd = stack_.data() + stack_.size();
@@ -443,13 +444,27 @@ std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, Slot r
     return out;
 }
 
-std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
+namespace {
+
+[[gnu::cold, gnu::noinline]] Trap shortResume(std::size_t width, std::size_t got) {
+    return {ir::TrapCode::HostError, std::format("the wait produces {} slots and resume got {}", width, got), {}, 0};
+}
+
+} // namespace
+
+
+std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, std::span<const Slot> value) {
     if (id >= tasks_.size() || !tasks_[id].live) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "no such task", {}, 0});
+    }
+    const std::size_t width = tasks_[id].waitDst != 0xFFFF ? program_->layouts->slots(tasks_[id].waitType) : 0;
+    if (value.size() < width) {
+        return std::unexpected(shortResume(width, value.size()));
     }
     arena_.reset();
     hostArena_ ^= 1;
     hostArenas_[hostArena_ ^ 1].reset();
+    mapCursor_.map = nullptr;
     retired_.clear();
     Task& task = tasks_[id];
     if (task.native == nullptr) {
@@ -459,17 +474,21 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     }
     trapped_ = false;
     if (task.native != nullptr) {
-        if (task.waitDst != 0xFFFF) {
-            cur_ = task.arena.get();
-            curLevel_ = 0;
-            bool ok = copyToArena(task.waitType, &value, &value, Copy::All);
-            cur_ = &arena_;
+        if (width != 0) {
+            if (resumeSlots_.size() < width) {
+                resumeSlots_.resize(width);
+            }
+            std::copy_n(value.begin(), width, resumeSlots_.begin());
+            // A list or map grows in its region's arena, so region 0 must be the task's while it is copied.
+            resetRegions(task.arena.get());
+            bool ok = copyToArena(task.waitType, resumeSlots_.data(), resumeSlots_.data(), Copy::All);
+            resetRegions(&arena_);
             if (!ok) {
                 return std::unexpected(trap_);
             }
         }
         fuel_ = limits_.fuelPerCall;
-        auto r = runNativeTask(id, value);
+        auto r = runNativeTask(id, width != 0 ? resumeSlots_.data() : nullptr);
         heap_.flush();
         return r;
     }
@@ -483,12 +502,11 @@ std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, Slot value) {
     const CompiledFunction* fn = &P.functions[task.function];
     Slot* R = stack_.data() + task.base;
     trapped_ = false;
-    if (task.waitDst != 0xFFFF) {
-        R[task.waitDst] = value;
-        cur_ = task.arena.get();
-        curLevel_ = 0;
+    if (width != 0) {
+        std::copy_n(value.begin(), width, R + task.waitDst);
+        resetRegions(task.arena.get());
         bool ok = copyToArena(task.waitType, &R[task.waitDst], &R[task.waitDst], Copy::All);
-        cur_ = &arena_;
+        resetRegions(&arena_);
         if (!ok) {
             calls_.resize(entryDepth);
             return std::unexpected(trap_);

@@ -136,6 +136,8 @@ public:
     [[nodiscard]] bool isRefKind(TypeId id) const;
     /// True when a value of this type can hold a function value, in itself or in its fields, elements or payloads.
     [[nodiscard]] bool containsFn(TypeId id) const;
+    /// True when the host can build a value of this type: no state, function or type parameter anywhere in it.
+    [[nodiscard]] bool hostBuildable(TypeId id) const;
 
 private:
     TypeId intern(TypeInfo info, const std::string& key);

@@ -125,8 +125,8 @@ void FunctionCodegen::emitDispatch(llvm::BasicBlock* body) {
             slot += k.size();
         }
         if (p.waitDst != ir::kNoReg) {
-            write1(p.waitDst,
-                   loadSlot(gep(ctx_, offsetof(vm::NativeCtx, resumeValue)), 0, kindsOf(p.waitDst)[0], U.tbaaCtx));
+            write(p.waitDst,
+                  loadSlots(ctxField(offsetof(vm::NativeCtx, resumeValue), U.ptr), 0, kindsOf(p.waitDst), U.tbaaSlot));
         }
         B_.CreateBr(p.target);
     }

@@ -90,7 +90,11 @@ public:
     /// Starts a task; it runs until it finishes, waits or spends its fuel slice (then it yields, spec 9.2).
     std::expected<TaskOutcome, Trap> spawn(std::uint32_t function, std::span<const Slot> args);
     /// Resumes a suspended task; `value` is what `wait` produces (ignored for void awaitables).
-    std::expected<TaskOutcome, Trap> resume(std::uint32_t task, Slot value = {});
+    std::expected<TaskOutcome, Trap> resume(std::uint32_t task, Slot value = {}) {
+        return resume(task, std::span<const Slot>(&value, 1));
+    }
+    /// Resumes with a value as wide as the wait's type (a struct, tuple, enum or nullable takes several slots).
+    std::expected<TaskOutcome, Trap> resume(std::uint32_t task, std::span<const Slot> value);
     void cancel(std::uint32_t task);
     [[nodiscard]] std::size_t liveTasks() const;
     /// True when the task runs compiled code (spawned native, or moved there at a `wait`).
@@ -133,8 +137,16 @@ public:
     List* hostList(ir::TypeId listType);
     /// Appends one element (its slots, as many as the element type takes); false when the quota is exhausted.
     bool hostListPush(List* list, std::span<const Slot> element);
-    /// The type a suspended task's `wait` produces, so the host can build a list of it.
+    /// The type a suspended task's `wait` produces, so the host can build a value of it.
     [[nodiscard]] ir::TypeId waitType(std::uint32_t task) const;
+    /// An empty map of `mapType` the host fills with `hostMapSet`; it lives as long as `hostList`'s lists.
+    Map* hostMap(ir::TypeId mapType);
+    /// Inserts or replaces one entry, keeping insertion order; false when the quota is exhausted or a size is wrong.
+    bool hostMapSet(Map* map, std::span<const Slot> key, std::span<const Slot> value);
+    /// Entry `index` (below `map->count`) in insertion order, copied into `key` and `value`; false out of range.
+    bool hostMapEntry(const Map* map, std::size_t index, std::span<Slot> key, std::span<Slot> value);
+    /// The value slots stored under `key`, or null when it is absent.
+    [[nodiscard]] const Slot* hostMapGet(const Map* map, std::span<const Slot> key) const;
 
     // Runtime.cpp and MapRuntime.cpp (used by the interpreter)
     Str* allocStr(std::size_t len);
@@ -209,7 +221,7 @@ private:
     };
     std::expected<TaskOutcome, Trap> runTask(std::uint32_t id, const CompiledFunction* fn, const Ins* pc, Slot* R,
                                              std::size_t entryDepth);
-    std::expected<TaskOutcome, Trap> runNativeTask(std::uint32_t id, Slot resumeValue);
+    std::expected<TaskOutcome, Trap> runNativeTask(std::uint32_t id, const Slot* resumeValue);
     NativeEntry taskEntry(std::uint32_t function);
     bool migrateTask(Task& task, NativeEntry entry);
     enum class Copy : std::uint8_t { All, StateOnly, NewerThan };
@@ -256,6 +268,16 @@ private:
     TaskOutcome::Kind suspendKind_ = TaskOutcome::Kind::Wait;
     Slot awaited_{};
     std::vector<Slot>* nativeSaved_ = nullptr; // save stack of the native task running now
+    std::vector<Slot> resumeSlots_;            // a native task's resume value, read when its frames restore
+
+    struct MapCursor {
+        const Map* map = nullptr;
+        std::uint32_t version = 0;
+        std::uint32_t index = 0;
+        std::uint32_t pos = 0;
+    };
+
+    MapCursor mapCursor_; // the host's last hostMapEntry, so reading entries in order skips removed ones once
 
     std::shared_ptr<const Program> program_;
     Limits limits_;

@@ -96,6 +96,7 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
         return callHostC(import, args, result);
     }
     HostCall hc{*this, args, {}, {}, result};
+    mapCursor_.map = nullptr; // arena memory freed since the last host call may hold a new map at the same address
     if (!bnd.fn(hc, bnd.user)) {
         return fail(ir::TrapCode::HostError, std::move(hc.error));
     }
