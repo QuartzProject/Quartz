@@ -376,14 +376,9 @@ TEST_CASE("regular expressions charge the same fuel and trap the same way in bot
         "    return n\n"
         "}\n";
     auto p = withStd("regex.qz", text);
-    // The native tier drops the callers of a trap raised in a host call made from a library function.
-    auto firstLine = [](Outcome o) {
-        o.trap = o.trap.substr(0, o.trap.find('\n'));
-        return o;
-    };
     for (std::int64_t fuel : {500, 5'000, 20'000, 60'000, 10'000'000}) {
         CAPTURE(fuel);
-        CHECK(firstLine(runMain(p, TierMode::Native, fuel)) == firstLine(runMain(p, TierMode::Interpreter, fuel)));
+        CHECK(runMain(p, TierMode::Native, fuel) == runMain(p, TierMode::Interpreter, fuel));
     }
 }
 

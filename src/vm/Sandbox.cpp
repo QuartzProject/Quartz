@@ -85,8 +85,8 @@ bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
         return fail(ir::TrapCode::StackOverflow);
     }
     auto sp = reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
-    // The task fields stay unset: only code compiled for a task reads them.
-    NativeCtx ctx;
+    // Zeroed whole: the runtime reads the task fields (qzTrace checks suspending) even outside a task.
+    NativeCtx ctx{};
     ctx.sandbox = this;
     ctx.fuel = fuel_;
     ctx.stackEnd = stackEnd;
