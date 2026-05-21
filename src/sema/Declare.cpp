@@ -7,6 +7,7 @@ namespace quartz::sema {
 Checker::Checker(std::span<Module*> modules, Interner& names, Arena& arena, Diagnostics& diags)
     : modules_(modules), names_(names), arena_(arena), diags_(diags), prog_(std::make_unique<Program>()) {
     types_ = &prog_->types;
+    prog_->names = &names;
 }
 
 bool Checker::hasAttr(std::span<Attribute> attrs, std::string_view name) const {

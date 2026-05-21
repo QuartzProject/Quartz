@@ -92,6 +92,7 @@ bool hoistStateReads(Module& m, Function& fn, const std::vector<bool>& callsValu
         }
         std::vector<Inst> hoisted;
         std::vector<Inst> kept;
+        std::vector<std::uint32_t> keptBefore(1, 0); // per position from loop.begin + 1: kept instructions before it
         for (std::size_t i = loop.begin + 1; i < loop.end; ++i) {
             const Inst& in = fn.code[i];
             bool candidate = in.op == Op::FieldGet && t.kind(fn.regs[in.a]) == TypeKind::State &&
@@ -102,6 +103,7 @@ bool hoistStateReads(Module& m, Function& fn, const std::vector<bool>& callsValu
                             std::find(written.begin(), written.end(), std::make_pair(st, in.imm)) == written.end();
             }
             (candidate ? hoisted : kept).push_back(in);
+            keptBefore.push_back(static_cast<std::uint32_t>(kept.size()));
         }
         if (hoisted.empty()) {
             continue;
@@ -114,6 +116,14 @@ bool hoistStateReads(Module& m, Function& fn, const std::vector<bool>& callsValu
         code.insert(code.end(), kept.begin(), kept.end());
         code.insert(code.end(), fn.code.begin() + static_cast<std::ptrdiff_t>(loop.end), fn.code.end());
         fn.code = std::move(code);
+        for (LocalName& l : fn.locals) {
+            for (std::uint32_t* at : {&l.from, &l.to}) {
+                if (*at > loop.begin && *at <= loop.end) {
+                    *at =
+                        static_cast<std::uint32_t>(loop.begin + hoisted.size() + 1) + keptBefore[*at - loop.begin - 1];
+                }
+            }
+        }
         return true; // indices changed; the caller runs the pass again
     }
     return false;

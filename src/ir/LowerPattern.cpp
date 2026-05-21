@@ -32,6 +32,7 @@ void Lowerer::matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fai
             p->local->reg = newReg(type);
             p->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
             emit(Op::Move, p->local->reg, subject);
+            nameLocal(p->local);
         }
         return;
     case PatternKind::Literal: {

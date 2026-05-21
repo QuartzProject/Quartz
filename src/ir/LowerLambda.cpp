@@ -64,14 +64,17 @@ void Lowerer::lowerLambda(const LambdaWork& w) {
     scopes_.clear();
     out.name = w.name;
     out.result = T(e->info->result);
+    openLocals_.clear();
     for (Param& p : e->params) {
         p.local->reg = newReg(T(p.local->type));
         p.local->scopeDepth = 0;
+        nameLocal(p.local);
     }
     // Captures come last, so calling a lambda and calling a named function look the same to the caller.
     for (sema::Local* l : e->captures) {
         l->reg = newReg(T(l->type));
         l->scopeDepth = 0;
+        nameLocal(l);
     }
     out.paramCount = static_cast<std::uint32_t>(out.regs.size());
     retReg_ = out.result != kVoid ? newReg(out.result) : kNoReg;
@@ -98,6 +101,7 @@ void Lowerer::lowerLambda(const LambdaWork& w) {
     } else {
         emit(Op::Trap, kNoReg, kNoReg, kNoReg, static_cast<std::uint32_t>(TrapCode::Unreachable));
     }
+    closeLocals(0);
     subst_.clear();
 }
 

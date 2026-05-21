@@ -262,6 +262,13 @@ std::vector<std::uint8_t> encodePayload(const Module& m, WriteOptions options) {
                 w.i64(static_cast<std::int64_t>(in.line) - static_cast<std::int64_t>(prev));
                 prev = in.line;
             }
+            w.u32(static_cast<std::uint32_t>(f.locals.size()));
+            for (const LocalName& l : f.locals) {
+                w.u32(l.reg);
+                w.str(l.name);
+                w.u32(l.from);
+                w.u32(l.to - l.from);
+            }
         }
         section(out, Section::Lines, w);
     }

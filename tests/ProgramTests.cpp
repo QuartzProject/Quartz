@@ -369,3 +369,22 @@ TEST_CASE("the validator rejects a wait producing a state or a function value") 
     reject([](quartz::ir::Module& m) { return m.types.fn({kI64}, kI64); });
     reject([](quartz::ir::Module& m) { return m.types.list(m.types.fn({kI64}, kI64)); });
 }
+
+TEST_CASE("the validator rejects local names outside their function") {
+    quartz::SourceInput src[] = {{"n.qz", "fn f(a: int) -> int {\n    let b = a + 1\n    return b\n}\n"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto reject = [&](auto mutate) {
+        auto mod = quartz::ir::deserialize(out.binary);
+        REQUIRE(mod.has_value());
+        quartz::ir::Function& f = (*mod)->functions[out.program->findFunction("f")];
+        REQUIRE(f.locals.size() == 2);
+        mutate(f);
+        auto v = quartz::ir::validate(**mod);
+        REQUIRE_FALSE(v.has_value());
+        CHECK(v.error().message == "local name outside its function");
+    };
+    reject([](quartz::ir::Function& f) { f.locals[1].reg = static_cast<quartz::ir::Reg>(f.regs.size()); });
+    reject([](quartz::ir::Function& f) { f.locals[1].to = static_cast<std::uint32_t>(f.code.size()) + 1; });
+    reject([](quartz::ir::Function& f) { f.locals[1].from = f.locals[1].to + 1; });
+}

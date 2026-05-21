@@ -201,6 +201,14 @@ struct Constant {
 
 enum class Inlining : std::uint8_t { Default, Always, Never };
 
+/// A source name of a register for debuggers, in scope from instruction `from` up to (not including) `to`.
+struct LocalName {
+    Reg reg = 0;
+    std::string name;
+    std::uint32_t from = 0;
+    std::uint32_t to = 0;
+};
+
 struct Function {
     std::string name;
     std::string file;           // source file of the code, for trap traces; empty when lines are stripped
@@ -212,6 +220,7 @@ struct Function {
     bool exported = false;      // callable by the host
     bool isSuspend = false;
     Inlining inlining = Inlining::Default; // `@inline` / `@noinline`, hints for the native tier (D71)
+    std::vector<LocalName> locals;         // parameters and locals by name; dropped with the lines
 };
 
 struct HostImport {

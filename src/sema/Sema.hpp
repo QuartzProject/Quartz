@@ -101,6 +101,7 @@ struct Program {
     std::vector<std::unique_ptr<FnInfo>> fnStorage;
     std::vector<std::unique_ptr<Local>> localStorage;
     std::vector<std::unique_ptr<GlobalInfo>> globalStorage;
+    const Interner* names = nullptr; // local names for the IR's debug table
 };
 
 /// Resolves names and types over all modules; returns null only if nothing could be analyzed.

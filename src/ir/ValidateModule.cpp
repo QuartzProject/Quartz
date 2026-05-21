@@ -120,6 +120,11 @@ std::expected<void, ValidationError> validateTables(const Module& m) {
         if (fn.exported && fnSignature) {
             return std::unexpected(ValidationError{f, ~0U, "exported function takes or returns a function value"});
         }
+        for (const LocalName& l : fn.locals) {
+            if (l.reg >= fn.regs.size() || l.from > l.to || l.to > fn.code.size()) {
+                return std::unexpected(ValidationError{f, ~0U, "local name outside its function"});
+            }
+        }
     }
     for (const Annotation& a : m.annotations) {
         if (a.function >= m.functions.size() || (a.filter != ~0U && a.filter >= m.functions.size())) {

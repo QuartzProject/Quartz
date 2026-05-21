@@ -146,6 +146,20 @@ public:
                 line += delta;
                 in.line = static_cast<std::uint32_t>(line);
             }
+            std::uint32_t names = r.count(kMaxElements, 4);
+            for (std::uint32_t i = 0; i < names && !r.failed(); ++i) {
+                LocalName l;
+                l.reg = r.u32();
+                l.name = r.str();
+                l.from = r.u32();
+                std::uint32_t len = r.u32();
+                if (len > 0xFFFFFFFFu - l.from) {
+                    r.fail("local name range out of range");
+                    return;
+                }
+                l.to = l.from + len;
+                f.locals.push_back(std::move(l));
+            }
         }
     }
 

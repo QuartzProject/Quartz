@@ -14,6 +14,7 @@ void Lowerer::lowerFor(ForStmt* s) {
         s->local->reg = i;
         s->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
         emit(Op::Move, i, lo);
+        nameLocal(s->local);
         Reg one = constInt(1, t);
         open(Op::Block);
         Reg skip = newReg(kBool);
@@ -67,9 +68,11 @@ void Lowerer::lowerFor(ForStmt* s) {
     s->local->reg = x;
     s->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
     emitArgs(Op::Intrinsic, x, static_cast<std::uint32_t>(Intrinsic::ListGet), {list, idx});
+    nameLocal(s->local);
     if (s->indexLocal != nullptr) {
         s->indexLocal->reg = newReg(kI64);
         emit(Op::Move, s->indexLocal->reg, idx);
+        nameLocal(s->indexLocal);
     }
     std::size_t cont = depth_;
     open(Op::Block);
@@ -96,6 +99,7 @@ void Lowerer::lowerForEach(ForStmt* s, TypeId t) {
         if (l != nullptr) {
             l->reg = r;
             l->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
+            nameLocal(l);
         }
         return r;
     };

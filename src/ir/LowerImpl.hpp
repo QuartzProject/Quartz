@@ -23,6 +23,7 @@ public:
     void lowerBlockStmts(BlockExpr* block);
     Reg lowerBlockValue(BlockExpr* block, TypeId want);
     void lowerStmt(Stmt* s);
+    void lowerStmtInner(Stmt* s);
     void lowerLet(LetStmt* s);
     void lowerScoped(BlockExpr* body);
     sema::Local* rootLocal(Expr* target);
@@ -117,6 +118,10 @@ public:
     void br(std::size_t frame);
     void brIf(Reg cond, std::size_t frame);
     void setLine(Span span);
+    // Debug names (ir::LocalName): a local's range opens where it gets its value and closes with its block.
+    void nameLocal(const sema::Local* l);
+    void closeLocals(std::size_t mark);
+    std::vector<std::size_t> openLocals_;
 
     sema::Program& prog_;
     const SourceManager& sources_;

@@ -12,6 +12,22 @@ Lowerer::Lowerer(sema::Program& prog, const SourceManager& sources, Diagnostics&
     types_ = &mod_->types;
 }
 
+void Lowerer::nameLocal(const sema::Local* l) {
+    if (prog_.names == nullptr || l == nullptr || l->reg >= fn_->regs.size()) {
+        return;
+    }
+    openLocals_.push_back(fn_->locals.size());
+    auto at = static_cast<std::uint32_t>(fn_->code.size());
+    fn_->locals.push_back({l->reg, std::string(prog_.names->name(l->name)), at, at});
+}
+
+void Lowerer::closeLocals(std::size_t mark) {
+    while (openLocals_.size() > mark) {
+        fn_->locals[openLocals_.back()].to = static_cast<std::uint32_t>(fn_->code.size());
+        openLocals_.pop_back();
+    }
+}
+
 void Lowerer::setLine(Span span) {
     if (span.file < sources_.size()) {
         line_ = sources_.file(span.file).lineCol(span.begin).line;
@@ -230,9 +246,12 @@ void Lowerer::lowerFilter(sema::AnnotationInfo& a, sema::FnInfo* fn, Function& o
     out.exported = true;
     a.whereParam->reg = newReg(T(a.whereParam->type));
     out.paramCount = 1;
+    openLocals_.clear();
+    nameLocal(a.whereParam);
     setLine(a.where->span);
     Reg v = lowerExpr(a.where, kBool);
     emit(Op::Return, kNoReg, v);
+    closeLocals(0);
 }
 
 void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
@@ -256,9 +275,11 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     out.isSuspend = fn->isSuspend;
     out.inlining = fn->inlining;
     scopes_.clear();
+    openLocals_.clear();
     for (sema::Local* l : fn->paramLocals) {
         l->reg = newReg(T(l->type));
         l->scopeDepth = 0;
+        nameLocal(l);
     }
     out.paramCount = static_cast<std::uint32_t>(out.regs.size());
     out.exported = fn->owner == kError && !signatureHasFn(out);
@@ -270,30 +291,45 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     } else {
         emit(Op::Trap, kNoReg, kNoReg, kNoReg, static_cast<std::uint32_t>(TrapCode::Unreachable));
     }
+    closeLocals(0);
 }
 
 void Lowerer::lowerBlockStmts(BlockExpr* block) {
+    std::size_t mark = openLocals_.size();
     for (Stmt* s : block->stmts) {
         lowerStmt(s);
     }
+    closeLocals(mark);
 }
 
 Reg Lowerer::lowerBlockValue(BlockExpr* block, TypeId want) {
     if (block->stmts.empty()) {
         return kNoReg;
     }
+    std::size_t mark = openLocals_.size();
     for (std::size_t i = 0; i + 1 < block->stmts.size(); ++i) {
         lowerStmt(block->stmts[i]);
     }
     Stmt* last = block->stmts.back();
+    Reg v = kNoReg;
     if (last->kind == StmtKind::Expr) {
-        return lowerExpr(static_cast<ExprStmt*>(last)->expr, want);
+        v = lowerExpr(static_cast<ExprStmt*>(last)->expr, want);
+    } else {
+        lowerStmt(last);
     }
-    lowerStmt(last);
-    return kNoReg;
+    closeLocals(mark);
+    return v;
 }
 
 void Lowerer::lowerStmt(Stmt* s) {
+    std::size_t mark = openLocals_.size();
+    lowerStmtInner(s);
+    if (s->kind != StmtKind::Let) {
+        closeLocals(mark);
+    }
+}
+
+void Lowerer::lowerStmtInner(Stmt* s) {
     setLine(s->span);
     switch (s->kind) {
     case StmtKind::Expr: {
@@ -432,6 +468,7 @@ void Lowerer::lowerLet(LetStmt* s) {
     l->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
     l->reg = newReg(T(l->type));
     emit(Op::Move, l->reg, v);
+    nameLocal(l);
 }
 
 void Lowerer::assignPlace(Expr* target, Reg value) {
@@ -636,6 +673,7 @@ Reg Lowerer::lowerIf(IfExpr* e, TypeId want, bool wantValue) {
         brIf(isNull, elseFrame);
         e->bindLocal->reg = newReg(T(e->bindLocal->type));
         emit(Op::Unwrap, e->bindLocal->reg, bound);
+        nameLocal(e->bindLocal);
     } else {
         branchIfFalse(e->cond, elseFrame);
     }
