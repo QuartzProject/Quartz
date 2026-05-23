@@ -15,7 +15,8 @@ Sandbox::Sandbox(std::shared_ptr<const Program> program, Limits limits)
     stack_ = std::span<Slot>(stackMem_.get(), limits_.stackSlots);
     bindings_.resize(program_->module->imports.size());
     calls_.reserve(limits_.maxDepth + 1);
-    tierMode_ = resolveTierMode(limits_.tier);
+    tierMode_ =
+        program_->probes.lines || program_->probes.calls ? TierMode::Interpreter : resolveTierMode(limits_.tier);
     if (tierMode_ != TierMode::Interpreter) {
         nativeCache_ = resolveCacheDir(limits_.nativeCacheDir);
     }
@@ -316,7 +317,10 @@ bool Sandbox::run(std::uint32_t function, Slot* base) {
         fail(ir::TrapCode::HostError, "suspend functions run as tasks; use spawn");
         return false;
     }
-    return execute(fn, fn->code.data(), base, base, calls_.size()) == Status::Done;
+    std::size_t depth = calls_.size();
+    Status st = probe_ == nullptr ? execute(fn, fn->code.data(), base, base, depth)
+                                  : probedExecute(fn, fn->code.data(), base, base, depth);
+    return st == Status::Done;
 }
 
 } // namespace quartz::vm

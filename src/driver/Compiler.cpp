@@ -88,7 +88,7 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
         return out;
     }
     ir::pruneLibrary(*mod, "<std>/", stdlib::isNative);
-    if (options.optimize) {
+    if (options.optimize && !options.probes.lines) {
         ir::optimize(*mod);
     }
     if (options.printIr) {
@@ -102,12 +102,12 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     if (options.emitBinary) {
         out.binary = ir::serialize(*mod, {.lines = options.binaryLines});
     }
-    out.program = vm::compile(std::move(mod));
+    out.program = vm::compile(std::move(mod), options.probes);
     return out;
 }
 
 std::expected<std::shared_ptr<const vm::Program>, std::string> load(std::span<const std::uint8_t> bytes,
-                                                                    const ir::ReadOptions& options) {
+                                                                    const ir::ReadOptions& options, vm::Probes probes) {
     auto mod = ir::deserialize(bytes, options);
     if (!mod) {
         return std::unexpected(mod.error());
@@ -115,7 +115,7 @@ std::expected<std::shared_ptr<const vm::Program>, std::string> load(std::span<co
     if (auto v = ir::validate(**mod); !v) {
         return std::unexpected(v.error().describe(**mod));
     }
-    return std::shared_ptr<const vm::Program>(vm::compile(std::move(*mod)));
+    return std::shared_ptr<const vm::Program>(vm::compile(std::move(*mod), probes));
 }
 
 } // namespace quartz

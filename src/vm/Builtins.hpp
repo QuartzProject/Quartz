@@ -16,6 +16,9 @@ inline constexpr std::uint64_t kFuelWriteFactor = 4;
 
 /// The runtime builtins (ir::isRuntimeBuiltin): the interpreter and the native tier call the same code, so both give
 /// the same bits and charge the same fuel. Arguments sit in consecutive slots in IR order; results go to `out`.
+/// Past the IR's builtins: a debugger or profiler probe (vm::ProbeSite); `args` is the frame and `out` holds the site.
+inline constexpr std::uint16_t kProbeBuiltin = 0xFFFF;
+
 struct Builtins {
     using Fn = bool (*)(Sandbox& sb, const Slot* args, Slot* out);
 

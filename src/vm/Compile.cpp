@@ -1,5 +1,6 @@
 #include "ir/Builtins.hpp"
 #include "ir/Liveness.hpp"
+#include "vm/Builtins.hpp"
 #include "vm/Bytecode.hpp"
 #include "vm/Tier.hpp"
 
@@ -21,7 +22,9 @@ namespace {
 
 class FunctionCompiler {
 public:
-    FunctionCompiler(Program& prog, const ir::Function& fn) : prog_(prog), fn_(fn), lay_(*prog.layouts) {}
+    FunctionCompiler(Program& prog, const ir::Function& fn) : prog_(prog), fn_(fn), lay_(*prog.layouts) {
+        fuse = !prog.probes.lines;
+    }
 
     CompiledFunction run() {
         CompiledFunction out;
@@ -46,14 +49,30 @@ public:
         if (fn_.isSuspend) {
             live_ = std::make_unique<ir::Liveness>(fn_);
         }
+        if (prog_.probes.calls) {
+            probe(ProbeKind::Enter, 0);
+        }
+        // A debugger reads locals by name range, and one never written on this path must read as zero, not garbage.
+        if (prog_.probes.lines && regSlots_ > out.paramSlots && !fn_.isSuspend) {
+            put(Opc::Zero, out.paramSlots, 0, regSlots_ - out.paramSlots);
+        }
         analyze();
+        irPc_.assign(fn_.code.size() + 1, 0);
+        std::uint32_t probedLine = 0;
         for (pc_ = 0; pc_ < fn_.code.size(); ++pc_) {
+            irPc_[pc_] = static_cast<std::uint32_t>(code_.size());
             if (skip_ > 0) {
                 --skip_;
                 continue;
             }
             line_ = fn_.code[pc_].line;
             const Inst& in = fn_.code[pc_];
+            // After a block or loop label, so a jump back to it passes the probe.
+            bool label = in.op == Op::Block || in.op == Op::Loop || in.op == Op::End || in.op == Op::Else;
+            if (prog_.probes.lines && !label && line_ != 0 && line_ != probedLine) {
+                probe(ProbeKind::Line, line_);
+                probedLine = line_;
+            }
             retarget_ = ir::kNoReg;
             retargetFrom_ = ir::kNoReg;
             if (fuse && in.dst != ir::kNoReg && canRetarget(in) && pc_ + 1 < fn_.code.size()) {
@@ -68,6 +87,7 @@ public:
             }
             lower(in);
         }
+        irPc_[fn_.code.size()] = static_cast<std::uint32_t>(code_.size());
         out.frameSlots = regSlots_ + maxOutgoing_;
         out.argBase = regSlots_;
         if (out.frameSlots > 0xFFFF) {
@@ -90,6 +110,12 @@ public:
         out.file = fn_.file;
         out.loopLines = std::move(loopLines_);
         out.resumeRecords = std::move(resumeRecords_);
+        if (prog_.probes.lines) {
+            for (const ir::LocalName& l : fn_.locals) {
+                out.locals.push_back(
+                    {l.name, fn_.regs[l.reg], offset_[l.reg], l.from == 0 ? 0 : irPc_[l.from], irPc_[l.to]});
+            }
+        }
         if (tooBig_) {
             out.code.clear();
             out.code.push_back({Opc::Trap, 0, static_cast<std::uint16_t>(ir::TrapCode::Unreachable), 0, 0});
@@ -189,6 +215,17 @@ private:
         code_.push_back(in);
         lines_.push_back(line_);
         return code_.size() - 1;
+    }
+
+    // A runtime builtin rather than an opcode: a handler of its own made the dispatch loop 7 to 15% slower.
+    void probe(ProbeKind kind, std::uint32_t line) {
+        auto site = static_cast<std::uint32_t>(prog_.probeSites.size());
+        auto function = static_cast<std::uint32_t>(prog_.functions.size());
+        prog_.probeSites.push_back({function, static_cast<std::uint32_t>(code_.size()), line, kind});
+        std::size_t at = put(Opc::LoadI, regSlots_);
+        code_[at].setBc(static_cast<std::int32_t>(site));
+        put(Opc::Builtin, regSlots_, 0, kProbeBuiltin);
+        maxOutgoing_ = std::max<std::uint32_t>(maxOutgoing_, 1);
     }
 
     void word(std::uint32_t v) {
@@ -678,6 +715,9 @@ private:
             return;
         }
         case Op::Return:
+            if (prog_.probes.calls) {
+                probe(ProbeKind::Leave, line_);
+            }
             if (in.a == ir::kNoReg) {
                 put(Opc::Ret0);
             } else {
@@ -903,6 +943,7 @@ private:
     bool tooBig_ = false;
     bool tooFar_ = false;
     std::vector<std::uint32_t> origOffset_;
+    std::vector<std::uint32_t> irPc_; // bytecode index where each IR instruction starts
     std::vector<std::uint32_t> defs_;
     std::vector<std::uint32_t> uses_;
     std::vector<bool> hoisted_;
@@ -917,9 +958,10 @@ public:
 
 } // namespace
 
-std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module) {
+std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module, Probes probes) {
     auto prog = std::make_unique<Program>();
     prog->module = std::move(module);
+    prog->probes = probes;
     prog->layouts = std::make_unique<Layouts>(prog->module->types);
     for (const ir::Constant& c : prog->module->constants) {
         Slot v{};

@@ -30,6 +30,7 @@ struct CompileOptions {
     bool optimize = true;
     bool emitBinary = false;
     bool binaryLines = true; // keep source lines for trap messages
+    vm::Probes probes{};     // debugger and profiler hooks; line probes also skip the IR optimizer
     std::string manifest;    // `package.toml` text carried in the module
 };
 
@@ -37,7 +38,7 @@ struct CompileOptions {
 CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions options = {});
 
 /// Checks a `.qzb` module's hash and signatures, decodes and validates it, and generates its bytecode.
-std::expected<std::shared_ptr<const vm::Program>, std::string> load(std::span<const std::uint8_t> bytes,
-                                                                    const ir::ReadOptions& options = {});
+std::expected<std::shared_ptr<const vm::Program>, std::string>
+load(std::span<const std::uint8_t> bytes, const ir::ReadOptions& options = {}, vm::Probes probes = {});
 
 } // namespace quartz

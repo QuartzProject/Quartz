@@ -118,6 +118,22 @@ struct Ins {
 };
 static_assert(sizeof(Ins) == 8);
 
+/// Instrumentation compiled into a program; a normal build has none, so its interpreter never meets a probe.
+struct Probes {
+    bool lines = false; // a probe where each source line starts, for debuggers; also turns fused instructions off
+    bool calls = false; // a probe on entry and before each return, for profilers
+};
+
+enum class ProbeKind : std::uint8_t { Line, Enter, Leave };
+
+/// A probe is `LoadI scratch, site` and `Builtin scratch, 0, kProbeBuiltin`: the loop has no handler of its own.
+struct ProbeSite {
+    std::uint32_t function = 0;
+    std::uint32_t pc = 0; // of the LoadI
+    std::uint32_t line = 0;
+    ProbeKind kind = ProbeKind::Line;
+};
+
 struct CompiledFunction {
     std::string name;
     std::string file;
@@ -145,6 +161,17 @@ struct CompiledFunction {
     static constexpr std::int32_t kHostArg = -1;
     static constexpr std::int32_t kBadArg = -2;
     std::vector<std::pair<std::uint32_t, ir::TypeId>> refSlots; // slots that may hold references, for task suspension
+
+    /// With line probes: a named register, its frame slot and the bytecode range [from, to) where it is in scope.
+    struct Local {
+        std::string name;
+        ir::TypeId type;
+        std::uint32_t slot;
+        std::uint32_t from;
+        std::uint32_t to;
+    };
+
+    std::vector<Local> locals;
 };
 
 /// A validated module lowered to bytecode; immutable and shareable between sandboxes.
@@ -159,6 +186,8 @@ struct Program {
     std::vector<bool> importReprC; // an import passes or returns a @repr(C) struct
     std::shared_ptr<TierState> tier; // native code and hotness counters
     std::vector<std::uint32_t> closureConst; // per function: constant holding its capture-free closure, or ~0
+    Probes probes;
+    std::vector<ProbeSite> probeSites;
 
     [[nodiscard]] std::uint32_t findFunction(std::string_view name) const;
 };
@@ -171,7 +200,7 @@ inline std::uint8_t formatKind(ir::TypeId t) { return t == ir::kI64 ? 0 : t == i
 inline bool isShortJump(Opc op) { return op >= Opc::JLtI && op <= Opc::ForList; }
 
 /// Lowers a validated module. The module must have passed ir::validate.
-std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module);
+std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module, Probes probes = {});
 
 std::string disassemble(const Program& p, std::uint32_t function);
 

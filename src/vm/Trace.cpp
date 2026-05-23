@@ -23,6 +23,9 @@ void Sandbox::traceCallers(std::size_t entryDepth) {
         std::uint32_t line = at > 0 && at - 1 < r.fn->lines.size() ? r.fn->lines[at - 1] : 0;
         trap_.callers.push_back({r.fn->name, r.fn->file, line});
     }
+    if (probe_ != nullptr) {
+        probeTrap(entryDepth);
+    }
 }
 
 } // namespace quartz::vm

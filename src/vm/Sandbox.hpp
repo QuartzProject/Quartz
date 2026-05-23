@@ -74,6 +74,26 @@ struct HostCall {
 
 using HostFn = bool (*)(HostCall& call, void* user);
 
+/// What a probe reports (vm::Probes): a line, a call or a return, a trap, or the start and end of an interpreter run.
+struct ProbeEvent {
+    enum class Kind : std::uint8_t { Line, Enter, Leave, Trap, Begin, End };
+    Kind kind = Kind::Line;
+    std::uint32_t function = 0;
+    std::uint32_t line = 0;
+    std::size_t depth = 0; // calls below the running function
+};
+
+/// Returning false stops the program with a HostError trap ("stopped by the debugger").
+using ProbeFn = bool (*)(Sandbox& sandbox, const ProbeEvent& event, void* user);
+
+/// One interpreter frame seen from a probe: `pc` is the instruction it is running (a call, for the callers).
+struct FrameView {
+    std::uint32_t function = 0;
+    std::uint32_t pc = 0;
+    std::uint32_t line = 0;
+    const Slot* regs = nullptr;
+};
+
 class Sandbox {
 public:
     Sandbox(std::shared_ptr<const Program> program, Limits limits = {});
@@ -147,6 +167,11 @@ public:
     bool hostMapEntry(const Map* map, std::size_t index, std::span<Slot> key, std::span<Slot> value);
     /// The value slots stored under `key`, or null when it is absent.
     [[nodiscard]] const Slot* hostMapGet(const Map* map, std::span<const Slot> key) const;
+    /// Receives the probes compiled into the program and the start, end and traps of each interpreter run; null
+    /// removes it. An instrumented program always runs in the interpreter.
+    void setProbe(ProbeFn fn, void* user = nullptr);
+    /// Inside a probe: the interpreter frames of the running call or task, innermost first.
+    [[nodiscard]] std::vector<FrameView> frames() const;
 
     // Runtime.cpp and MapRuntime.cpp (used by the interpreter)
     Str* allocStr(std::size_t len);
@@ -189,6 +214,10 @@ public:
     Status execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth);
     bool callHost(std::uint32_t import, const Slot* args, Slot* result);
     bool callHostC(std::uint32_t import, const Slot* args, Slot* result);
+    // Probe.cpp
+    Status probedExecute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth);
+    bool probeHit(const Slot* R, std::uint32_t site);
+    void probeTrap(std::size_t entryDepth);
 
     Trap trap_;
     bool trapped_ = false;
@@ -317,6 +346,14 @@ private:
     std::vector<std::unique_ptr<stdlib::NativeCtx>> nativeCtx_;
     TierMode tierMode_ = TierMode::Interpreter;
     std::string nativeCache_;
+    // Last, so the members the interpreter reads keep their offsets and its machine code does not change.
+    ProbeFn probe_ = nullptr;
+    void* probeUser_ = nullptr;
+    const CompiledFunction* probeFn_ = nullptr; // the frame a probe reports, while it runs
+    std::uint32_t probePc_ = 0;
+    const Slot* probeR_ = nullptr;
+    const CompiledFunction* probeRootFn_ = nullptr; // the bottom frame of the run probedExecute started
+    Slot* probeRootR_ = nullptr;
 
     friend struct HostCall;
     friend class Interpreter;

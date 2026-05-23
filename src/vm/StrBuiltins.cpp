@@ -178,6 +178,9 @@ bool Builtins::run(Sandbox& sb, std::uint32_t index, const Slot* args, Slot* out
         checkedSub, checkedMul,       checkedDiv, saturatingAdd, saturatingSub, saturatingMul,
     };
     static_assert(std::size(kTable) == ir::kRuntimeBuiltins);
+    if (index == kProbeBuiltin) {
+        return sb.probeHit(args, static_cast<std::uint32_t>(out->u));
+    }
     return index < std::size(kTable) && kTable[index](sb, args, out);
 }
 
