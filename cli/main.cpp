@@ -2,8 +2,10 @@
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
 #include "Registry.hpp"
+#include "dap/Session.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
+#include "vm/Profiler.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -47,7 +49,7 @@ bool hostLog(quartz::vm::HostCall& call, void*) {
 int usage() {
     std::fprintf(stderr,
                  "usage: quartz check|ir|run|dis|test <file.qz|file.qzi|package dir>... | <file.qzb> [--entry name]\n"
-                 "                [--filter text] (test)\n"
+                 "                [--filter text] (test) [--profile] [--profile-out file.json] (run)\n"
                  "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
                  "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
                  "[--strip-lines] [--host-only]\n"
@@ -60,6 +62,7 @@ int usage() {
                  "       quartz new <package name, like org.example.hello>\n"
                  "       quartz doc <file.qz|file.qzi|package dir>... [-o out.md]\n"
                  "       quartz repl\n"
+                 "       quartz debug --dap\n"
                  "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
     return 2;
 }
@@ -146,11 +149,14 @@ void bindHost(quartz::vm::Sandbox& sb) {
 }
 
 int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry,
-               const std::vector<quartz::cli::Plugin>& plugins) {
+               const std::vector<quartz::cli::Plugin>& plugins, quartz::vm::Profiler* profiler) {
     quartz::cli::PluginHost host;
     auto started = host.start(plugins, bindHost);
     quartz::vm::Sandbox sb(program);
     bindHost(sb);
+    if (profiler != nullptr) {
+        profiler->attach(sb);
+    }
     if (auto l = started ? host.link(sb) : started; !l) {
         std::fprintf(stderr, "%s\n", l.error().c_str());
         return 3;
@@ -199,6 +205,8 @@ struct Args {
     bool requireSignature = false;
     bool lines = true;
     bool hostOnly = false;
+    bool profile = false;
+    std::string profileOut;
     std::string manifest;
     std::string filter;
     std::filesystem::path packageDir;
@@ -257,6 +265,11 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             a.requireSignature = true;
         } else if (arg == "--strip-lines") {
             a.lines = false;
+        } else if (arg == "--profile") {
+            a.profile = true;
+        } else if (arg == "--profile-out" && hasValue) {
+            a.profile = true;
+            a.profileOut = argv[++i];
         } else if (arg.ends_with(".qzb")) {
             a.binaryPath = argv[i];
         } else if (std::filesystem::is_directory(argv[i])) {
@@ -336,6 +349,50 @@ int build(Args& a) {
     return writeFile(a.output, out.binary) ? 0 : 2;
 }
 
+// `quartz debug --dap`: the program the client launches, compiled with line probes and linked to its plugins.
+std::expected<quartz::dap::DebugTarget, std::string> loadForDebug(const std::string& path) {
+    std::string tool = "quartz";
+    std::string cmd = "debug";
+    std::string target = path;
+    char* argv[] = {tool.data(), cmd.data(), target.data()};
+    auto a = parseArgs(3, argv);
+    if (!a) {
+        return std::unexpected("cannot load " + path);
+    }
+    quartz::dap::DebugTarget out;
+    if (!a->binaryPath.empty()) {
+        auto bytes = readFile(a->binaryPath);
+        auto loaded = bytes ? quartz::load(asBytes(*bytes), {}, {.lines = true, .calls = false})
+                            : std::unexpected(std::string("cannot read the module"));
+        if (!loaded) {
+            return std::unexpected(a->binaryPath + ": " + loaded.error());
+        }
+        out.program = *loaded;
+    } else {
+        a->inputs.push_back({std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
+        quartz::CompileOptions opts;
+        opts.probes.lines = true;
+        quartz::CompileOutput compiled = quartz::compile(a->inputs, opts);
+        if (!compiled.program) {
+            return std::unexpected(compiled.diagnostics);
+        }
+        out.program = compiled.program;
+        out.diagnostics = std::move(compiled.diagnostics);
+    }
+    if (!a->plugins.empty()) {
+        out.link = [plugins = a->plugins](quartz::vm::Sandbox& client,
+                                          const std::function<void(quartz::vm::Sandbox&)>& bind)
+            -> std::expected<std::shared_ptr<void>, std::string> {
+            auto host = std::make_shared<quartz::cli::PluginHost>();
+            if (auto l = host->start(plugins, bind).and_then([&] { return host->link(client); }); !l) {
+                return std::unexpected(l.error());
+            }
+            return std::shared_ptr<void>(host);
+        };
+    }
+    return out;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -360,6 +417,9 @@ int main(int argc, char** argv) {
     }
     if (argc < 3) {
         return usage();
+    }
+    if (cmd == "debug" && std::string_view(argv[2]) == "--dap") {
+        return quartz::dap::runDebugAdapter(loadForDebug);
     }
     if (cmd == "fmt") {
         return runFmt(argc, argv);
@@ -394,7 +454,7 @@ int main(int argc, char** argv) {
         quartz::ir::ReadOptions ro;
         ro.trustedKeys = args->trusted;
         ro.requireSignature = args->requireSignature;
-        auto loaded = quartz::load(asBytes(*bytes), ro);
+        auto loaded = quartz::load(asBytes(*bytes), ro, {.lines = false, .calls = args->profile});
         if (!loaded) {
             std::fprintf(stderr, "%s: %s\n", args->binaryPath.c_str(), loaded.error().c_str());
             return 1;
@@ -410,6 +470,7 @@ int main(int argc, char** argv) {
         }
         quartz::CompileOptions opts;
         opts.printIr = cmd == "ir";
+        opts.probes.calls = args->profile && cmd == "run";
         quartz::CompileOutput out = quartz::compile(args->inputs, opts);
         std::fputs(out.diagnostics.c_str(), stderr);
         if (cmd == "ir" && !out.program) {
@@ -454,5 +515,17 @@ int main(int argc, char** argv) {
     if (cmd != "run") {
         return usage();
     }
-    return runProgram(program, args->entry, args->plugins);
+    if (!args->profile) {
+        return runProgram(program, args->entry, args->plugins, nullptr);
+    }
+    quartz::vm::Profiler profiler;
+    int code = runProgram(program, args->entry, args->plugins, &profiler);
+    std::fputs(profiler.report(*program).c_str(), stderr);
+    if (!args->profileOut.empty()) {
+        std::string json = profiler.speedscope(*program);
+        if (!writeFile(args->profileOut, asBytes(json))) {
+            return 2;
+        }
+    }
+    return code;
 }
