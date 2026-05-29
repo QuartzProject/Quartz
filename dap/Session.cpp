@@ -1,6 +1,7 @@
 #include "Session.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 
 namespace quartz::dap {
@@ -306,8 +307,9 @@ void Session::setBreakpoints(const Json& request) {
     respond(request, Json::object().set("breakpoints", std::move(result)));
 }
 
+// Waits for the next stop, bounded so an evaluation sent while the program runs cannot hold up a `pause`.
 bool Session::waitForStop(std::unique_lock<std::mutex>& lock) {
-    cv_.wait(lock, [&] { return state_ != State::Running; });
+    cv_.wait_for(lock, std::chrono::seconds(5), [&] { return state_ != State::Running; });
     return state_ == State::Stopped;
 }
 
