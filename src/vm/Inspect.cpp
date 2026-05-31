@@ -146,7 +146,7 @@ public:
             return;
         }
         case TypeKind::Enum: {
-            std::size_t tag = s->u;
+            auto tag = static_cast<std::size_t>(s->u);
             if (tag >= info.variants.size()) {
                 out += "?";
                 return;
@@ -254,7 +254,7 @@ std::size_t childCount(const Program& p, const ValueRef& v) {
     case TypeKind::Tuple:
         return info.elems.size();
     case TypeKind::Enum:
-        return s->u < info.variants.size() ? info.variants[s->u].payload.size() : 0;
+        return s->u < info.variants.size() ? info.variants[static_cast<std::size_t>(s->u)].payload.size() : 0;
     case TypeKind::List:
         return s->p != nullptr ? static_cast<const List*>(s->p)->len : 0;
     case TypeKind::Map:
@@ -296,7 +296,7 @@ std::vector<ValueChild> childrenOf(const Program& p, const ValueRef& v, std::siz
         }
         break;
     case TypeKind::Enum: {
-        const ir::VariantInfo& var = info.variants[s->u];
+        const ir::VariantInfo& var = info.variants[static_cast<std::size_t>(s->u)];
         std::uint32_t off = 1;
         for (std::size_t i = 0; i < end; ++i) {
             if (i >= start) {
