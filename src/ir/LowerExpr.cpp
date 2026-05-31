@@ -380,9 +380,23 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
         return dst;
     }
     case CallKind::Construct: {
-        const TypeInfo& info = types_->info(rt);
+        const TypeInfo info = types_->info(rt);
+        auto decl = prog_.structDecls.find(info.genericBase);
         for (std::size_t i = 0; i < e->ordered.size(); ++i) {
+            // A field default of a generic struct was checked with the struct's own parameters.
+            bool generic = info.genericBase != 0 && decl != prog_.structDecls.end() &&
+                           i < decl->second->fields.size() && decl->second->fields[i].defaultValue == e->ordered[i];
+            ir::TypeSubst saved = subst_;
+            if (generic) {
+                const std::vector<TypeId> params = types_->info(info.genericBase).typeParams;
+                ir::TypeSubst own;
+                for (std::size_t k = 0; k < params.size() && k < info.typeArgs.size(); ++k) {
+                    own.emplace_back(params[k], info.typeArgs[k]);
+                }
+                subst_.insert(subst_.begin(), own.begin(), own.end());
+            }
             args.push_back(lowerExpr(e->ordered[i], info.fields[i].type));
+            subst_ = std::move(saved);
         }
         emitArgs(Op::Make, dst, 0, args);
         return dst;
