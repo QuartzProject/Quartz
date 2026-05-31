@@ -149,6 +149,7 @@ public:
 
     // Iteration.cpp
     TypeId iterationItem(ForStmt* s, TypeId it, TypeId& indexType);
+    FnInfo* methodNamed(TypeId t, std::string_view name);
     TypeId mapListCall(CallExpr* call, MemberExpr* callee, TypeId recv);
 
     // Traits.cpp
