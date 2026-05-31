@@ -1,0 +1,89 @@
+// expect: {b, c, d} 3 true 0=b 1=c 2=d
+// expect: {b, c, d, z} {c} {b, d} {b, d, z} true false true false
+// expect: [-3, -2, -1, 0, 0, 1, 2, 3] -3 3 6 0 [-2, -1, 0, 9, 1, 2] true
+// expect: {0, 3, 7, 64, 200} 5 true false 64 200 null
+// expect: {0, 3, 7, 64, 200, 500} {3} {0, 7, 64, 200} true true
+// expect: [1, 1, 2, 4, 5, 9] 1 6 1 1 2 4 5 9
+// expect: b c 1
+// expect: (b, 2) {c: 3, a: 1} false 3 {d: 4, c: 3}
+// expect: shared 4 copy 3
+import org.quartzlang.collections.*
+
+struct Job {
+    name: str
+    due: int
+}
+
+fn main() -> int {
+    let s = setOf(["b", "a", "b", "c"])
+    s.add("d")
+    s.remove("a")
+    var walk = ""
+    for i, x in s {
+        walk += " {i}={x}"
+    }
+    print("{s} {s.len()} {s.contains("b")}{walk}")
+    let t = setOf(["c", "z"])
+    let u = s.union(t)
+    print("{u} {s.intersect(t)} {s.difference(t)} {s.symmetricDifference(t)} {s == s.copy()} {s == t} {t.isSubsetOf(u)} {s.isDisjoint(t)}")
+
+    let d = Deque::<int>()
+    for i in 0..4 {
+        d.pushBack(i)
+        d.pushFront(-i)
+    }
+    let shown = "{d}"
+    let front = d.popFront()
+    let back = d.popBack()
+    d.set(3, 9)
+    var sum = 0
+    for x in d {
+        sum += x
+    }
+    print("{shown} {front} {back} {d.len()} {d.get(2)} {d} {sum == 9}")
+
+    let b = BitSet()
+    for i in [3, 64, 65, 200, 0] {
+        b.set(i)
+    }
+    b.unset(65)
+    b.flip(7)
+    print("{b} {b.count()} {b.get(64)} {b.get(65)} {b.nextSet(8)} {b.highest()} {b.nextSet(201)}")
+    let c = BitSet()
+    c.set(3)
+    c.set(500)
+    print("{b.union(c)} {b.intersect(c)} {b.difference(c)} {b.intersects(c)} {b == b.union(BitSet())}")
+
+    let q = PriorityQueue::<int>()
+    for x in [5, 1, 4, 1, 9, 2] {
+        q.push(x)
+    }
+    var popped = ""
+    let before = "{q} {q.peek()} {q.len()}"
+    while !q.isEmpty() {
+        popped += " {q.pop()}"
+    }
+    print("{before}{popped}")
+    let jobs = PriorityQueueBy::<Job>((a, b) => b.due - a.due)
+    jobs.push(Job("a", 3))
+    jobs.push(Job("b", 7))
+    jobs.push(Job("c", 5))
+    print("{jobs.pop()?.name} {jobs.pop()?.name} {jobs.len()}")
+
+    let cache = LruCache::<str, int>(2)
+    cache.set("a", 1)
+    cache.set("b", 2)
+    cache.get("a")
+    let evicted = cache.set("c", 3)
+    let mid = "{cache}"
+    cache.remove("a")
+    cache.set("d", 4)
+    print("{evicted} {mid} {cache.has("b")} {cache.peek("c")} {cache}")
+
+    let alias = s
+    alias.add("e")
+    let own = s.copy()
+    own.remove("e")
+    print("shared {s.len()} copy {own.len()}")
+    return 0
+}

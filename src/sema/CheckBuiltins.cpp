@@ -100,6 +100,19 @@ std::optional<BuiltinSig> Checker::extraBuiltinMethod(TypeId recv, std::string_v
         }
         return std::nullopt;
     }
+    // The `for` cursor of a map, for the iterators of org.quartzlang.collections; a stale cursor traps (D135).
+    if (info.kind == ir::TypeKind::Map && currentFile_ < files_.size() &&
+        files_[currentFile_].package == kCollectionsPackage) {
+        if (name == "cursorNext") {
+            return BuiltinSig{Intrinsic::MapNext, {ir::kI64}, ir::kI64};
+        }
+        if (name == "keyAt") {
+            return BuiltinSig{Intrinsic::MapKeyAt, {ir::kI64}, info.key};
+        }
+        if (name == "valueAt") {
+            return BuiltinSig{Intrinsic::MapValueAt, {ir::kI64}, info.elem};
+        }
+    }
     if (recv == ir::kF64) {
         for (const auto& [n, op] : kUnaryFloat) {
             if (n == name) {

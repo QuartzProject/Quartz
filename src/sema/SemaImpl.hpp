@@ -11,6 +11,7 @@ namespace quartz::sema {
 
 inline constexpr std::string_view kMathPackage = "org.quartzlang.math";
 inline constexpr std::string_view kListsPackage = "org.quartzlang.lists";
+inline constexpr std::string_view kCollectionsPackage = "org.quartzlang.collections";
 
 /// The math functions added after sqrt..max (CheckBuiltins.cpp).
 bool isExtraMathFunction(std::string_view name);

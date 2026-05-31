@@ -1,0 +1,66 @@
+// expect: 2001 0 2002 v5 null false
+// expect: (10, v10) (10, v10) (9, v9) (11, v11) null null
+// expect: ordered 2003000 [100, 101, 102, 103, 104] [2000, 2001, 2002] [0, 1]
+// expect: 667 0 2001 (0, v0) (2001, v2001) 665
+// expect: {a: 1, b: 2} [a, b] [1, 2] true false
+// expect: {1, 3, 5, 7, 9} 1 9 3 5 1 null true false [3, 4, 5, 7]
+// expect: true 1 9 {3, 4, 5, 7}
+import org.quartzlang.collections.*
+
+fn keys(it: SortedMapIter<int, str>) -> [int] {
+    let out = List::<int>()
+    for e in it {
+        out.push(e.0)
+    }
+    return out
+}
+
+fn main() -> int {
+    let m = SortedMap::<int, str>()
+    for i in 0..2003 {
+        let k = (i * 7919) % 2003
+        if k != 1000 && k != 1001 && k != 1002 {
+            m.set(k, "v{k}")
+        }
+    }
+    m.set(1000, "x")
+    print("{m.len()} {m.firstKey()} {m.lastKey()} {m.get(5)} {m.get(1001)} {m.has(3000)}")
+    print("{m.floor(10)} {m.ceiling(10)} {m.lower(10)} {m.higher(10)} {m.floor(-1)} {m.ceiling(5000)}")
+    var check = 0
+    var prev = -1
+    var ordered = true
+    for e in m {
+        let (k, v) = e
+        ordered = ordered && k > prev
+        prev = k
+        check += k
+    }
+    print("{if ordered { "ordered" } else { "unordered" }} {check} {keys(m.range(100, 105))} {keys(m.rangeFrom(2000))} {keys(m.rangeUntil(2))}")
+    for i in 0..2003 {
+        if i % 3 != 0 {
+            m.remove(i)
+        }
+    }
+    print("{m.len()} {m.firstKey()} {m.lastKey()} {m.popFirst()} {m.popLast()} {m.len()}")
+    let small = SortedMap::<str, int>()
+    small.set("b", 2)
+    small.set("a", 1)
+    let other = SortedMap::<str, int>()
+    other.set("a", 1)
+    other.set("b", 2)
+    let same = small == other
+    other.set("b", 3)
+    print("{small} {small.keys()} {small.values()} {same} {small == other}")
+
+    let s = sortedSetOf([5, 1, 9, 3, 7])
+    let added = "{s.add(4)} {s.add(4)}"
+    let r = List::<int>()
+    for x in s.range(3, 8) {
+        r.push(x)
+    }
+    s.remove(4)
+    print("{s} {s.first()} {s.last()} {s.floor(4)} {s.ceiling(4)} {s.lower(3)} {s.higher(9)} {added} {r}")
+    s.add(4)
+    print("{s == sortedSetOf([1, 3, 4, 5, 7, 9])} {s.popFirst()} {s.popLast()} {s}")
+    return 0
+}
