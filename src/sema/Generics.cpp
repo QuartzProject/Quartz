@@ -262,6 +262,13 @@ TypeId Checker::finishGenericCall(CallExpr* call, FnInfo* fn, Expr* receiver, ir
             Expr* d = fn->defaults[i + skip];
             if (d == nullptr) {
                 diags_.error(call->span, std::format("missing argument '{}'", str(fn->paramNames[i + skip])));
+            } else if (d->type == ir::kError && defaultsInProgress_.insert(d).second) {
+                // Checked once, in the callee's scope, like the defaults of other functions.
+                auto saved = std::move(scopes_);
+                scopes_.clear();
+                expectAssignable(checkValue(d, fn->params[i + skip]), fn->params[i + skip], d->span);
+                scopes_ = std::move(saved);
+                defaultsInProgress_.erase(d);
             }
             ordered[i] = d;
         }
