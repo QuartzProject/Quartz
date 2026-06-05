@@ -1,0 +1,91 @@
+// expect: lobby 64 null 2.0 200 q [a, b]
+// expect: [World(name=w1, seed=42, mode=Creative), World(name=w2, seed=7, mode=Custom(3, x))]
+// expect: {"name": "lobby", "max-players": 64, "ratio": 2.0, "worlds": [{"name": "w1", "seed": 42, "mode": "Creative"}, {"name": "w2", "seed": 7, "mode": {"Custom": [3, "x"]}}], "tags": {"a": 1, "b": 2}, "small": 200, "initial": "q"}
+// expect: name = "lobby"|max-players = 64|ratio = 2.0|small = 200|initial = "q"||[[worlds]]|name = "w1"|seed = 42|mode = "Creative"||[[worlds]]|name = "w2"|seed = 7||[worlds.mode]|Custom = [3, "x"]||[tags]|a = 1|b = 2|
+// expect: round trip true
+// expect: line 6: worlds[1].seed: expected int, found str "seven"
+// expect: line 3: small: expected byte, found int 300
+// expect: name: expected str, found nothing
+// expect: line 4: worlds[0].mode: expected Mode (Survival, Creative or Custom), found str "Hardcore"
+// expect: line 2: tags["a b"]: expected int, found float 1.5
+// expect: toml line 1: expected a value
+// expect: Node(name=root, kids=[Node(name=a, kids=[]), Node(name=b, kids=[])]) [Limit, Custom(1, z)] 3 null
+// expect: 'weights[1]' is null, and TOML has no null
+import org.quartzlang.data.*
+
+@derive(Decode, Encode, Eq, Show)
+enum Mode {
+    Survival
+    Creative
+    Custom(int, str)
+}
+
+@derive(Decode, Encode, Eq, Show)
+struct World {
+    name: str
+    seed: int = 42
+    mode: Mode = Mode.Survival
+}
+
+@derive(Decode, Encode)
+struct Config {
+    name: str
+    @key("max-players")
+    maxPlayers: int = 20
+    motd: str?
+    ratio: float = 1.0
+    worlds: [World] = []
+    tags: Map<str, int> = Map()
+    small: u8 = 1
+    initial: char = 'x'
+}
+
+@derive(Decode, Encode, Show)
+struct Node {
+    name: str
+    kids: [Node] = []
+}
+
+@derive(Decode, Encode, Show)
+enum Step {
+    Limit
+    Custom(int, str)
+}
+
+@derive(Encode)
+struct Weights {
+    weights: [float?]
+}
+
+fn report<T>(r: Result<T, DecodeError>) {
+    match r {
+        Ok(x) => print("ok")
+        Err(e) => print("{e}")
+    }
+}
+
+fn main() -> int {
+    let text = "name = \"lobby\"\nmax-players = 64\nratio = 2\nsmall = 200\ninitial = \"q\"\n[tags]\na = 1\nb = 2\n[[worlds]]\nname = \"w1\"\nmode = \"creative\"\n[[worlds]]\nname = \"w2\"\nseed = 7\nmode = \{ Custom = [3, \"x\"] }\n"
+    let c = decodeToml::<Config>(text).unwrap()
+    print("{c.name} {c.maxPlayers} {c.motd} {c.ratio} {c.small} {c.initial} {c.tags.keys()}")
+    print("{c.worlds}")
+    print(encodeJson(c))
+    let toml = encodeToml(c).unwrap()
+    print(toml.replace("\n", "|"))
+    let back = decodeToml::<Config>(toml).unwrap()
+    print("round trip {back.worlds[1] == c.worlds[1] && back.maxPlayers == 64 && back.tags["b"] == 2}")
+    report(decodeToml::<Config>("name = \"lobby\"\n[[worlds]]\nname = \"w1\"\n[[worlds]]\nname = \"w2\"\nseed = \"seven\"\n"))
+    report(decodeJson::<Config>("\{\n  \"name\": \"x\",\n  \"small\": 300\n}"))
+    report(decodeJson::<Config>("\{\"motd\": \"hi\"}"))
+    report(decodeYaml::<Config>("name: a\nworlds:\n  - name: b\n    mode: Hardcore\n"))
+    report(decodeJson::<Config>("\{\"name\": \"x\",\n \"tags\": \{\"a b\": 1.5}}"))
+    report(decodeToml::<Config>("name = "))
+    let tree = decodeJson::<Node>("\{\"name\": \"root\", \"kids\": [\{\"name\": \"a\"}, \{\"name\": \"b\"}]}").unwrap()
+    let steps = decode::<[Step]>(encode([Step.Limit, Step.Custom(1, "z")])).unwrap()
+    print("{tree} {steps} {decode::<int>(Value.Int(3)).unwrap()} {decode::<str?>(Value.Null).unwrap()}")
+    match encodeToml(Weights([1.5, null])) {
+        Ok(t) => print(t)
+        Err(e) => print(e)
+    }
+    return 0
+}

@@ -40,7 +40,11 @@ void Checker::declareDerives() {
                                    ? langTraitNamed(str(static_cast<IdentExpr*>(arg.value)->name))
                                    : nullptr;
                 if (t == nullptr || t->lang == LangTrait::Iterator) {
-                    diags_.error(arg.value->span, "@derive takes Eq, Hash, Ord and Show");
+                    diags_.error(arg.value->span, "@derive takes Eq, Hash, Ord, Show, Decode and Encode");
+                    continue;
+                }
+                bool codec = t->lang == LangTrait::Decode || t->lang == LangTrait::Encode;
+                if (codec && !codecTypes(arg.value->span)) {
                     continue;
                 }
                 if (!traitImpls_.insert({t, entryPtr->type}).second) {
@@ -68,20 +72,31 @@ void Checker::deriveTrait(TypeId type, TraitInfo* trait) {
         implBounds_[{trait, type}] = bounds;
     }
     std::string_view method = derivedMethod(trait->lang);
-    if (method.empty()) {
+    bool codec = trait->lang == LangTrait::Decode || trait->lang == LangTrait::Encode;
+    if (method.empty() && !codec) {
         return;
     }
     TypeId owner = info.typeParams.empty() ? type : types_->instantiate(type, info.typeParams);
-    auto* fn = prog_->fnStorage.emplace_back(std::make_unique<FnInfo>()).get();
+    auto* fn =
+        codec ? deriveCodec(type, owner, trait) : prog_->fnStorage.emplace_back(std::make_unique<FnInfo>()).get();
     fn->derived = trait->lang;
     fn->owner = owner;
-    fn->hasSelf = true;
-    fn->name = std::format("{}.{}", info.name, method);
     fn->typeParams = info.typeParams;
     for (auto& [sym, pid] : baseParams_[type]) {
         fn->typeParamNames.push_back(sym);
     }
     fn->bounds = std::move(bounds);
+    if (codec) {
+        if (fn->generic()) {
+            prog_->generics.push_back(fn);
+        } else {
+            fn->index = static_cast<std::uint32_t>(prog_->functions.size());
+            prog_->functions.push_back(fn);
+        }
+        return;
+    }
+    fn->hasSelf = true;
+    fn->name = std::format("{}.{}", info.name, method);
     fn->params.push_back(owner);
     fn->paramNames.push_back(names_.intern("self"));
     fn->defaults.push_back(nullptr);
@@ -134,6 +149,12 @@ void Checker::checkDerives() {
             return std::any_of(derives_.begin(), derives_.end(),
                                [&](const DeriveInfo& o) { return o.type == d.type && o.trait->lang == lang; });
         };
+        if (d.trait->lang == LangTrait::Decode ||
+            (d.trait->lang == LangTrait::Encode && !derivedToo(LangTrait::Decode))) {
+            if (codecTypes(d.span)) {
+                checkCodecKeys(d);
+            }
+        }
         if (d.trait->lang == LangTrait::Hash && !derivedToo(LangTrait::Eq)) {
             diags_.error(d.span, "deriving Hash needs Eq derived too: maps compare keys field by field");
         }
@@ -158,6 +179,10 @@ bool Checker::checkLangImpl(ImplDecl* impl, TypeId owner, TraitInfo* trait, cons
     switch (trait->lang) {
     case LangTrait::Hash:
         diags_.error(impl->span, "Hash can only be derived: maps hash and compare keys field by field");
+        return false;
+    case LangTrait::Decode:
+    case LangTrait::Encode:
+        diags_.error(impl->span, std::format("{} can only be derived", trait->name));
         return false;
     case LangTrait::Ord:
         manualOrd_.emplace_back(owner, impl->span);

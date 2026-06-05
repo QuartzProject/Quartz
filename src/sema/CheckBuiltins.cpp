@@ -180,6 +180,10 @@ bool Checker::checkExtraBuiltinFunction(CallExpr* call, std::string_view n, Type
             return builtin(op, {ir::kF64}, ir::kF64);
         }
     }
+    if ((n == "decodeAs" || n == "encodeAs") && currentFile_ < files_.size() &&
+        files_[currentFile_].package == kDataPackage) {
+        return checkCodecBuiltin(call, n == "decodeAs", result);
+    }
     if (n == "atan2") {
         return builtin(Intrinsic::MathAtan2, {ir::kF64, ir::kF64}, ir::kF64);
     }

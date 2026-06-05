@@ -22,6 +22,8 @@ constexpr LangTraitSpec kLangTraits[] = {
     {LangTrait::Ord, "Ord", "cmp", ir::kI64, true},
     {LangTrait::Show, "Show", "show", ir::kStr, false},
     {LangTrait::Iterator, "Iterator", "", ir::kVoid, false},
+    {LangTrait::Decode, "Decode", "", ir::kVoid, false},
+    {LangTrait::Encode, "Encode", "", ir::kVoid, false},
 };
 
 } // namespace
@@ -145,6 +147,9 @@ bool Checker::builtinImplements(TypeId t, LangTrait lang) {
         }
         return types_->isNumeric(t) || t == ir::kBool || t == ir::kChar || t == ir::kStr ||
                (info.kind == ir::TypeKind::Tuple && all(info.elems));
+    case LangTrait::Decode:
+    case LangTrait::Encode:
+        return codecBuiltin(t, lang);
     default:
         return false;
     }

@@ -16,6 +16,7 @@ void addLibrarySources(std::vector<std::pair<std::string_view, std::string_view>
                               {"<std>/log.qzi", kLogQzi},           {"<std>/regex.qz", kRegexQz},
                               {"<std>/regex.qzi", kRegexQzi},       {"<std>/collections.qz", kCollectionsQz},
                               {"<std>/queues.qz", kQueuesQz},       {"<std>/sorted.qz", kSortedQz},
+                              {"<std>/codec.qz", kCodecQz},         {"<std>/codec.qzi", kCodecQzi},
                           });
 }
 

@@ -405,6 +405,10 @@ Reg Lowerer::langTraitCall(CallExpr* e, TypeId recvType, Reg dst) {
 }
 
 void Lowerer::lowerDerived(sema::FnInfo* fn, Function& out) {
+    if (fn->derived == sema::LangTrait::Decode || fn->derived == sema::LangTrait::Encode) {
+        lowerCodecDerived(fn, out);
+        return;
+    }
     TypeId t = T(fn->owner);
     const TypeInfo info = types_->info(t);
     std::string shown = info.genericBase != 0 ? types_->info(info.genericBase).name : info.name;

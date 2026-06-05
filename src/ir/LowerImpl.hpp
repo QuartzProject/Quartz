@@ -2,9 +2,10 @@
 
 #include "ir/Lower.hpp"
 
+#include <functional>
 #include <map>
-#include <unordered_map>
 #include <tuple>
+#include <unordered_map>
 
 namespace quartz::ir {
 
@@ -80,6 +81,40 @@ public:
     Reg langTraitCall(CallExpr* e, TypeId recvType, Reg dst);
     Reg lowerTraitCompare(BinaryOp op, Reg l, Reg r, TypeId t);
     void lowerDerived(sema::FnInfo* fn, Function& out);
+
+    // LowerCodec.cpp, LowerCodecTypes.cpp: Decode and Encode, one function per type to and from data.Value
+    struct CodecWork {
+        TypeId type;
+        bool encode;
+        std::uint32_t index;
+    };
+
+    std::vector<CodecWork> codecWork_;
+    std::map<std::pair<TypeId, bool>, std::uint32_t> codecFns_;
+    std::uint32_t codecFunction(TypeId t, bool encode);
+    Reg decodeCall(Reg value, TypeId t);
+    Reg encodeCall(Reg x, TypeId t);
+    Reg lowerCodecCall(CallExpr* e, Reg dst);
+    [[nodiscard]] std::string codecName(TypeId t) const;
+    [[nodiscard]] std::vector<std::string> codecKeys(TypeId t) const;
+    void returnResult(Reg x, bool ok);
+    Reg callHelper(sema::FnInfo* fn, const std::vector<Reg>& args);
+    void failDecode(const std::string& expected, Reg value);
+    Reg valueTagIs(Reg tag, std::uint32_t k);
+    Reg valuePayload(Reg value, std::uint32_t k, TypeId t, std::uint32_t index = 0);
+    Reg decoded(Reg result, TypeId t, const std::function<Reg(Reg)>& wrap);
+    Reg atKey(Reg e, Reg key);
+    Reg atIndex(Reg e, Reg index);
+    Reg makeValue(std::uint32_t tag, Reg payload);
+    void eachEntry(Reg table, const std::function<void(Reg, Reg)>& body);
+    void lowerCodec(const CodecWork& w);
+    void lowerCodecDerived(sema::FnInfo* fn, Function& out);
+    void decodeBuiltin(Reg v, TypeId t);
+    Reg encodeBuiltin(Reg x, TypeId t);
+    void decodeStruct(Reg v, TypeId t);
+    void decodeEnum(Reg v, TypeId t);
+    Reg encodeStruct(Reg x, TypeId t);
+    Reg encodeEnum(Reg x, TypeId t);
 
     // LowerExpr.cpp
     Reg lowerExpr(Expr* e, TypeId want = kError);

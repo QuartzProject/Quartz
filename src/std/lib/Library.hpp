@@ -34,5 +34,7 @@ extern const std::string_view kRegexQzi;
 extern const std::string_view kCollectionsQz;
 extern const std::string_view kQueuesQz;
 extern const std::string_view kSortedQz;
+extern const std::string_view kCodecQz;
+extern const std::string_view kCodecQzi;
 
 } // namespace quartz::stdlib

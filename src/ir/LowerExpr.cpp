@@ -321,6 +321,9 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
             lowerAssert(e);
             return dst;
         }
+        if (static_cast<SpecialOp>(e->builtin) >= SpecialOp::DecodeValue) {
+            return lowerCodecCall(e, dst);
+        }
         if (static_cast<SpecialOp>(e->builtin) >= SpecialOp::MapKeys) {
             return lowerMapList(e, dst);
         }
@@ -648,7 +651,13 @@ std::unique_ptr<Module> Lowerer::run() {
         mod_->stateInit.push_back(idx);
         lowerStateInit(state, function(idx));
     }
-    while (!work_.empty() || !lambdaWork_.empty()) {
+    while (!work_.empty() || !lambdaWork_.empty() || !codecWork_.empty()) {
+        if (!codecWork_.empty()) {
+            CodecWork w = codecWork_.back();
+            codecWork_.pop_back();
+            lowerCodec(w);
+            continue;
+        }
         if (!lambdaWork_.empty()) {
             LambdaWork w = std::move(lambdaWork_.back());
             lambdaWork_.pop_back();

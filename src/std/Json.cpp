@@ -15,7 +15,7 @@ constexpr int kMaxDepth = 256;
 
 class JsonParser {
 public:
-    JsonParser(Builder& b, std::string_view text) : b_(b), s_(text) {}
+    JsonParser(Builder& b, std::string_view text) : b_(b), s_(text), counter_(text) {}
 
     bool parse(vm::Slot* out) {
         skipWs();
@@ -48,6 +48,8 @@ private:
         }
         return false;
     }
+
+    std::uint32_t lineAt(std::size_t pos) { return b_.lines != nullptr ? counter_.at(pos) : 0; }
 
     void skipWs() {
         while (pos_ < s_.size() && (s_[pos_] == ' ' || s_[pos_] == '\t' || s_[pos_] == '\n' || s_[pos_] == '\r')) {
@@ -231,7 +233,12 @@ private:
             while (true) {
                 skipWs();
                 vm::Slot item[2];
-                if (!value(item, depth + 1) || !b_.push(l, item)) {
+                std::uint32_t line = lineAt(pos_);
+                if (!value(item, depth + 1)) {
+                    return false;
+                }
+                b_.line = line;
+                if (!b_.push(l, item)) {
                     return false;
                 }
                 skipWs();
@@ -262,6 +269,7 @@ private:
                 if (pos_ >= s_.size() || s_[pos_] != '"') {
                     return fail("expected a string key");
                 }
+                std::uint32_t line = lineAt(pos_);
                 std::string key;
                 if (!string(key)) {
                     return false;
@@ -273,7 +281,11 @@ private:
                 ++pos_;
                 skipWs();
                 vm::Slot item[2];
-                if (!value(item, depth + 1) || !b_.put(m, key, item)) {
+                if (!value(item, depth + 1)) {
+                    return false;
+                }
+                b_.line = line;
+                if (!b_.put(m, key, item)) {
                     return false;
                 }
                 skipWs();
@@ -299,6 +311,7 @@ private:
     Builder& b_;
     std::string_view s_;
     std::size_t pos_ = 0;
+    LineCounter counter_;
 };
 
 void escapeTo(std::string& out, std::string_view s) {
@@ -322,7 +335,7 @@ void escapeTo(std::string& out, std::string_view s) {
 }
 
 // Fuel per value and a depth limit: a list may hold itself, or the same list many times over.
-bool writeJson(vm::HostCall& call, std::string& out, const vm::Slot* v, std::int64_t indent, int depth) {
+bool writeJson(vm::HostCall& call, std::string& out, const vm::Slot* v, std::int64_t indent, int depth, bool sorted) {
     if (depth > 256) {
         call.error = "toJson: the value nests deeper than 256 (or contains itself)";
         return false;
@@ -363,7 +376,8 @@ bool writeJson(vm::HostCall& call, std::string& out, const vm::Slot* v, std::int
                 out += indent > 0 ? "," : ", ";
             }
             newline(depth + 1);
-            if (!writeJson(call, out, l->data + static_cast<std::size_t>(i) * l->elemSlots, indent, depth + 1)) {
+            if (!writeJson(call, out, l->data + static_cast<std::size_t>(i) * l->elemSlots, indent, depth + 1,
+                           sorted)) {
                 return false;
             }
         }
@@ -376,16 +390,12 @@ bool writeJson(vm::HostCall& call, std::string& out, const vm::Slot* v, std::int
     case Tag::Table: {
         const auto* m = static_cast<const vm::Map*>(v[1].p);
         std::vector<const vm::Slot*> entries;
-        std::uint32_t es = 1u + m->valueSlots;
-        for (std::uint32_t i = 0; i < m->cap; ++i) {
-            if (m->hashes[i] >= 2) {
-                entries.push_back(m->entries + static_cast<std::size_t>(i) * es);
-            }
+        vm::forEachEntry(m, [&](const vm::Slot* e) { entries.push_back(e); });
+        if (sorted) {
+            std::sort(entries.begin(), entries.end(), [](const vm::Slot* a, const vm::Slot* b) {
+                return static_cast<const vm::Str*>(a[0].p)->view() < static_cast<const vm::Str*>(b[0].p)->view();
+            });
         }
-        // Sorted keys keep the output deterministic whatever the hash order is.
-        std::sort(entries.begin(), entries.end(), [](const vm::Slot* a, const vm::Slot* b) {
-            return static_cast<const vm::Str*>(a[0].p)->view() < static_cast<const vm::Str*>(b[0].p)->view();
-        });
         out += '{';
         for (std::size_t i = 0; i < entries.size(); ++i) {
             if (i > 0) {
@@ -394,7 +404,7 @@ bool writeJson(vm::HostCall& call, std::string& out, const vm::Slot* v, std::int
             newline(depth + 1);
             escapeTo(out, static_cast<const vm::Str*>(entries[i][0].p)->view());
             out += ": ";
-            if (!writeJson(call, out, entries[i] + 1, indent, depth + 1)) {
+            if (!writeJson(call, out, entries[i] + 1, indent, depth + 1, sorted)) {
                 return false;
             }
         }
@@ -422,10 +432,10 @@ bool parseJson(vm::HostCall& call, void* user) {
     return b.ok(call.out, value);
 }
 
-bool toJson(vm::HostCall& call, void*) {
+bool writeJsonText(vm::HostCall& call, bool sorted) {
     std::string out;
     std::int64_t indent = std::clamp<std::int64_t>(call.args[2].i, 0, 16);
-    if (!writeJson(call, out, call.args, indent, 0)) {
+    if (!writeJson(call, out, call.args, indent, 0, sorted)) {
         return false;
     }
     if (!call.charge(static_cast<std::int64_t>(out.size() / 4 + 1))) {
@@ -434,6 +444,10 @@ bool toJson(vm::HostCall& call, void*) {
     call.result.p = call.string(out);
     return call.result.p != nullptr;
 }
+
+bool toJson(vm::HostCall& call, void*) { return writeJsonText(call, true); }
+
+bool toJsonOrdered(vm::HostCall& call, void*) { return writeJsonText(call, false); }
 
 } // namespace
 
@@ -447,6 +461,13 @@ bool jsonToValue(vm::Sandbox& sb, const DataTypes& types, std::string_view text,
     return true;
 }
 
+bool parseJsonText(Builder& b, std::string_view text, vm::Slot* root, std::string& error) {
+    JsonParser p(b, text);
+    bool ok = p.parse(root);
+    error = p.error;
+    return ok;
+}
+
 bool parseToml(vm::HostCall& call, void* user);
 bool parseYaml(vm::HostCall& call, void* user);
 
@@ -455,9 +476,8 @@ void addBinaryNatives(std::vector<Native>& out);
 const std::vector<Native>& natives() {
     static const std::vector<Native> kNatives = [] {
         std::vector<Native> v = {
-            {"org.quartzlang.data.parseJson", parseJson},
-            {"org.quartzlang.data.toJson", toJson},
-            {"org.quartzlang.data.parseToml", parseToml},
+            {"org.quartzlang.data.parseJson", parseJson},         {"org.quartzlang.data.toJson", toJson},
+            {"org.quartzlang.data.toJsonOrdered", toJsonOrdered}, {"org.quartzlang.data.parseToml", parseToml},
             {"org.quartzlang.data.parseYaml", parseYaml},
         };
         addBinaryNatives(v);
@@ -470,6 +490,7 @@ const std::vector<Native>& natives() {
         addSemverNatives(v);
         addHttpNatives(v);
         addRegexNatives(v);
+        addCodecNatives(v);
         return v;
     }();
     return kNatives;

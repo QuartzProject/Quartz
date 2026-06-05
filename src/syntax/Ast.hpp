@@ -189,6 +189,8 @@ enum class SpecialOp : std::uint8_t {
     Assert, // `assert(cond, message)`: the message is built only when cond is false
     MapKeys,
     MapValues,
+    DecodeValue, // org.quartzlang.data's `decodeAs::<T>(value)`: the body comes from T's Decode
+    EncodeValue, // `encodeAs(x)`
 };
 
 struct CallExpr : Expr {

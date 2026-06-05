@@ -39,7 +39,7 @@ struct AnnotationInfo {
 struct TraitInfo;
 
 /// Traits the compiler knows: operators, interpolation, map keys and `for` use them.
-enum class LangTrait : std::uint8_t { None, Eq, Hash, Ord, Show, Iterator };
+enum class LangTrait : std::uint8_t { None, Eq, Hash, Ord, Show, Iterator, Decode, Encode };
 
 struct FnInfo {
     syntax::FnDecl* decl = nullptr;
@@ -87,6 +87,17 @@ struct Property {
     TypeId type = ir::kError;
 };
 
+/// What `@derive(Decode, Encode)` bodies use from org.quartzlang.data; zero until a program derives or calls them.
+struct CodecInfo {
+    TypeId value = 0;
+    TypeId error = 0;
+    FnInfo* mismatch = nullptr;                      // (expected: str, found: Value) -> DecodeError
+    FnInfo* missing = nullptr;                       // (key: str, expected: str) -> DecodeError
+    FnInfo* atKey = nullptr;                         // (e: DecodeError, key: str) -> DecodeError
+    FnInfo* atIndex = nullptr;                       // (e: DecodeError, index: int) -> DecodeError
+    std::map<TypeId, std::vector<std::string>> keys; // per struct (generic base) deriving them: each field's key
+};
+
 struct Program {
     ir::TypeTable types;
     std::vector<FnInfo*> functions; // non-generic functions with bodies, in index order
@@ -102,6 +113,7 @@ struct Program {
     std::vector<std::unique_ptr<Local>> localStorage;
     std::vector<std::unique_ptr<GlobalInfo>> globalStorage;
     const Interner* names = nullptr; // local names for the IR's debug table
+    CodecInfo codec;
 };
 
 /// Resolves names and types over all modules; returns null only if nothing could be analyzed.

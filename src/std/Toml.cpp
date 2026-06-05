@@ -15,7 +15,7 @@ constexpr int kMaxDepth = 128;
 
 class TomlParser {
 public:
-    TomlParser(Builder& b, std::string_view text) : b_(b), s_(text) {}
+    TomlParser(Builder& b, std::string_view text) : b_(b), s_(text), counter_(text) {}
 
     bool parse(vm::Slot* root) {
         vm::Map* top = b_.newTable(root);
@@ -55,6 +55,8 @@ private:
     }
 
     [[nodiscard]] bool at(char c) const { return pos_ < s_.size() && s_[pos_] == c; }
+
+    std::uint32_t lineAt(std::size_t pos) { return b_.lines != nullptr ? counter_.at(pos) : 0; }
 
     void skipSpaces() {
         while (pos_ < s_.size() && (s_[pos_] == ' ' || s_[pos_] == '\t')) {
@@ -169,6 +171,7 @@ private:
     }
 
     bool header(vm::Map* top) {
+        std::uint32_t line = lineAt(pos_);
         ++pos_;
         bool array = at('[');
         if (array) {
@@ -183,6 +186,7 @@ private:
             return fail("unterminated table header");
         }
         pos_ += array ? 2 : 1;
+        b_.line = line;
         vm::Map* parent = descend(top, parts, parts.size() - 1);
         if (parent == nullptr) {
             return false;
@@ -228,6 +232,7 @@ private:
     }
 
     bool keyValue(vm::Map* table, bool topLevel) {
+        std::uint32_t line = lineAt(pos_);
         std::vector<std::string> parts;
         if (!dottedKey(parts)) {
             return false;
@@ -238,6 +243,7 @@ private:
         }
         ++pos_;
         skipSpaces();
+        b_.line = line;
         vm::Map* target = descend(table, parts, parts.size() - 1);
         if (target == nullptr) {
             return false;
@@ -250,6 +256,7 @@ private:
             return false;
         }
         (void)topLevel;
+        b_.line = line;
         return b_.put(target, parts.back(), v);
     }
 
@@ -487,7 +494,12 @@ private:
                     return true;
                 }
                 vm::Slot item[2];
-                if (!value(item, depth + 1) || !b_.push(l, item)) {
+                std::uint32_t line = lineAt(pos_);
+                if (!value(item, depth + 1)) {
+                    return false;
+                }
+                b_.line = line;
+                if (!b_.push(l, item)) {
                     return false;
                 }
                 skipArrayTrivia();
@@ -538,6 +550,7 @@ private:
     Builder& b_;
     std::string_view s_;
     std::size_t pos_ = 0;
+    LineCounter counter_;
     vm::Map* current_ = nullptr;
     std::set<const void*> defined_;
     std::set<const void*> sealed_;
@@ -545,6 +558,13 @@ private:
 };
 
 } // namespace
+
+bool parseTomlText(Builder& b, std::string_view text, vm::Slot* root, std::string& error) {
+    TomlParser p(b, text);
+    bool ok = p.parse(root);
+    error = p.error;
+    return ok;
+}
 
 bool parseToml(vm::HostCall& call, void* user) {
     Builder b(call.sandbox, *static_cast<const NativeCtx*>(user)->data);

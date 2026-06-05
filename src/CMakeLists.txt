@@ -4,13 +4,13 @@ quartz_module(quartz_syntax SOURCES syntax/Lexer.cpp syntax/Parser.cpp syntax/Pa
 quartz_module(quartz_format SOURCES format/Format.cpp format/AstDump.cpp format/Printer.cpp format/PrintDecl.cpp
     format/PrintStmt.cpp format/PrintExpr.cpp DEPS quartz_syntax)
 quartz_module(quartz_sema SOURCES ir/Types.cpp sema/Declare.cpp sema/CheckExpr.cpp sema/CheckCall.cpp sema/Lambdas.cpp
-    sema/CheckStmt.cpp sema/Generics.cpp sema/Names.cpp sema/CheckBuiltins.cpp sema/Traits.cpp sema/Derive.cpp sema/Patterns.cpp sema/Iteration.cpp sema/FormatSpec.cpp DEPS quartz_syntax)
-quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/LowerLambda.cpp ir/LowerBuiltins.cpp ir/LowerTraits.cpp ir/LowerPattern.cpp ir/LowerFor.cpp ir/Optimize.cpp ir/Validator.cpp
+    sema/CheckStmt.cpp sema/Generics.cpp sema/Names.cpp sema/CheckBuiltins.cpp sema/Traits.cpp sema/Derive.cpp sema/DeriveCodec.cpp sema/Patterns.cpp sema/Iteration.cpp sema/FormatSpec.cpp DEPS quartz_syntax)
+quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/LowerLambda.cpp ir/LowerBuiltins.cpp ir/LowerTraits.cpp ir/LowerCodec.cpp ir/LowerCodecTypes.cpp ir/LowerPattern.cpp ir/LowerFor.cpp ir/Optimize.cpp ir/Validator.cpp
     ir/TypeGraph.cpp ir/ValidateModule.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp ir/Builtins.cpp ir/ValidateLanguage.cpp ir/Prune.cpp DEPS quartz_sema quartz_monocypher)
 quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Bytecode.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/MapRuntime.cpp vm/TextRuntime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/HostValues.cpp vm/Link.cpp vm/Trace.cpp vm/Probe.cpp vm/Inspect.cpp vm/Profiler.cpp vm/Migrate.cpp vm/Math.cpp vm/ReprC.cpp vm/Interp.cpp vm/StrBuiltins.cpp vm/ListBuiltins.cpp vm/IntBuiltins.cpp
     std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Binary.cpp
     std/Sha.cpp std/Crypto.cpp std/Encoding.cpp std/lib/Sources.cpp std/lib/CryptoQz.cpp std/lib/EncodingQz.cpp std/lib/TimeQz.cpp std/lib/DecimalQz.cpp std/Decimal.cpp std/lib/TextQz.cpp std/Text.cpp std/Message.cpp std/lib/FormatsQz.cpp std/Formats.cpp std/MsgPack.cpp std/lib/BytesQz.cpp std/Bits.cpp std/lib/GeometryQz.cpp std/lib/SemverQz.cpp std/Semver.cpp std/lib/HttpQz.cpp std/Http.cpp
-    std/lib/RegexQz.cpp std/Regex.cpp std/regex/Parse.cpp std/regex/Compile.cpp std/regex/Pike.cpp std/lib/CollectionsQz.cpp std/lib/QueuesQz.cpp std/lib/SortedQz.cpp
+    std/lib/RegexQz.cpp std/Regex.cpp std/regex/Parse.cpp std/regex/Compile.cpp std/regex/Pike.cpp std/lib/CollectionsQz.cpp std/lib/QueuesQz.cpp std/lib/SortedQz.cpp std/lib/CodecQz.cpp std/Codec.cpp
     DEPS quartz_ir quartz_zstd quartz_monocypher)
 # Suspension-point liveness, shared with the native compiler (D69).
 target_sources(quartz_ir PRIVATE ir/Liveness.cpp)

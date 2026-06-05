@@ -12,6 +12,7 @@ namespace quartz::sema {
 inline constexpr std::string_view kMathPackage = "org.quartzlang.math";
 inline constexpr std::string_view kListsPackage = "org.quartzlang.lists";
 inline constexpr std::string_view kCollectionsPackage = "org.quartzlang.collections";
+inline constexpr std::string_view kDataPackage = "org.quartzlang.data";
 
 /// The math functions added after sqrt..max (CheckBuiltins.cpp).
 bool isExtraMathFunction(std::string_view name);
@@ -154,7 +155,7 @@ public:
     TypeId mapListCall(CallExpr* call, MemberExpr* callee, TypeId recv);
 
     // Traits.cpp
-    TraitInfo* langTraits_[6] = {};
+    TraitInfo* langTraits_[8] = {};
 
     [[nodiscard]] TraitInfo* langTrait(LangTrait l) const { return langTraits_[static_cast<std::size_t>(l)]; }
 
@@ -190,6 +191,15 @@ public:
     void checkDerives();
     bool checkLangImpl(ImplDecl* impl, TypeId owner, TraitInfo* trait, const std::vector<FnInfo*>& methods);
     TypeId iteratorItem(TypeId owner, FnInfo* next);
+
+    // DeriveCodec.cpp: Decode and Encode, between a type and org.quartzlang.data.Value
+    bool codecTypes(Span span);
+    bool functionsDeclared_ = false;
+    FnInfo* deriveCodec(TypeId type, TypeId owner, TraitInfo* trait);
+    [[nodiscard]] bool codecBuiltin(TypeId t, LangTrait lang);
+    bool checkCodecBuiltin(CallExpr* call, bool decode, TypeId& result);
+    void checkCodecKeys(const DeriveInfo& d);
+    [[nodiscard]] bool derivesCodec(const Decl* d) const;
 
     // Lambdas.cpp
     struct LambdaScope {

@@ -2,10 +2,39 @@
 
 #include "std/Std.hpp"
 
+#include <format>
+#include <map>
+#include <string>
+
 namespace quartz::stdlib {
 
 // Variant order of `org.quartzlang.data.Value`.
 enum class Tag : std::uint64_t { Null, Bool, Int, Float, Str, List, Table };
+
+/// The line each value of a parsed tree starts on, by (its table or list, its key or "[index]").
+using LineMap = std::map<std::pair<const void*, std::string>, std::uint32_t>;
+
+/// Counts lines up to a position, going on from the last position asked.
+class LineCounter {
+public:
+    explicit LineCounter(std::string_view text) : s_(text) {}
+
+    std::uint32_t at(std::size_t pos) {
+        if (pos < pos_) {
+            pos_ = 0;
+            line_ = 1;
+        }
+        for (; pos_ < pos && pos_ < s_.size(); ++pos_) {
+            line_ += s_[pos_] == '\n' ? 1 : 0;
+        }
+        return line_;
+    }
+
+private:
+    std::string_view s_;
+    std::size_t pos_ = 0;
+    std::uint32_t line_ = 1;
+};
 
 /// Builds `org.quartzlang.data.Value` trees in the running sandbox's arena.
 class Builder {
@@ -60,8 +89,17 @@ public:
         }
         return m;
     }
-    bool push(vm::List* l, const vm::Slot* v) { return sb_.listPush(l, v); }
+
+    bool push(vm::List* l, const vm::Slot* v) {
+        if (lines != nullptr && line != 0) {
+            (*lines)[{l, std::format("[{}]", l->len)}] = line;
+        }
+        return sb_.listPush(l, v);
+    }
     bool put(vm::Map* m, std::string_view key, const vm::Slot* v) {
+        if (lines != nullptr && line != 0) {
+            (*lines)[{m, std::string(key)}] = line;
+        }
         vm::Slot k{};
         k.p = sb_.newStr(key);
         return k.p != nullptr && sb_.mapSet(m, &k, v);
@@ -87,9 +125,18 @@ public:
 
     vm::Sandbox& sandbox() { return sb_; }
 
+    /// When set, `put` and `push` record `line` (which the parser sets before them) into it.
+    LineMap* lines = nullptr;
+    std::uint32_t line = 0;
+
 private:
     vm::Sandbox& sb_;
     const DataTypes& t_;
 };
+
+/// The parsers behind parseToml, parseJson and parseYaml, building into `b`; false with `error` set on bad text.
+bool parseTomlText(Builder& b, std::string_view text, vm::Slot* root, std::string& error);
+bool parseJsonText(Builder& b, std::string_view text, vm::Slot* root, std::string& error);
+bool parseYamlText(Builder& b, std::string_view text, vm::Slot* root, std::string& error);
 
 } // namespace quartz::stdlib

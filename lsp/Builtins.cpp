@@ -40,9 +40,10 @@ constexpr BuiltinFunction kFunctions[] = {
     {"Map", "Map<K, V>() -> Map<K, V>", {}},
 };
 
-constexpr std::string_view kTypes[] = {"void", "bool",   "int", "float", "byte", "char", "str",  "Bytes",   "List",
-                                       "Map",  "Result", "i8",  "i16",   "i32",  "i64",  "u8",   "u16",     "u32",
-                                       "u64",  "f32",    "f64", "Eq",    "Hash", "Ord",  "Show", "Iterator"};
+constexpr std::string_view kTypes[] = {"void",  "bool", "int", "float",  "byte",     "char",   "str",
+                                       "Bytes", "List", "Map", "Result", "i8",       "i16",    "i32",
+                                       "i64",   "u8",   "u16", "u32",    "u64",      "f32",    "f64",
+                                       "Eq",    "Hash", "Ord", "Show",   "Iterator", "Decode", "Encode"};
 
 #define QUARTZ_KW_TEXT(name, text) std::string_view(text),
 constexpr std::string_view kKeywords[] = {QUARTZ_KEYWORDS(QUARTZ_KW_TEXT)};

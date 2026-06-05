@@ -122,6 +122,9 @@ void Checker::completeTypes() {
             TypeId ft = resolveType(f.type);
             std::string renamed;
             for (const Attribute& a : f.attrs) {
+                if (str(a.name) == "key" && derivesCodec(entry.decl)) {
+                    continue; // checked with the derive
+                }
                 if (str(a.name) != "renamed") {
                     diags_.warning(a.span, std::format("unknown field attribute '@{}'", str(a.name)));
                     continue;
@@ -590,6 +593,7 @@ std::unique_ptr<Program> Checker::run() {
     resolveTypeBounds();
     declareDerives();
     declareFunctions();
+    functionsDeclared_ = true;
     checkDerives();
     flushPendingChecks();
     checkFunctionTypes();

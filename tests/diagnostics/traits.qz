@@ -8,7 +8,7 @@
 // error: cannot interpolate a value of type 'Rock'; it does not implement Show
 // error: operator '<' is not defined for 'E'; it needs Ord
 // error: map keys must implement Hash, and 'Rock' does not
-// error: @derive takes Eq, Hash, Ord and Show
+// error: @derive takes Eq, Hash, Ord, Show, Decode and Encode
 // error: Iterator needs 'fn next(self) -> (T, Bad)?'
 // error: cannot iterate over 'E'
 // error: invalid format spec '5z'

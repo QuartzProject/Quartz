@@ -204,7 +204,12 @@ private:
             }
             ++cur_;
             vm::Slot v[2];
-            if (!nested(v, rest, indent, line.number, depth, true) || !b_.put(m, k, v)) {
+            auto number = static_cast<std::uint32_t>(line.number);
+            if (!nested(v, rest, indent, line.number, depth, true)) {
+                return false;
+            }
+            b_.line = number;
+            if (!b_.put(m, k, v)) {
                 return false;
             }
         }
@@ -246,6 +251,7 @@ private:
                     return false;
                 }
             }
+            b_.line = static_cast<std::uint32_t>(line.number);
             if (!b_.push(l, v)) {
                 return false;
             }
@@ -447,12 +453,20 @@ private:
                     }
                     ++pos;
                     vm::Slot v[2];
-                    if (!flow(s, pos, v, line, depth + 1) || !b_.put(m, key, v)) {
+                    if (!flow(s, pos, v, line, depth + 1)) {
+                        return false;
+                    }
+                    b_.line = static_cast<std::uint32_t>(line);
+                    if (!b_.put(m, key, v)) {
                         return false;
                     }
                 } else {
                     vm::Slot v[2];
-                    if (!flow(s, pos, v, line, depth + 1) || !b_.push(l, v)) {
+                    if (!flow(s, pos, v, line, depth + 1)) {
+                        return false;
+                    }
+                    b_.line = static_cast<std::uint32_t>(line);
+                    if (!b_.push(l, v)) {
                         return false;
                     }
                 }
@@ -508,6 +522,13 @@ private:
 };
 
 } // namespace
+
+bool parseYamlText(Builder& b, std::string_view text, vm::Slot* root, std::string& error) {
+    YamlParser p(b, text);
+    bool ok = p.parse(root);
+    error = p.error;
+    return ok;
+}
 
 bool parseYaml(vm::HostCall& call, void* user) {
     Builder b(call.sandbox, *static_cast<const NativeCtx*>(user)->data);

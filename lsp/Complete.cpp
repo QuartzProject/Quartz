@@ -299,7 +299,8 @@ void memberItems(const Analysis& a, std::uint32_t t, bool staticOnly, Collector&
     }
     std::uint32_t base = info.genericBase != 0 ? info.genericBase : t;
     for (const auto& [key, fn] : p->methodTable) {
-        if ((key.first == t || key.first == base) && fn != nullptr && fn->hasSelf != staticOnly) {
+        bool hidden = key.second.starts_with('$'); // derived Decode and Encode bodies
+        if ((key.first == t || key.first == base) && fn != nullptr && fn->hasSelf != staticOnly && !hidden) {
             out.add(key.second, fn->isProperty ? kProperty : staticOnly ? kFunction : kMethod, signature(a, *fn));
         }
     }
