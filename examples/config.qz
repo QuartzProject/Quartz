@@ -1,41 +1,58 @@
-// Reads a TOML configuration into a typed struct, with defaults and a readable error for each bad field.
+// Reads a TOML configuration into typed structs: defaults fill missing keys, and a bad value names its line.
 package org.quartzlang.examples.config
 
 import org.quartzlang.data.*
 
-struct Config {
-    name: str
-    maxPlayers: int
-    motd: str
-    whitelist: [str]
+@derive(Decode, Encode, Show)
+enum Difficulty {
+    Peaceful
+    Normal
+    Hard
 }
 
-fn field(v: Value, key: str) -> Value {
-    return v.get(key) ?? Value.Null
+@derive(Decode, Encode, Show)
+struct World {
+    name: str
+    seed: int = 0
+    difficulty: Difficulty = Difficulty.Normal
+}
+
+@derive(Decode, Encode)
+struct Config {
+    name: str = "server"
+    @key("max-players")
+    maxPlayers: int = 20
+    motd: str = "Welcome!"
+    whitelist: [str] = []
+    worlds: [World] = []
 }
 
 fn load(text: str) -> Result<Config, str> {
-    let root = parseToml(text)?
-    let name = field(root, "name").asStr() ?? "server"
-    let maxPlayers = field(root, "max-players").asInt() ?? 20
-    if maxPlayers < 1 || maxPlayers > 1000 {
-        return Err("max-players must be between 1 and 1000, found {maxPlayers}")
+    let config = match decodeToml::<Config>(text) {
+        Ok(c) => c
+        Err(e) => return Err(e.message())
     }
-    var whitelist: [str] = []
-    let list = field(root, "whitelist")
-    for i in 0..list.len() {
-        whitelist.push(list.item(i)?.asStr() ?? "")
+    if config.maxPlayers < 1 || config.maxPlayers > 1000 {
+        return Err("max-players must be between 1 and 1000, found {config.maxPlayers}")
     }
-    return Ok(Config(name, maxPlayers, field(root, "motd").asStr() ?? "Welcome!", whitelist))
+    return Ok(config)
 }
 
 fn main() -> int {
-    let text = "name = \"lobby\"\nmax-players = 64\nwhitelist = [\"ada\", \"bo\"]\n"
+    let text = "name = \"lobby\"\nmax-players = 64\nwhitelist = [\"ada\", \"bo\"]\n\n[[worlds]]\nname = \"spawn\"\ndifficulty = \"peaceful\"\n"
     match load(text) {
-        Ok(c) => print("{c.name}: {c.maxPlayers} players, motd '{c.motd}', whitelist {c.whitelist.join(", ")}")
+        Ok(c) => {
+            print("{c.name}: {c.maxPlayers} players, motd '{c.motd}', whitelist {c.whitelist.join(", ")}")
+            print("worlds {c.worlds}")
+            print(encodeToml(c).unwrap())
+        }
         Err(e) => print("bad config: {e}")
     }
     match load("max-players = 5000\n") {
+        Ok(c) => print("loaded {c.name}")
+        Err(e) => print("bad config: {e}")
+    }
+    match load("name = \"lobby\"\n\n[[worlds]]\nname = \"spawn\"\nseed = \"random\"\n") {
         Ok(c) => print("loaded {c.name}")
         Err(e) => print("bad config: {e}")
     }
