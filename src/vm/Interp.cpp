@@ -109,7 +109,9 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
     return true;
 }
 
-Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base, std::size_t entryDepth) {
+// The handlers' placement in cache lines moves the interpreter by 10 to 20 %; a fixed alignment keeps it stable.
+[[gnu::aligned(64)]] Sandbox::Status Sandbox::execute(const CompiledFunction* fn, const Ins* pc, Slot* R, Slot* base,
+                                                      std::size_t entryDepth) {
     const Program& P = *program_;
     const Slot* K = P.constants.data();
     Slot* const stackEnd = stack_.data() + stack_.size();
