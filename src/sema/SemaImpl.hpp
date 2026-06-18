@@ -229,6 +229,29 @@ public:
     void checkFunctionTypes();
     bool mentions(TypeId t, const std::vector<TypeId>& ids) const;
 
+    // Lint.cpp: warnings about code that compiles but is likely a mistake; never in libraries or interfaces.
+    [[nodiscard]] bool lintable(std::uint32_t file) const;
+    void collectFixedSignatures();
+    void noteShadowing(Symbol name, Span span);
+    void noteImportUse(Symbol alias, std::uint32_t declFile) const;
+    void notePackageUse(const std::string& package) const;
+    void noteFnUse(FnInfo* fn);
+    void warnDiscarded(const Expr* e);
+    void warnUnreachableArms(MatchExpr* m, TypeId subject);
+    [[nodiscard]] bool useful(const std::vector<PatternRow>& rows, const PatternRow& q,
+                              const std::vector<TypeId>& cols) const;
+    [[nodiscard]] static bool sameLiteral(const Pattern* a, const Pattern* b);
+    void lint();
+    void lintImports(const Module& mod);
+    bool lintFn_ = false;                     // checking a function body of a lintable file
+    bool shadowOk_ = false;                   // `if let x = x` rebinds on purpose
+    Expr* assignTarget_ = nullptr;            // the local being assigned counts as a write, not a read
+    std::vector<Local*> lintLocals_;          // locals of lintable functions, reported unused at the end
+    std::set<const FnDecl*> fixedSignatures_; // trait methods and their impls: parameters set by the trait
+    FnInfo* checkingFn_ = nullptr;            // the top-level function whose body is being checked
+    mutable std::set<std::pair<std::uint32_t, std::uint32_t>> usedSymbolImports_; // (file, local name)
+    mutable std::set<std::pair<std::uint32_t, std::string>> usedPackages_;        // (file, package)
+
     // scopes
     void pushScope() { scopes_.emplace_back(); }
     void popScope() { scopes_.pop_back(); }

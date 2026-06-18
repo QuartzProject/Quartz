@@ -7,6 +7,8 @@ namespace quartz {
 void Diagnostics::report(Severity severity, Span span, std::string message) {
     if (severity == Severity::Error) {
         ++errorCount_;
+    } else if (severity == Severity::Warning) {
+        ++warningCount_;
     }
     if (items_.size() < kMaxDiagnostics) {
         items_.push_back({severity, span, std::move(message)});

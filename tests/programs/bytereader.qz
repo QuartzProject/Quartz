@@ -29,13 +29,13 @@ fn main() -> int {
     let r = ByteReader(b, bigEndian = true)
     print("{r.readU8().unwrap()} {r.readU16().unwrap()} {r.readI32().unwrap()} {r.readI64().unwrap()} {r.readF32().unwrap()} {r.readF64().unwrap()} {r.readStr(3).unwrap()}")
     var xs: [str] = []
-    for i in 0..8 {
+    for _ in 0..8 {
         xs.push("{r.readVarUInt().unwrap()}")
     }
-    for i in 0..6 {
+    for _ in 0..6 {
         xs.push("{r.readVarInt().unwrap()}")
     }
-    for i in 0..5 {
+    for _ in 0..5 {
         xs.push("{r.readVarInt32().unwrap()}")
     }
     print("{xs.join(" ")} {r.remaining()} {r.readU8().isErr()}")

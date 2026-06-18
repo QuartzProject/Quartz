@@ -420,6 +420,7 @@ struct Decl {
     Span nameSpan;
     Visibility visibility;
     std::span<Attribute> attrs;
+    bool privateKeyword = false; // written `private`: a top-level function the host is not meant to call
 };
 
 struct TypeParam {
@@ -492,6 +493,7 @@ struct Module {
     std::span<Symbol> package;
     std::span<Import> imports;
     std::span<Decl*> decls;
+    bool library = false; // the standard library or a dependency: no lint warnings
 };
 
 } // namespace quartz::syntax

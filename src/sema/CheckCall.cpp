@@ -158,6 +158,7 @@ bool Checker::bindArgs(CallExpr* call, const std::vector<TypeId>& params, const 
 }
 
 TypeId Checker::finishCall(CallExpr* call, FnInfo* fn, Expr* receiver) {
+    noteFnUse(fn);
     if (fn->deprecated && fn != currentFn_) {
         diags_.warning(call->callee->span, fn->deprecation.empty()
                                                ? std::format("'{}' is deprecated", fn->name)

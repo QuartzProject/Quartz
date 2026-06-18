@@ -25,6 +25,8 @@ public:
 
     [[nodiscard]] bool hasErrors() const { return errorCount_ > 0; }
     [[nodiscard]] std::size_t errorCount() const { return errorCount_; }
+
+    [[nodiscard]] std::size_t warningCount() const { return warningCount_; }
     [[nodiscard]] const std::vector<Diagnostic>& all() const { return items_; }
     [[nodiscard]] std::string render() const;
     [[nodiscard]] std::string renderOne(const Diagnostic& d) const;
@@ -36,6 +38,7 @@ private:
     const SourceManager* sources_;
     std::vector<Diagnostic> items_;
     std::size_t errorCount_ = 0;
+    std::size_t warningCount_ = 0;
 };
 
 } // namespace quartz

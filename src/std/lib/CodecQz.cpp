@@ -67,7 +67,7 @@ fn describe(v: Value) -> str {
         Float(f) => "float {f}"
         Str(s) => "str \"{shorten(s)}\""
         List(items) => "a list of {items.len()}"
-        Table(t) => "a table"
+        Table(_) => "a table"
     }
 }
 

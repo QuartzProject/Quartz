@@ -395,6 +395,7 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
             }
             diags_.error(m->span, std::format("match is not exhaustive; missing: {}", list));
         }
+        warnUnreachableArms(m, subject);
     }
     if (m->arms.empty()) {
         return wantValue ? ir::kError : ir::kVoid;

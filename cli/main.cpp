@@ -50,6 +50,7 @@ int usage() {
     std::fprintf(stderr,
                  "usage: quartz check|ir|run|dis|test <file.qz|file.qzi|package dir>... | <file.qzb> [--entry name]\n"
                  "                [--filter text] (test) [--profile] [--profile-out file.json] (run)\n"
+                 "                [--deny-warnings] (check, run, test)\n"
                  "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
                  "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
                  "[--strip-lines] [--host-only]\n"
@@ -207,6 +208,7 @@ struct Args {
     bool hostOnly = false;
     bool profile = false;
     std::string profileOut;
+    bool denyWarnings = false;
     std::string manifest;
     std::string filter;
     std::filesystem::path packageDir;
@@ -242,6 +244,8 @@ std::optional<Args> parseArgs(int argc, char** argv) {
         bool hasValue = i + 1 < argc;
         if (arg == "--host-only") {
             a.hostOnly = true;
+        } else if (arg == "--deny-warnings") {
+            a.denyWarnings = true;
         } else if (arg == "--entry" && hasValue) {
             a.entry = argv[++i];
         } else if (arg == "-o" && hasValue) {
@@ -476,7 +480,7 @@ int main(int argc, char** argv) {
         if (cmd == "ir" && !out.program) {
             std::fputs(out.irText.c_str(), stdout);
         }
-        if (!out.program) {
+        if (!out.program || (args->denyWarnings && out.warnings > 0)) {
             return 1;
         }
         program = out.program;

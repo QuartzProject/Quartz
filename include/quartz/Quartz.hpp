@@ -21,6 +21,7 @@ struct SourceInput {
 struct CompileOutput {
     std::shared_ptr<const vm::Program> program; // null when compilation failed
     std::string diagnostics;                    // rendered errors and warnings
+    std::size_t warnings = 0;
     std::string irText;                         // filled when requested
     std::vector<std::uint8_t> binary;           // the portable `.qzb` module, when requested
 };
@@ -32,6 +33,7 @@ struct CompileOptions {
     bool binaryLines = true; // keep source lines for trap messages
     vm::Probes probes{};     // debugger and profiler hooks; line probes also skip the IR optimizer
     std::string manifest;    // `package.toml` text carried in the module
+    bool lintLibrary = false; // also warn about the standard library sources, to keep them clean
 };
 
 /// Front end, lowering, validation and bytecode generation in one call.

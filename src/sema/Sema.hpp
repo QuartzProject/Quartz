@@ -27,6 +27,9 @@ struct Local {
     std::uint32_t scopeDepth = 0; // `scope` nesting where it was declared, set by lowering
     std::uint32_t lambdaDepth = 0; // lambdas around its declaration; a deeper lambda captures it
     bool captured = false;
+    bool param = false;      // a function or lambda parameter, for the unused warnings
+    std::uint32_t reads = 0; // uses as a value; assignments to it count in `writes`
+    std::uint32_t writes = 0;
 };
 
 struct AnnotationInfo {
@@ -66,6 +69,7 @@ struct FnInfo {
     std::uint32_t index = ~0U;   // function index, or import index for host functions
     std::vector<Local*> paramLocals;
     Local* selfLocal = nullptr;
+    std::uint32_t uses = 0; // calls and references from other functions, for the unused private warning
 };
 
 struct TraitInfo {

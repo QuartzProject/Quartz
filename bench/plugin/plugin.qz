@@ -32,7 +32,7 @@ fn rnd(d: Data, n: int) -> int {
 
 fn init(d: Data) {
     d.seed = 12345
-    for i in 0..300 {
+    for _ in 0..300 {
         let x = rnd(d, 2000)
         let z = rnd(d, 2000)
         let y = rnd(d, 200)

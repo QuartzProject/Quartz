@@ -61,7 +61,7 @@ fn fill(s: S) {
 }
 
 fn main(st: S) -> int {
-    for i in 0..4 {
+    for _ in 0..4 {
         fill(st)
     }
     let kv = st.m["k2"]

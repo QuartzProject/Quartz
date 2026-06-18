@@ -30,7 +30,7 @@ fn main() -> int {
     var prev = -1
     var ordered = true
     for e in m {
-        let (k, v) = e
+        let (k, _) = e
         ordered = ordered && k > prev
         prev = k
         check += k

@@ -244,6 +244,7 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
     if (Local* l = findLocal(e->name)) {
         e->ref = IdentRef::Local;
         e->local = l;
+        ++(assignTarget_ == e ? l->writes : l->reads);
         if (l->lambdaDepth < lambdas_.size()) {
             if (l->stateView && holdsMutable(l->type)) {
                 diags_.error(e->span, std::format("a lambda cannot capture '{}', a list or map of the state: after a "
@@ -449,7 +450,9 @@ TypeId Checker::checkIf(IfExpr* e, TypeId expected, bool wantValue) {
                 inner = types_->info(bt).elem;
             }
         }
+        shadowOk_ = e->bindValue->kind == ExprKind::Ident && static_cast<IdentExpr*>(e->bindValue)->name == e->bindName;
         e->bindLocal = declareLocal(e->bindName, inner, false, e->bindValue->span);
+        shadowOk_ = false;
     } else {
         allowIsBindings(e->cond);
         expectAssignable(checkValue(e->cond, ir::kBool), ir::kBool, e->cond->span);
@@ -534,6 +537,7 @@ TypeId Checker::checkWait(Expr* operand, Span span) {
 }
 
 Local* Checker::declareLocal(Symbol name, TypeId type, bool mutable_, Span span) {
+    noteShadowing(name, span);
     auto* l = prog_->localStorage.emplace_back(std::make_unique<Local>()).get();
     l->name = name;
     l->type = type;
@@ -542,6 +546,9 @@ Local* Checker::declareLocal(Symbol name, TypeId type, bool mutable_, Span span)
     l->lambdaDepth = static_cast<std::uint32_t>(lambdas_.size());
     if (!scopes_.empty() && name.valid() && str(name) != "_") {
         scopes_.back()[name] = l;
+    }
+    if (lintFn_) {
+        lintLocals_.push_back(l);
     }
     return l;
 }

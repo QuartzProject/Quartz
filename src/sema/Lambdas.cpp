@@ -103,6 +103,7 @@ TypeId Checker::checkLambda(LambdaExpr* e, TypeId expected) {
             }
         }
         p.local = declareLocal(p.name, params[i], false, p.span);
+        p.local->param = true;
     }
     TypeId bodyT = ir::kVoid;
     TypeId bodyWant = infer ? ir::kError : info->result;
@@ -217,6 +218,7 @@ TypeId Checker::checkFunctionValue(IdentExpr* e, FnInfo* fn, TypeId expected) {
     }
     e->ref = IdentRef::Function;
     e->fn = fn;
+    noteFnUse(fn);
     return types_->subst(pattern, bindings);
 }
 

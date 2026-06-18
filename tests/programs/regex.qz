@@ -145,7 +145,7 @@ fn split(i: int, pattern: str, text: str, limit: int) {
 
 fn error(pattern: str) {
     match compileRegex(pattern) {
-        Ok(r) => print("compiled {pattern}")
+        Ok(_) => print("compiled {pattern}")
         Err(e) => print(e)
     }
 }
@@ -155,7 +155,7 @@ fn errors() {
         error(p)
     }
     var deep = ""
-    for i in 0..201 {
+    for _ in 0..201 {
         deep = deep + "("
     }
     error(deep)

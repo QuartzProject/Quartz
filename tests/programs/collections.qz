@@ -64,7 +64,7 @@ fn main() -> int {
         popped += " {q.pop()}"
     }
     print("{before}{popped}")
-    let jobs = PriorityQueueBy::<Job>((a, b) => b.due - a.due)
+    let jobs = PriorityQueueBy::<Job>((first, second) => second.due - first.due)
     jobs.push(Job("a", 3))
     jobs.push(Job("b", 7))
     jobs.push(Job("c", 5))

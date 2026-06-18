@@ -35,6 +35,7 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
         modules.push_back(syntax::parseModule(file, arena, names, diags));
         if (in.dependency && modules.back() != nullptr) {
             dropAttribute(*modules.back(), test);
+            modules.back()->library = true;
         }
     }
     // The packages added after the first ones are parsed only when something imports them: they cost every compile.
@@ -70,20 +71,26 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
             changed = true;
             const SourceFile& file = sources.add(std::string(library[i].first), std::string(library[i].second));
             modules.push_back(syntax::parseModule(file, arena, names, diags));
+            if (modules.back() != nullptr) {
+                modules.back()->library = !options.lintLibrary;
+            }
             noteImports(modules.back());
         }
     }
     if (diags.hasErrors()) {
         out.diagnostics = diags.render();
+        out.warnings = diags.warningCount();
         return out;
     }
     auto prog = sema::analyze(modules, names, arena, diags);
     if (diags.hasErrors()) {
         out.diagnostics = diags.render();
+        out.warnings = diags.warningCount();
         return out;
     }
     auto mod = ir::lower(*prog, sources, diags);
     out.diagnostics = diags.render();
+    out.warnings = diags.warningCount();
     if (diags.hasErrors()) {
         return out;
     }

@@ -84,7 +84,7 @@ fn main(bag: Bag) -> int {
     let opt: [int?] = [1, null]
     opt.insert(1, 5)
     print("{opt.len()} {opt[1] ?? -1} {opt[2] ?? -1}")
-    for i in 0..3 {
+    for _ in 0..3 {
         fill(bag)
     }
     print("{bag.names.join(",")} {bag.flags.len()} {bag.flags[0]} {bag.flags[8]} {bag.points[0].tag}")

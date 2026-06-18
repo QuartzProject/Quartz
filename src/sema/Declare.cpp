@@ -625,12 +625,14 @@ std::unique_ptr<Program> Checker::run() {
         }
         selfType_ = ir::kError;
     }
+    collectFixedSignatures();
     for (std::size_t i = 0; i < prog_->functions.size(); ++i) {
         checkFunction(prog_->functions[i]);
     }
     for (std::size_t i = 0; i < prog_->generics.size(); ++i) {
         checkFunction(prog_->generics[i]);
     }
+    lint();
     return std::move(prog_);
 }
 

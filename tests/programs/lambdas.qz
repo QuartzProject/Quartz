@@ -159,7 +159,7 @@ suspend fn main(hub: Hub) -> int {
     print("{map(points, (p) => "{p}").join(",")} {sum(points)}")
     let more = bump(hub)
     var seen = 0
-    for i in 0..3 {
+    for _ in 0..3 {
         more()
         seen += hub.total
     }

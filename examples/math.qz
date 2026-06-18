@@ -7,7 +7,7 @@ struct Vec3 {
 }
 
 impl Vec3 {
-    fn lengthSquared(self) -> float {
+    pub fn lengthSquared(self) -> float {
         return self.x * self.x + self.y * self.y + self.z * self.z
     }
 }

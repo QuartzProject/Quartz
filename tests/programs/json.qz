@@ -22,7 +22,7 @@ fn main() -> int {
     let round = parseJson("""\{"b": \{"c": -3}, "a": [1, 2.5, "x\\n", true, null]}""")
     print(toJson(round.unwrap()))
     match parseJson("""\{"a": 1 "b": 2}""") {
-        Ok(v) => print("bad")
+        Ok(_) => print("bad")
         Err(e) => print("error {e}")
     }
     let u = parseJson("\"\\u00e9 \\ud83d\\ude00\"").unwrap()

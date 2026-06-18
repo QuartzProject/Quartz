@@ -64,6 +64,9 @@ Analysis::Analysis(std::vector<Input> inputs) : inputs_(std::move(inputs)) {
     for (const Input& in : inputs_) {
         const SourceFile& file = sources_.add(in.name, in.text);
         modules_.push_back(syntax::parseModule(file, arena_, names_, diags_));
+        if (modules_.back() != nullptr && in.name.starts_with("<std>/")) {
+            modules_.back()->library = true;
+        }
     }
     if (diags_.hasErrors()) {
         // Like `quartz check`, report only syntax errors, but still resolve what parsed for navigation.

@@ -136,6 +136,9 @@ void* Checker::findName(Symbol name, NameKind kind, Span span) {
             found = &e;
         }
     }
+    if (found != nullptr && found->file != file) {
+        noteImportUse(name, found->file);
+    }
     return found != nullptr ? found->target : nullptr;
 }
 
@@ -200,7 +203,11 @@ bool Checker::qualifier(std::span<const Symbol> path, std::string& out) const {
     for (std::size_t i = 1; i < path.size(); ++i) {
         out += "." + std::string(names_.name(path[i]));
     }
-    return packages_.contains(out);
+    if (!packages_.contains(out)) {
+        return false;
+    }
+    notePackageUse(out);
+    return true;
 }
 
 // The free functions of org.quartzlang.math need that package imported, whole with `.*` or by name.
@@ -211,10 +218,18 @@ bool Checker::mathImported(Symbol name, std::string_view& original) const {
     const FileScope& fs = files_[currentFile_];
     if (auto it = fs.symbolImports.find(name); it != fs.symbolImports.end()) {
         original = names_.name(it->second.second);
-        return it->second.first == kMathPackage;
+        if (it->second.first == kMathPackage) {
+            usedSymbolImports_.insert({currentFile_, name.id});
+            return true;
+        }
+        return false;
     }
     original = names_.name(name);
-    return std::find(fs.starImports.begin(), fs.starImports.end(), kMathPackage) != fs.starImports.end();
+    if (std::find(fs.starImports.begin(), fs.starImports.end(), kMathPackage) != fs.starImports.end()) {
+        notePackageUse(std::string(kMathPackage));
+        return true;
+    }
+    return false;
 }
 
 bool Checker::imported(const NameEntry& e, Symbol alias, std::uint32_t file) const {

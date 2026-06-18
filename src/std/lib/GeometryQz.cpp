@@ -414,7 +414,7 @@ impl Perlin {
         var amplitude = 1.0
         var frequency = 1.0
         var total = 0.0
-        for i in 0..octaves {
+        for _ in 0..octaves {
             sum += amplitude * self.noise3(x * frequency, y * frequency, z * frequency)
             total += amplitude
             amplitude *= gain

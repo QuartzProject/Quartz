@@ -36,7 +36,7 @@ inline = \{ a = 1, b = [true] }
 """).unwrap()
     print("hex {more.get("h")?.asInt() ?? 0} big {more.get("n")?.asInt() ?? 0} lit {more.get("p")?.asStr() ?? "?"}")
     match parseToml("a = 1\na = 2\n") {
-        Ok(v) => print("bad")
+        Ok(_) => print("bad")
         Err(e) => print("error {e}")
     }
     return 0

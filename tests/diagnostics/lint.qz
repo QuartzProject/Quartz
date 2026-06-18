@@ -1,0 +1,57 @@
+// warning: unused import 'org.quartzlang.text.*'
+// warning: unused import 'parseUuid' from 'org.quartzlang.encoding'
+// warning: unused parameter 'b'
+// warning: unused variable 'unused'
+// warning: variable 'total' is assigned but never read
+// warning: 'x' shadows another local variable of this function
+// warning: unused private function 'helper'
+// warning: unused private method 'P.twice'
+// warning: this 'Result' is discarded; handle the error or write 'let _ = ...'
+// warning: this match arm is unreachable: the arms above match every value it matches
+// warning: unused parameter 'y'
+// warning: unused variable 'v'
+
+import org.quartzlang.text.*
+import org.quartzlang.encoding.{parseUuid, uuidV5, NIL_UUID}
+
+struct P {
+    n: int
+}
+
+impl P {
+    fn twice(self) -> int {
+        return self.n * 2
+    }
+}
+
+private fn helper() -> int {
+    return 1
+}
+
+fn _quiet(_a: int) {}
+
+fn check(s: str) -> Result<int, str> {
+    return if s.len() > 0 { Ok(1) } else { Err("empty") }
+}
+
+fn run(a: int, b: int, _c: int) -> int {
+    let unused = 3
+    var total = 0
+    total = a
+    let x = a
+    if x > 0 {
+        let x = 2
+        print("{x}")
+    }
+    check("a")
+    let _ = check("b")
+    let f = (y: int) => 1
+    let opt: int? = null
+    let k = match opt {
+        null => 0
+        v => 1
+        5 => 2
+    }
+    print("{uuidV5(NIL_UUID, "n")} {f(1)} {k}")
+    return a
+}

@@ -157,11 +157,14 @@ void Checker::checkFunction(FnInfo* fn) {
         diags_.error(fn->decl->span, "a host handler cannot take or return functions");
     }
     currentFn_ = fn;
+    checkingFn_ = fn;
     selfType_ = fn->owner;
     loopDepth_ = 0;
     scopes_.clear();
     pushScope();
     FnDecl* decl = fn->decl;
+    bool lint = lintable(currentFile_);
+    lintFn_ = lint && !fixedSignatures_.contains(decl) && fn->annotations.empty();
     std::size_t p = 0;
     if (fn->hasSelf) {
         fn->selfLocal = declareLocal(names_.intern("self"), fn->owner, false, decl->span);
@@ -175,8 +178,10 @@ void Checker::checkFunction(FnInfo* fn) {
             }
         }
         param.local = declareLocal(param.name, fn->params[p++], false, param.span);
+        param.local->param = true;
         fn->paramLocals.push_back(param.local);
     }
+    lintFn_ = lint;
     TypeId bodyT = checkBlock(decl->body, ir::kError, false);
     decl->body->type = bodyT;
     if (fn->result != ir::kVoid && !diverges(bodyT) && fn->result != ir::kError) {
@@ -185,6 +190,8 @@ void Checker::checkFunction(FnInfo* fn) {
     }
     popScope();
     currentFn_ = nullptr;
+    checkingFn_ = nullptr;
+    lintFn_ = false;
     selfType_ = ir::kError;
 }
 
@@ -234,6 +241,7 @@ void Checker::checkStmt(Stmt* s) {
             e->type = checkBlock(static_cast<BlockExpr*>(e), ir::kError, false);
         } else {
             check(e, ir::kError);
+            warnDiscarded(e);
         }
         return;
     }
@@ -463,7 +471,9 @@ bool Checker::checkSetter(AssignStmt* s, TypeId type) {
 }
 
 void Checker::checkAssign(AssignStmt* s) {
+    assignTarget_ = s->target;
     TypeId tt = checkValue(s->target, ir::kError);
+    assignTarget_ = nullptr;
     bool mut = false;
     if (!isPlace(s->target, mut)) {
         if (s->target->kind == ExprKind::Member && static_cast<MemberExpr*>(s->target)->isProperty) {

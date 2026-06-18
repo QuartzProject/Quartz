@@ -129,12 +129,14 @@ Module* Parser::parseModule() {
         std::size_t before = pos_;
         std::span<Attribute> attrs = parseAttributes();
         Visibility vis = Visibility::Private;
+        bool privateKeyword = false;
         if (accept(Tok::KwPub)) {
             vis = Visibility::Pub;
         } else if (accept(Tok::KwInternal)) {
             vis = Visibility::Internal;
         } else if (accept(Tok::KwPrivate)) {
             vis = Visibility::Private;
+            privateKeyword = true;
         }
         if (at(Tok::KwImport)) {
             error(cur().span, "imports must come before declarations");
@@ -142,6 +144,7 @@ Module* Parser::parseModule() {
             continue;
         }
         if (Decl* d = parseDecl(attrs, vis)) {
+            d->privateKeyword = privateKeyword;
             decls.push_back(d);
         }
         if (pos_ == before) {

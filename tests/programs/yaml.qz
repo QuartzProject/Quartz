@@ -29,7 +29,7 @@ empty:
 """
     print(toJson(parseYaml(doc).unwrap()))
     match parseYaml("a: 1\na: 2\n") {
-        Ok(v) => print("bad")
+        Ok(_) => print("bad")
         Err(e) => print("error {e}")
     }
     return 0

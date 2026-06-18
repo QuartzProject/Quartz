@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "ir/Validator.hpp"
 #include "quartz/Quartz.hpp"
+#include "std/Std.hpp"
 
 #include <doctest/doctest.h>
 
@@ -129,9 +130,11 @@ TEST_CASE("programs print what their expect lines say") {
         std::string text = readFile(path);
         quartz::CompileOutput out = compileProgram(path, text);
         REQUIRE_MESSAGE(out.program, out.diagnostics);
-        for (const std::string& want : directives(text, "warning")) {
+        std::vector<std::string> wanted = directives(text, "warning");
+        for (const std::string& want : wanted) {
             CHECK_MESSAGE(out.diagnostics.find(want) != std::string::npos, want, "\n", out.diagnostics);
         }
+        CHECK_MESSAGE(out.warnings == wanted.size(), out.diagnostics);
         checkRun(out.program, text);
     }
 }
@@ -223,14 +226,33 @@ TEST_CASE("builtin intrinsics given another builtin's operands are rejected") {
                                           static_cast<std::uint32_t>(Intrinsic::StrToInt)));
 }
 
+TEST_CASE("the standard library has no lint warnings") {
+    std::string imports = "package test.lint\n";
+    for (const auto& [name, text] : quartz::stdlib::sources()) {
+        imports += "import " + std::string(quartz::stdlib::packageOf(text)) + ".*\n";
+    }
+    quartz::SourceInput in[] = {{"lint.qz", imports, true}, {"<std>.qzi", std::string(kStd)}};
+    quartz::CompileOutput out = quartz::compile(in, {.manifest = {}, .lintLibrary = true});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    CHECK_MESSAGE(out.warnings == 0, out.diagnostics);
+}
+
 TEST_CASE("invalid programs report the expected diagnostics") {
     for (const fs::path& path : files("tests/diagnostics")) {
         CAPTURE(path.string());
         std::string text = readFile(path);
         quartz::CompileOutput out = quartz::compile(withInterface(path, text));
-        CHECK_FALSE(out.program);
-        for (const std::string& want : directives(text, "error")) {
+        std::vector<std::string> errors = directives(text, "error");
+        std::vector<std::string> warnings = directives(text, "warning");
+        CHECK(!out.program == !errors.empty());
+        for (const std::string& want : errors) {
             CHECK_MESSAGE(out.diagnostics.find(want) != std::string::npos, want, "\n", out.diagnostics);
+        }
+        for (const std::string& want : warnings) {
+            CHECK_MESSAGE(out.diagnostics.find("warning: " + want) != std::string::npos, want, "\n", out.diagnostics);
+        }
+        if (errors.empty()) {
+            CHECK_MESSAGE(out.warnings == warnings.size(), out.diagnostics);
         }
     }
 }

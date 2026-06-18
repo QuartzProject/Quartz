@@ -11,12 +11,12 @@
 // expect: cron errors true true true true true true
 
 import org.quartzlang.time
-import org.quartzlang.time.{Cron, parseCron, parseDuration, parseInstant}
+import org.quartzlang.time.{parseCron, parseDuration, parseInstant}
 
 fn d(s: str) -> str {
     return match parseDuration(s) {
         Ok(v) => "{v.toNanos()}={v.toStr()}"
-        Err(e) => "E"
+        Err(_) => "E"
     }
 }
 

@@ -34,7 +34,7 @@ suspend fn main(hub: Hub) -> int {
     return 0
 }
 
-suspend fn chatty(hub: Hub) {
+suspend fn chatty(_hub: Hub) {
     var i = 0
     while i < 3 {
         wait 1.ticks

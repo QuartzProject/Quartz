@@ -21,7 +21,7 @@ fn main() -> int {
     print("{MAX_INT} {MIN_INT} {MAX_INT + 1 == MIN_INT}")
     let r = Random(2026)
     var line = ""
-    for i in 0..4 {
+    for _ in 0..4 {
         line = line + " {r.nextInt(100)}"
     }
     print("random{line} {r.nextLong()} {r.nextFloat()} {r.nextBool()} {r.nextIntIn(-3, 3)}")

@@ -67,7 +67,7 @@ fn main() -> int {
     let n: i32 = 2147483647
     print("wrap {n + 1} {-7 / 2} {-7 % 2} {(300.7) as byte} {(-1) as u64}")
     let opt: int? = null
-    if let v = opt {
+    if let _ = opt {
         print("bad")
     } else {
         print("null ok")

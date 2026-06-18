@@ -37,6 +37,6 @@ fn main() -> int {
     words.sortBy((w) => w.lower())
     let empty: [int] = []
     empty.sortWith((a, b) => a - b)
-    print("{words.join(" ")} {empty.map((x) => x).len()} {empty.find((x) => true) ?? -1}")
+    print("{words.join(" ")} {empty.map((x) => x).len()} {empty.find((_) => true) ?? -1}")
     return 0
 }

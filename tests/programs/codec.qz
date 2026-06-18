@@ -59,7 +59,7 @@ struct Weights {
 
 fn report<T>(r: Result<T, DecodeError>) {
     match r {
-        Ok(x) => print("ok")
+        Ok(_) => print("ok")
         Err(e) => print("{e}")
     }
 }
