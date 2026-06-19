@@ -46,6 +46,10 @@ impl Ord for Uuid {
 }
 
 impl Uuid {
+    pub fn parse(text: str) -> Result<Uuid, str> {
+        return parseUuid(text)
+    }
+
     pub fn version(self) -> int {
         return (self.high >> 12) & 15
     }

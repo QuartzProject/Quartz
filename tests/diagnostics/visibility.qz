@@ -3,13 +3,16 @@
 // error: unknown function 'internalHelper'
 // error: unknown name 'hidden'
 // error: unknown package 'nowhere'
+// error: 'Item.make' is not public
+// error: 'Item.size' is a method; call it on a value
+// error: 'Item' has no function 'nothing'
 package app
 
 import lib.*
 import nowhere.Thing
 
 fn main() -> int {
-    return secret() + internalHelper() + hidden + (sqrt(4.0) as int)
+    return secret() + internalHelper() + hidden + (sqrt(4.0) as int) + Item.make().n + Item.size() + Item.nothing()
 }
 
 // file: lib.qz
@@ -24,3 +27,17 @@ internal fn internalHelper() -> int {
 }
 
 const hidden = 3
+
+pub struct Item {
+    n: int
+}
+
+impl Item {
+    fn make() -> Item {
+        return Item(1)
+    }
+
+    pub fn size(self) -> int {
+        return self.n
+    }
+}

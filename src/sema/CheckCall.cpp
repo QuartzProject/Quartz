@@ -373,6 +373,30 @@ TypeId Checker::checkBuiltinMethod(CallExpr* call, TypeId recvType, Symbol name,
     return sig->result;
 }
 
+// `Type.name(...)` names a function of an `impl Type` block declared without `self` (D142).
+FnInfo* Checker::associatedFn(TypeId type, MemberExpr* callee) {
+    const ir::TypeInfo& info = types_->info(type);
+    TypeId base = info.genericBase != 0 ? info.genericBase : type;
+    auto& table = types_->isGenericBase(base) ? genericMethods_ : methods_;
+    auto it = table.find({base, callee->name.id});
+    if (it == table.end()) {
+        return nullptr;
+    }
+    FnInfo* fn = it->second;
+    if (fn->hasSelf) {
+        diags_.error(callee->span, std::format("'{}' is a method; call it on a value", fn->name));
+        return nullptr;
+    }
+    const FnDecl* d = fn->decl;
+    bool visible =
+        d == nullptr || d->visibility == Visibility::Pub || d->span.file == currentFile_ ||
+        (d->visibility == Visibility::Internal && files_[d->span.file].package == files_[currentFile_].package);
+    if (!visible) {
+        diags_.error(callee->span, std::format("'{}' is not public", fn->name));
+    }
+    return fn;
+}
+
 TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expected) {
     if (std::string pkg; packagePath(callee->object, pkg)) {
         if (pkg == kMathPackage) {
@@ -403,6 +427,28 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
             et = lookupTypeName(id->name, id->span, false);
         } else if (id == nullptr) {
             et = qualifiedType(callee->object);
+        }
+        bool variant = false;
+        if (et != ir::kError && types_->kind(et) == ir::TypeKind::Enum) {
+            for (const ir::VariantInfo& v : types_->info(et).variants) {
+                variant = variant || v.name == str(callee->name);
+            }
+        }
+        if (et != ir::kError && !variant) {
+            std::size_t errors = diags_.errorCount();
+            if (FnInfo* fn = associatedFn(et, callee)) {
+                return finishCall(call, fn, nullptr);
+            }
+            if (types_->kind(et) != ir::TypeKind::Enum || errors != diags_.errorCount()) {
+                if (errors == diags_.errorCount()) {
+                    diags_.error(callee->span,
+                                 std::format("'{}' has no function '{}'", typeName(et), str(callee->name)));
+                }
+                for (Arg& a : call->args) {
+                    check(a.value, ir::kError);
+                }
+                return ir::kError;
+            }
         }
         if (et != ir::kError && types_->kind(et) == ir::TypeKind::Enum) {
             const ir::TypeInfo& info = types_->info(et);

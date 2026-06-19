@@ -186,6 +186,10 @@ impl Show for Duration {
 }
 
 impl Duration {
+    pub fn parse(text: str) -> Result<Duration, str> {
+        return parseDuration(text)
+    }
+
     pub fn toNanos(self) -> int {
         return self.nanos
     }
@@ -392,6 +396,10 @@ impl Show for Instant {
 }
 
 impl Instant {
+    pub fn parse(text: str) -> Result<Instant, str> {
+        return parseInstant(text)
+    }
+
     pub fn epochNanos(self) -> int {
         return self.nanos
     }
@@ -652,6 +660,10 @@ pub fn parseCron(text: str) -> Result<Cron, str> {
 }
 
 impl Cron {
+    pub fn parse(text: str) -> Result<Cron, str> {
+        return parseCron(text)
+    }
+
     fn dayMatches(self, days: int, day: int) -> bool {
         let inMonth = (self.days & (1 << day)) != 0
         let inWeek = (self.weekdays & (1 << floorMod(days + 4, 7))) != 0

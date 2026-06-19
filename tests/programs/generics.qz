@@ -40,6 +40,10 @@ impl<T> Box<T> {
     fn get(self) -> T {
         return self.value
     }
+
+    fn of(value: T) -> Box<T> {
+        return Box(value)
+    }
 }
 
 impl<T: Describe> Describe for Box<T> {
@@ -89,7 +93,7 @@ fn main() -> int {
     let b = Box(5)
     let s = Box::<str>("hi")
     print("{b.show()} {s.show()}")
-    print("{P(1, 2).show()} and {Box(42).get()}")
+    print("{P(1, 2).show()} and {Box.of(42).get()}")
     print("{describe([1, 2, 3])} {describe(["x", "y"])}")
     let t = swap((1, 2))
     print("swap {t.0} {t.1}")

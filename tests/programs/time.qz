@@ -37,7 +37,7 @@ fn main() -> int {
     print("errors {out.join(" ")}")
     let a = time.hours(2).plus(time.minutes(15))
     let b = time.minutes(75)
-    print("math {a.toStr()} {b.toStr()} {a.plus(b).toStr()} {time.hours(1).div(3).toStr()} {b.negate().plus(time.minutes(30)).toStr()} {b.negate().plus(time.minutes(30)).abs().toStr()} {b.compareTo(a)} {a.equals(parseDuration("135m").unwrap())} {a.toSeconds()} {a.toMinutes()} {parseDuration("2.5s").unwrap().toFloatSeconds()}")
+    print("math {a.toStr()} {b.toStr()} {a.plus(b).toStr()} {time.hours(1).div(3).toStr()} {b.negate().plus(time.minutes(30)).toStr()} {b.negate().plus(time.minutes(30)).abs().toStr()} {b.compareTo(a)} {a.equals(time.Duration.parse("135m").unwrap())} {a.toSeconds()} {a.toMinutes()} {parseDuration("2.5s").unwrap().toFloatSeconds()}")
 
     let t = time.fromEpochSeconds(1763563200)
     print("instants {t.toStr()} {t.utc().weekday} {time.fromEpochMillis(-1).toStr()} {time.fromEpochNanos(123456789).toStr()}")

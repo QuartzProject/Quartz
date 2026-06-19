@@ -124,6 +124,10 @@ impl Ord for Decimal {
 }
 
 impl Decimal {
+    pub fn parse(text: str) -> Result<Decimal, str> {
+        return parseDecimal(text)
+    }
+
     /// The same number with `scale` digits after the point, rounded with `mode` when digits are dropped.
     pub fn rescale(self, scale: int, mode: Rounding = Rounding.HalfEven) -> Decimal {
         checkScale(scale)

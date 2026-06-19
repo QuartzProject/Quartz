@@ -26,6 +26,10 @@ impl Show for Semver {
 }
 
 impl Semver {
+    pub fn parse(text: str) -> Result<Semver, str> {
+        return parseSemver(text)
+    }
+
     pub fn toStr(self) -> str {
         return "{self.major}.{self.minor}.{self.patch}"
     }

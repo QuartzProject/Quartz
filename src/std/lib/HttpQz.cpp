@@ -119,6 +119,10 @@ pub fn parseUrl(text: str) -> Result<Url, str> {
 }
 
 impl Url {
+    pub fn parse(text: str) -> Result<Url, str> {
+        return parseUrl(text)
+    }
+
     pub fn toStr(self) -> str {
         var out = self.scheme + ":"
         if let h = self.host {
