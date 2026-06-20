@@ -1,0 +1,24 @@
+// expect: with 3 2 q 4 9 b 1
+
+struct P {
+    x: int
+    y: int
+    name: str = "p"
+}
+
+struct Box<T> {
+    v: T
+    n: int
+}
+
+fn main() -> int {
+    let p = P(1, 2)
+    let q = p with { x = 3, name = "q" }
+    let r = q with {
+        y = 9
+        x = q.x + 1
+    }
+    let b = Box("a", 1) with { v = "b" }
+    print("with {q.x} {p.y} {q.name} {r.x} {r.y} {b.v} {b.n}")
+    return 0
+}

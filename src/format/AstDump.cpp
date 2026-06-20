@@ -209,6 +209,12 @@ public:
             expr(static_cast<const IsExpr*>(e)->value);
             pattern(static_cast<const IsExpr*>(e)->pattern);
             break;
+        case ExprKind::With:
+            expr(static_cast<const WithExpr*>(e)->value);
+            for (const Arg& a : static_cast<const WithExpr*>(e)->fields) {
+                expr(a.value);
+            }
+            break;
         case ExprKind::Wait:
             expr(static_cast<const WaitExpr*>(e)->value);
             break;

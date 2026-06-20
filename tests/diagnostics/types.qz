@@ -10,6 +10,8 @@
 // error: function 'g' may end without returning a 'str'
 // error: this default value depends on itself
 // error: 'self' is only allowed in impl blocks
+// error: 'with' needs a struct value, found 'int'
+// error: field 'x' is set twice
 
 enum Color {
     Red
@@ -50,3 +52,8 @@ struct Pixel {
 
 @test
 fn needsInput(x: int) {}
+
+fn updates(p: P) -> P {
+    let n = 1 with { x = 2 }
+    return p with { x = 1, x = n }
+}

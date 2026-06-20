@@ -77,6 +77,7 @@ enum class ExprKind : std::uint8_t {
     Lambda,
     Cast,
     Is,
+    With,
     Wait,
     If,
     Match,
@@ -270,6 +271,13 @@ struct CastExpr : Expr {
 struct IsExpr : Expr {
     Expr* value;
     struct Pattern* pattern;
+};
+
+/// `value with { field = expr, ... }`: a copy of a struct with some fields replaced.
+struct WithExpr : Expr {
+    Expr* value;
+    std::span<Arg> fields;
+    std::span<std::uint32_t> fieldIndex; // filled by sema, parallel to `fields`
 };
 
 struct WaitExpr : Expr {

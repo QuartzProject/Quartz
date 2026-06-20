@@ -618,6 +618,8 @@ Reg Lowerer::lowerInner(Expr* e) {
     case ExprKind::Match: return lowerMatch(static_cast<MatchExpr*>(e), T(e->type), true);
     case ExprKind::Is:
         return lowerIs(static_cast<IsExpr*>(e));
+    case ExprKind::With:
+        return lowerWith(static_cast<WithExpr*>(e));
     case ExprKind::Block: return lowerBlockValue(static_cast<BlockExpr*>(e), T(e->type));
     case ExprKind::Lambda:
         return lowerClosure(static_cast<LambdaExpr*>(e));

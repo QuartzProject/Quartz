@@ -128,6 +128,7 @@ public:
                   std::span<Expr* const> elems, bool singleComma);
     void binary(const BinaryExpr* b);
     void call(const CallExpr* c);
+    void with(const WithExpr* w);
     void interp(const InterpExpr* e);
     void lambda(const LambdaExpr* l);
 

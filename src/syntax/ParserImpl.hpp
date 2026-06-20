@@ -46,6 +46,7 @@ public:
     Pattern* parsePattern();
     Expr* parseArmBody();
     std::span<Arg> parseArgs();
+    Expr* parseWith(Expr* value);
     TypeExpr* parseType();
     std::span<TypeExpr*> parseTypeArgs();
     bool closeAngle();

@@ -115,6 +115,8 @@ public:
     void decodeEnum(Reg v, TypeId t);
     Reg encodeStruct(Reg x, TypeId t);
     Reg encodeEnum(Reg x, TypeId t);
+    // LowerValue.cpp: value types built from parts
+    Reg lowerWith(WithExpr* e);
 
     // LowerExpr.cpp
     Reg lowerExpr(Expr* e, TypeId want = kError);

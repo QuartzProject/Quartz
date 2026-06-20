@@ -121,6 +121,12 @@ Expr* Parser::parseBinary(int minPrec) {
             }
             continue;
         }
+        if (at(Tok::Ident) && cur().text == "with" && peekTok().kind == Tok::LBrace && minPrec <= kPrecAs &&
+            !(cur().newlineBefore && newlineSensitive())) {
+            advance();
+            lhs = parseWith(lhs);
+            continue;
+        }
         OpInfo info{};
         if (!binaryOp(*this, info) || info.prec < minPrec) {
             break;
@@ -195,6 +201,35 @@ std::span<Arg> Parser::parseArgs() {
     }
     expect(Tok::RParen, "to close the argument list");
     return list(args);
+}
+
+// `with` is contextual: an identifier everywhere else, so older code that names something `with` still parses.
+Expr* Parser::parseWith(Expr* value) {
+    auto* w = node<WithExpr>(value->span);
+    w->kind = ExprKind::With;
+    w->value = value;
+    expect(Tok::LBrace, "after 'with'");
+    NewlineGuard g(*this, false);
+    std::vector<Arg> fields;
+    while (!at(Tok::RBrace) && !at(Tok::Eof)) {
+        Arg a{};
+        a.name = expectIdent("field name");
+        if (!a.name.valid()) {
+            syncTo({Tok::RBrace});
+            break;
+        }
+        expect(Tok::Eq, "after the field name");
+        a.value = parseExpr();
+        fields.push_back(a);
+        if (!accept(Tok::Comma) && !at(Tok::RBrace) && !cur().newlineBefore) {
+            error(cur().span, std::format("expected ',' or '}}' after a field, found {}", tokName(cur().kind)));
+            syncTo({Tok::RBrace});
+        }
+    }
+    expect(Tok::RBrace, "to close 'with'");
+    w->fields = list(fields);
+    w->span = value->span.to(prevSpan());
+    return w;
 }
 
 Expr* Parser::parsePostfix(Expr* e) {

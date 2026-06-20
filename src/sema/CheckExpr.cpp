@@ -232,6 +232,8 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
     case ExprKind::Cast: return checkCast(static_cast<CastExpr*>(e));
     case ExprKind::Is:
         return checkIs(static_cast<IsExpr*>(e));
+    case ExprKind::With:
+        return checkWith(static_cast<WithExpr*>(e), expected);
     case ExprKind::Wait: return checkWait(static_cast<WaitExpr*>(e)->value, e->span);
     case ExprKind::If: return checkIf(static_cast<IfExpr*>(e), expected, true);
     case ExprKind::Match: return checkMatch(static_cast<MatchExpr*>(e), expected, true);

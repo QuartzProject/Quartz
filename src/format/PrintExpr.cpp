@@ -61,6 +61,7 @@ int Printer::precOf(const Expr* e) {
         return kPrecRange;
     case ExprKind::Cast:
     case ExprKind::Is:
+    case ExprKind::With:
         return kPrecCast;
     case ExprKind::Unary:
         return kPrecUnary;
@@ -91,6 +92,8 @@ Extent Printer::extent(const Expr* e) const {
         return {outer(static_cast<const CastExpr*>(e)->value).begin, e->span.end, 0};
     case ExprKind::Is:
         return {outer(static_cast<const IsExpr*>(e)->value).begin, e->span.end, 0};
+    case ExprKind::With:
+        return {outer(static_cast<const WithExpr*>(e)->value).begin, e->span.end, 0};
     case ExprKind::Member:
         return {outer(static_cast<const MemberExpr*>(e)->object).begin, e->span.end, 0};
     case ExprKind::Call:
@@ -192,6 +195,54 @@ void Printer::call(const CallExpr* c) {
             }
             expr(a.value, kPrecLowest, open);
         });
+}
+
+// One line as `{ a = 1, b = 2 }`, or one field per line without commas when the source breaks after the brace.
+void Printer::with(const WithExpr* w) {
+    expr(w->value, kPrecCast);
+    space();
+    text("with");
+    space();
+    std::size_t open = nextToken(outer(w->value).end, Tok::LBrace);
+    std::uint32_t openEnd = toks_[open].span.end;
+    std::uint32_t closeAt = w->span.end - 1;
+    auto fieldBegin = [&](std::size_t i) {
+        std::size_t t = tokenAt(outer(w->fields[i].value, open).begin);
+        return t >= 2 && t < toks_.size() ? toks_[t - 2].span.begin : w->fields[i].value->span.begin;
+    };
+    auto field = [&](std::size_t i) {
+        Scope sc(*this);
+        flush(fieldBegin(i));
+        text(name(w->fields[i].name));
+        space();
+        text("=");
+        space();
+        expr(w->fields[i].value, kPrecLowest, open);
+    };
+    flush(openEnd - 1);
+    text("{");
+    bool multi = !w->fields.empty() && newlineIn(openEnd, fieldBegin(0));
+    if (!multi) {
+        for (std::size_t i = 0; i < w->fields.size(); ++i) {
+            text(i > 0 ? "," : "");
+            space();
+            field(i);
+        }
+        flush(closeAt);
+        text(w->fields.empty() ? "}" : " }");
+        return;
+    }
+    {
+        Indent in(*this);
+        for (std::size_t i = 0; i < w->fields.size(); ++i) {
+            newline(fieldBegin(i));
+            field(i);
+        }
+        newline(closeAt);
+        flush(closeAt);
+    }
+    newline(closeAt);
+    text("}");
 }
 
 void Printer::interp(const InterpExpr* e) {
@@ -367,6 +418,9 @@ void Printer::exprInner(const Expr* e) {
         text("is");
         space();
         pattern(static_cast<const IsExpr*>(e)->pattern);
+        return;
+    case ExprKind::With:
+        with(static_cast<const WithExpr*>(e));
         return;
     case ExprKind::Wait:
         text("wait");

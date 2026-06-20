@@ -254,6 +254,14 @@ public:
             expr(c->value) || pattern(c->pattern);
             break;
         }
+        case ExprKind::With: {
+            const auto* w = static_cast<const WithExpr*>(e);
+            bool hit = expr(w->value);
+            for (std::size_t i = 0; i < w->fields.size() && !hit; ++i) {
+                hit = expr(w->fields[i].value);
+            }
+            break;
+        }
         case ExprKind::Wait:
             expr(static_cast<const WaitExpr*>(e)->value);
             break;

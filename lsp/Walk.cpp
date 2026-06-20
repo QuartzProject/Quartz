@@ -226,6 +226,12 @@ void Walker::expr(const Expr* e, const Expr* parent) {
         pattern(c->pattern, c->value->type);
         break;
     }
+    case ExprKind::With:
+        expr(static_cast<const WithExpr*>(e)->value, e);
+        for (const Arg& a : static_cast<const WithExpr*>(e)->fields) {
+            expr(a.value, e);
+        }
+        break;
     case ExprKind::Wait:
         expr(static_cast<const WaitExpr*>(e)->value, e);
         break;

@@ -74,6 +74,7 @@ public:
     TypeId checkUnary(UnaryExpr* e, TypeId expected);
     TypeId checkIf(IfExpr* e, TypeId expected, bool wantValue);
     TypeId checkCast(CastExpr* e);
+    TypeId checkWith(WithExpr* e, TypeId expected);
     TypeId checkIndex(IndexExpr* e);
     TypeId checkInterp(InterpExpr* e);
     TypeId checkWait(Expr* operand, Span span);
