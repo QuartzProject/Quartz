@@ -255,14 +255,16 @@ TEST_CASE("repr(C) structs reach the host with the C layout and come back") {
         float x;
         std::int16_t y;
         double z;
+        std::int32_t w[3];
     };
-    static_assert(sizeof(CVec) == 16);
-    quartz::SourceInput in[] = {{"host.qzi", "@repr(C)\nstruct Vec {\n    x: f32\n    y: i16\n    z: f64\n}\n"
-                                             "fn scale(v: Vec, k: i32) -> Vec\n"},
+
+    static_assert(sizeof(CVec) == 32);
+    quartz::SourceInput in[] = {{"host.qzi", "@repr(C)\nstruct Vec {\n    x: f32\n    y: i16\n    z: f64\n"
+                                             "    w: [i32; 3]\n}\nfn scale(v: Vec, k: i32) -> Vec\n"},
                                 {"plugin.qz", R"(
 fn run() -> float {
-    let v = scale(Vec(1.5, -3, 0.25), 4)
-    return (v.x as float) * 100.0 + (v.y as float) * 10.0 + v.z
+    let v = scale(Vec(1.5, -3, 0.25, [1, 2, -3]), 4)
+    return (v.x as float) * 100.0 + (v.y as float) * 10.0 + v.z + (v.w[0] + v.w[2]) as float * 1000.0
 }
 )"}};
     quartz::CompileOutput out = quartz::compile(in);
@@ -272,14 +274,14 @@ fn run() -> float {
         CVec v{};
         std::memcpy(&v, c.args[0].p, sizeof v);
         auto k = static_cast<std::int32_t>(c.args[1].i);
-        CVec r{v.x * static_cast<float>(k), static_cast<std::int16_t>(v.y * k), v.z * k};
+        CVec r{v.x * static_cast<float>(k), static_cast<std::int16_t>(v.y * k), v.z * k, {v.w[0] * k, v.w[1], v.w[2]}};
         std::memcpy(c.result.p, &r, sizeof r);
         return true;
     });
     REQUIRE(sb.start().has_value());
     auto r = sb.call(out.program->findFunction("run"), {});
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
-    CHECK(r->f == 600.0 - 120.0 + 1.0);
+    CHECK(r->f == 600.0 - 120.0 + 1.0 + (4.0 - 3.0) * 1000.0);
 }
 
 TEST_CASE("the host passes a struct argument spread over its slots, to a call and to a task") {

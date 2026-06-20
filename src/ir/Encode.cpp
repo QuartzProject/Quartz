@@ -44,6 +44,12 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
         w.u32(t.elem);
         return;
     case TypeKind::Tuple:
+        if (t.array) {
+            tag(TypeTag::Array);
+            w.u32(t.elems.empty() ? kError : t.elems[0]);
+            w.u32(static_cast<std::uint32_t>(t.elems.size()));
+            return;
+        }
         tag(TypeTag::Tuple);
         list(t.elems);
         return;

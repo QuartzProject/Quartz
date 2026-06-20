@@ -39,6 +39,7 @@ std::uint8_t registerOperands(Op op) {
         return kDst;
     case Op::FieldSet:
     case Op::ScopeExit:
+    case Op::ArraySet:
         return kA | kB;
     case Op::Add:
     case Op::Sub:
@@ -56,6 +57,7 @@ std::uint8_t registerOperands(Op op) {
     case Op::Le:
     case Op::Gt:
     case Op::Ge:
+    case Op::ArrayGet:
         return kDst | kA | kB;
     default:
         return kDst | kA;
@@ -68,6 +70,23 @@ bool operandsAllowed(const Inst& in) {
     std::uint8_t used = registerOperands(in.op);
     return ((used & kDst) || in.dst == kNoReg) && ((used & kA) || in.a == kNoReg) &&
            ((used & kB) || in.b == kNoReg || in.op == Op::EnumField);
+}
+
+std::string arrayMismatch(const Module& m, const Function& fn, const Inst& in) {
+    if (!m.types.isArray(fn.regs[in.a])) {
+        return "array access on a value that is not a fixed-size array";
+    }
+    TypeId elem = m.types.info(fn.regs[in.a]).elems[0];
+    bool get = in.op == Op::ArrayGet;
+    Reg index = get ? in.b : in.argCount == 1 ? fn.args[in.argBegin] : kNoReg;
+    if ((get && in.argCount != 0) || index >= fn.regs.size() || fn.regs[index] != kI64) {
+        return "array index must be an int";
+    }
+    Reg value = get ? in.dst : in.b;
+    if (value >= fn.regs.size() || fn.regs[value] != elem) {
+        return "array element type mismatch";
+    }
+    return {};
 }
 
 // Every function value is made here, so a value of a function type always holds a function of that type.

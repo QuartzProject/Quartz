@@ -11,6 +11,9 @@ TypeId Checker::iterationItem(ForStmt* s, TypeId it, TypeId& indexType) {
         if (info.kind == ir::TypeKind::List) {
             return info.elem;
         }
+        if (info.array) {
+            return info.elems[0];
+        }
         if (info.kind == ir::TypeKind::Map) {
             if (!s->indexName.valid()) {
                 return info.key;

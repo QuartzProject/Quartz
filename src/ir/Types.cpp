@@ -68,6 +68,14 @@ TypeId TypeTable::tuple(const std::vector<TypeId>& elems) {
     return intern(std::move(t), key);
 }
 
+TypeId TypeTable::array(TypeId elem, std::uint32_t n) {
+    TypeInfo t;
+    t.kind = TypeKind::Tuple;
+    t.array = true;
+    t.elems.assign(n, elem);
+    return intern(std::move(t), std::format("A{},{}", elem, n));
+}
+
 TypeId TypeTable::fn(const std::vector<TypeId>& params, TypeId result) {
     std::string key = "F";
     for (TypeId p : params) {
@@ -189,6 +197,9 @@ TypeId TypeTable::subst(TypeId t, const TypeSubst& map) {
         for (TypeId e : info.elems) {
             elems.push_back(subst(e, map));
         }
+        if (info.array) {
+            return array(elems[0], static_cast<std::uint32_t>(elems.size()));
+        }
         return info.kind == TypeKind::Tuple ? tuple(elems) : fn(elems, subst(info.result, map));
     }
     default: break;
@@ -255,7 +266,9 @@ TypeId TypeTable::addRaw(TypeInfo info) {
     case TypeKind::List: return list(info.elem);
     case TypeKind::Map: return map(info.key, info.elem);
     case TypeKind::Nullable: return nullable(info.elem);
-    case TypeKind::Tuple: return tuple(info.elems);
+    case TypeKind::Tuple:
+        return info.array && !info.elems.empty() ? array(info.elems[0], static_cast<std::uint32_t>(info.elems.size()))
+                                                 : tuple(info.elems);
     case TypeKind::Fn: return fn(info.elems, info.result);
     default: break;
     }
@@ -274,6 +287,10 @@ std::string TypeTable::name(TypeId id) const {
     case TypeKind::Map: return std::format("Map<{}, {}>", name(t.key), name(t.elem));
     case TypeKind::Nullable: return std::format("{}?", name(t.elem));
     case TypeKind::Tuple:
+        if (t.array && !t.elems.empty()) {
+            return std::format("[{}; {}]", name(t.elems[0]), t.elems.size());
+        }
+        [[fallthrough]];
     case TypeKind::Fn: {
         std::string out = t.kind == TypeKind::Fn ? "fn(" : "(";
         for (std::size_t i = 0; i < t.elems.size(); ++i) {

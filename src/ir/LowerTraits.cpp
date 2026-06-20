@@ -280,7 +280,10 @@ Reg Lowerer::showOf(Reg r, TypeId t) {
             emit(Op::FieldGet, f, r, kNoReg, i);
             parts.push_back(showOf(f, elems[i]));
         }
-        parts.push_back(constStr(elems.size() == 1 ? ",)" : ")"));
+        if (info.array) {
+            parts.front() = constStr("[");
+        }
+        parts.push_back(constStr(info.array ? "]" : elems.size() == 1 ? ",)" : ")"));
         return concatParts(parts);
     }
     Reg res = newReg(kStr);

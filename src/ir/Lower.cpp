@@ -454,6 +454,10 @@ sema::Local* Lowerer::rootLocal(Expr* target) {
             target = static_cast<MemberExpr*>(target)->object;
             continue;
         }
+        if (target->kind == ExprKind::Index && types_->isArray(T(static_cast<IndexExpr*>(target)->object->type))) {
+            target = static_cast<IndexExpr*>(target)->object;
+            continue;
+        }
         return nullptr;
     }
 }
@@ -495,6 +499,11 @@ void Lowerer::assignPlace(Expr* target, Reg value) {
     }
     case ExprKind::Index: {
         auto* ix = static_cast<IndexExpr*>(target);
+        if (types_->isArray(T(ix->object->type))) {
+            Reg obj = lowerExpr(ix->object);
+            storeArray(ix, obj, arrayIndex(ix->index), value);
+            return;
+        }
         Reg obj = lowerExpr(ix->object);
         bool isMap = types_->kind(T(ix->object->type)) == TypeKind::Map;
         Reg idx = lowerExpr(ix->index, isMap ? types_->info(T(ix->object->type)).key : kI64);
@@ -549,8 +558,24 @@ void Lowerer::lowerAssign(AssignStmt* s) {
         return;
     }
     BinaryOp bop = compoundOp(s->op);
+    if (s->target->kind == ExprKind::Index && types_->isArray(T(static_cast<IndexExpr*>(s->target)->object->type))) {
+        auto* ix = static_cast<IndexExpr*>(s->target);
+        Reg obj = lowerExpr(ix->object);
+        Reg idx = arrayIndex(ix->index);
+        Reg cur = newReg(tt);
+        emit(Op::ArrayGet, cur, obj, idx);
+        Reg rhs = lowerExpr(s->value, bop == BinaryOp::Shl || bop == BinaryOp::Shr ? kError : tt);
+        Reg res = newReg(tt);
+        if (tt == kStr && bop == BinaryOp::Add) {
+            emitArgs(Op::Intrinsic, res, static_cast<std::uint32_t>(Intrinsic::StrConcat), {cur, rhs});
+        } else {
+            emit(binaryOp(bop), res, cur, rhs);
+        }
+        storeArray(ix, obj, idx, res);
+        return;
+    }
     // Evaluate the container and index once for `xs[i] op= v`.
-    if (s->target->kind == ExprKind::Index) {
+    if (s->target->kind == ExprKind::Index && !types_->isArray(T(static_cast<IndexExpr*>(s->target)->object->type))) {
         auto* ix = static_cast<IndexExpr*>(s->target);
         bool isMap = types_->kind(T(ix->object->type)) == TypeKind::Map;
         Reg obj = lowerExpr(ix->object);

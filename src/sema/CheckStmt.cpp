@@ -452,7 +452,14 @@ bool Checker::isPlace(Expr* e, bool& mutableOut) {
         }
         return isPlace(m->object, mutableOut);
     }
-    case ExprKind::Index: mutableOut = true; return true;
+    case ExprKind::Index: {
+        auto* ix = static_cast<IndexExpr*>(e);
+        if (ix->object->type < types_->size() && types_->isArray(ix->object->type)) {
+            return isPlace(ix->object, mutableOut); // an array is a value: its elements change with its binding
+        }
+        mutableOut = true;
+        return true;
+    }
     default: mutableOut = false; return false;
     }
 }

@@ -318,6 +318,57 @@ fn run(k: int) -> int {
            "malformed type");
 }
 
+TEST_CASE("the validator rejects fixed-size array accesses that do not match the array") {
+    quartz::SourceInput src[] = {{"a.qz", R"(fn run(i: int, s: str) -> str {
+    var a: [str; 2] = ["x", "y"]
+    a[i] = s
+    let t = (i, 2)
+    return a[1 - i] + "{t.1}"
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    using quartz::ir::Function;
+    using quartz::ir::Inst;
+    using quartz::ir::Module;
+    auto reject = [&](auto mutate, std::string_view why) {
+        auto mod = quartz::ir::deserialize(out.binary);
+        REQUIRE(mod.has_value());
+        Module& m = **mod;
+        Function& run = m.functions[out.program->findFunction("run")];
+        Inst* get = nullptr;
+        Inst* set = nullptr;
+        Inst* make = nullptr;
+        for (Inst& in : run.code) {
+            get = in.op == quartz::ir::Op::ArrayGet ? &in : get;
+            set = in.op == quartz::ir::Op::ArraySet ? &in : set;
+            bool tuple = in.op == quartz::ir::Op::Make && !m.types.isArray(run.regs[in.dst]);
+            make = tuple ? &in : make;
+        }
+        REQUIRE(get != nullptr);
+        REQUIRE(set != nullptr);
+        REQUIRE(make != nullptr);
+        mutate(m, run, *get, *set, *make);
+        auto v = quartz::ir::validate(m);
+        REQUIRE_FALSE(v.has_value());
+        CHECK_MESSAGE(v.error().describe(m).find(why) != std::string::npos, v.error().describe(m));
+    };
+    reject([](Module&, Function&, Inst& get, Inst&, Inst& tuple) { get.a = tuple.dst; },
+           "array access on a value that is not a fixed-size array");
+    reject([](Module&, Function&, Inst& get, Inst& set, Inst&) { get.b = set.b; }, "array index must be an int");
+    reject([](Module&, Function& run, Inst& get, Inst&, Inst&) { run.regs[get.dst] = quartz::ir::kI64; },
+           "array element type mismatch");
+    reject([](Module&, Function& run, Inst&, Inst& set, Inst&) { set.b = run.args[set.argBegin]; },
+           "array element type mismatch");
+    reject([](Module&, Function&, Inst&, Inst& set, Inst&) { set.argCount = 0; }, "array index must be an int");
+    reject([](Module& m, Function& run, Inst& get, Inst&,
+              Inst&) { m.types.mutableInfo(run.regs[get.a]).elems[1] = quartz::ir::kI64; },
+           "malformed type");
+    reject([](Module& m, Function&, Inst&, Inst&,
+              Inst&) { m.types.array(quartz::ir::kI64, quartz::ir::kMaxArrayLength + 1); },
+           "malformed type");
+}
+
 TEST_CASE("the validator rejects map iteration, text decoding and formatting with mismatched types") {
     quartz::SourceInput src[] = {{"i.qz", R"(fn run(m: Map<str, int>, t: str) -> int {
     var n = 0

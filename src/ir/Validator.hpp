@@ -26,6 +26,8 @@ std::expected<void, ValidationError> validateTypeGraph(const TypeTable& types);
 bool operandsAllowed(const Inst& in);
 /// Why a closure instruction (operands already checked) does not match its function; empty when it does.
 std::string closureMismatch(const Module& m, const Function& fn, const Inst& in);
+/// Why an array.get or array.set does not match its array, element and index types; empty when it does.
+std::string arrayMismatch(const Module& m, const Function& fn, const Inst& in);
 /// Imports, annotations, states and parameter counts: everything the function validator indexes without checking.
 std::expected<void, ValidationError> validateTables(const Module& m);
 

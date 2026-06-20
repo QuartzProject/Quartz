@@ -200,6 +200,8 @@ private:
     /// Stack and depth checks, then fuel, as before every call in the interpreter.
     void enterCall(std::uint32_t callee, bool recursive, std::uint32_t state, llvm::BasicBlock* retry);
     void field(const ir::Inst& in);
+    // Arrays.cpp
+    void arrayOp(const ir::Inst& in);
     void nullable(const ir::Inst& in);
     void enumOp(const ir::Inst& in);
     void scope(const ir::Inst& in);
@@ -315,7 +317,8 @@ private:
     std::size_t pc_ = 0;
     std::unordered_map<std::size_t, llvm::BasicBlock*> resume_; // checked loop copy: block after each host call
     std::uint32_t scratchSlots_ = 0;
-    std::vector<std::vector<llvm::AllocaInst*>> regs_;
+    std::vector<std::vector<llvm::Value*>> regs_; // slot addresses of each register
+    std::vector<llvm::AllocaInst*> arrays_;       // fixed-size array registers: one block of slots, indexable
     std::vector<Frame> frames_;
     std::uint32_t line_ = 0;
     std::string error_;

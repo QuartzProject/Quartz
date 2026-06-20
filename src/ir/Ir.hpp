@@ -16,7 +16,7 @@ enum class Op : std::uint8_t {
     // structure
     Block,
     Loop,
-    If,     // a = bool condition
+    If, // a = bool condition
     Else,
     End,
     Br,     // imm = depth; to a Loop it continues, to a Block/If it exits
@@ -24,8 +24,8 @@ enum class Op : std::uint8_t {
     Return, // a = value or kNoReg
     Trap,   // imm = TrapCode
     // data
-    Const,  // dst, imm = constant index
-    Move,   // dst, a
+    Const, // dst, imm = constant index
+    Move,  // dst, a
     Neg,
     Not,
     BitNot,
@@ -65,6 +65,8 @@ enum class Op : std::uint8_t {
     Persist,    // a = value: copies what it references from inner regions into the region imm levels out
     Closure,    // dst = function imm as a value; args are captured and fill its last parameters
     CallValue,  // dst, a = function value, args
+    ArrayGet,   // dst, a = fixed-size array, b = i64 index: traps when out of bounds
+    ArraySet,   // a = fixed-size array register, b = value, args = [i64 index]: traps when out of bounds
 };
 
 enum class WaitKind : std::uint8_t { Wait, AtEnter, AtLeave, Yield };

@@ -200,10 +200,18 @@ std::expected<void, ValidationError> validateTypes(const TypeTable& t) {
         if (info.kind == TypeKind::Nullable && t.kind(info.elem) == TypeKind::Nullable) {
             good = false;
         }
+        if (info.array) {
+            good = good && info.kind == TypeKind::Tuple && !info.elems.empty() &&
+                   info.elems.size() <= kMaxArrayLength &&
+                   std::all_of(info.elems.begin(), info.elems.end(), [&](TypeId e) { return e == info.elems[0]; });
+        }
         if (info.reprC) {
             good = good && info.kind == TypeKind::Struct;
+            auto cValue = [&](TypeId x) { return ok(x) && (t.isScalar(x) || t.info(x).reprC); };
             for (const Field& f : info.fields) {
-                good = good && ok(f.type) && (t.isScalar(f.type) || t.info(f.type).reprC);
+                bool cArray =
+                    ok(f.type) && t.isArray(f.type) && !t.info(f.type).elems.empty() && cValue(t.info(f.type).elems[0]);
+                good = good && (cValue(f.type) || cArray);
             }
         }
         if (info.persistPer != 0) {

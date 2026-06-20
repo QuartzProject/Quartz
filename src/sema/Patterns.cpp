@@ -91,7 +91,7 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
         return;
     }
     case PatternKind::Tuple:
-        if (info.kind != ir::TypeKind::Tuple || info.elems.size() != p->sub.size()) {
+        if (info.kind != ir::TypeKind::Tuple || info.array || info.elems.size() != p->sub.size()) {
             if (subject != ir::kError) {
                 diags_.error(p->span,
                              std::format("a tuple pattern of {} cannot match '{}'", p->sub.size(), typeName(subject)));

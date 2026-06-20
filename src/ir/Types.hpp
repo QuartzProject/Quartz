@@ -60,6 +60,8 @@ inline constexpr TypeId kBytes = 15;
 inline constexpr TypeId kNull = 16;
 inline constexpr TypeId kNever = 17;
 inline constexpr TypeId kFirstUserType = 18;
+/// Longest fixed-size array `[T; N]`; its elements live inline, so this bounds registers and copies.
+inline constexpr std::uint32_t kMaxArrayLength = 4096;
 
 struct Field {
     std::string name;
@@ -85,6 +87,7 @@ struct TypeInfo {
     std::uint32_t version = 0;   // `@version(n)` of a state
     bool persisted = false;      // `@persist`: the host saves it (exportState)
     bool reprC = false;          // `@repr(C)`: crosses to the host as a C struct
+    bool array = false;          // a tuple whose `elems` are N copies of one type, written `[T; N]` (D144)
     TypeId persistPer = 0;       // `@persist(per = Handle)`: one instance per handle value
     std::vector<TypeId> typeParams; // generic bases: their parameters (Param types)
     TypeId genericBase = 0;         // instances: the generic base they come from (0 = none)
@@ -106,6 +109,10 @@ public:
     TypeId map(TypeId key, TypeId value);
     TypeId nullable(TypeId inner);
     TypeId tuple(const std::vector<TypeId>& elems);
+    /// `[elem; n]`: a Tuple of n equal elements, distinct from the tuple with the same elements.
+    TypeId array(TypeId elem, std::uint32_t n);
+
+    [[nodiscard]] bool isArray(TypeId id) const { return types_[id].array; }
     TypeId fn(const std::vector<TypeId>& params, TypeId result);
     /// `Result<T, E>` is an enum with variants `Ok(T)` and `Err(E)`.
     TypeId result(TypeId ok, TypeId err);

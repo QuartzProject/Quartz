@@ -57,7 +57,7 @@ bool hoistStateReads(Module& m, Function& fn, const std::vector<bool>& callsValu
         if (in.dst != kNoReg) {
             ++defs[in.dst];
         }
-        if (in.op == Op::FieldSet) {
+        if (in.op == Op::FieldSet || in.op == Op::ArraySet) {
             ++defs[in.a];
         }
     }

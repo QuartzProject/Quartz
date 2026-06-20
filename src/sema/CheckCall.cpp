@@ -545,6 +545,9 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
         diags_.error(callee->span, std::format("'{}' has no method '{}'", typeName(recv), mname));
         return ir::kError;
     }
+    if (types_->isArray(recv)) {
+        return arrayMethod(call, callee, recv);
+    }
     if (TypeId hof = ir::kError; checkListFunctionMethod(call, recv, callee->name, hof)) {
         return hof;
     }
@@ -698,6 +701,9 @@ TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
                 result = info.fields[i].type;
             }
         }
+    } else if (info.kind == ir::TypeKind::Tuple && info.array) {
+        diags_.error(e->span, std::format("an array has no fields; write '[{}]' to read an element", str(e->name)));
+        return ir::kError;
     } else if (info.kind == ir::TypeKind::Tuple) {
         std::string_view n = str(e->name);
         std::uint32_t idx = 0;

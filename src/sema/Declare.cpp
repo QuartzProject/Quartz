@@ -262,10 +262,14 @@ void Checker::completeTypes() {
             continue;
         }
         for (const FieldDecl& fd : entryPtr->decl->fields) {
-            if (fd.type == nullptr || fd.type->kind != TypeExprKind::Named) {
+            TypeExpr* ft = fd.type;
+            while (ft != nullptr && ft->kind == TypeExprKind::Array) {
+                ft = static_cast<ArrayTypeExpr*>(ft)->elem;
+            }
+            if (ft == nullptr || ft->kind != TypeExprKind::Named) {
                 continue;
             }
-            auto* named = static_cast<NamedTypeExpr*>(fd.type);
+            auto* named = static_cast<NamedTypeExpr*>(ft);
             std::string_view n = named->path.size() == 1 ? str(named->path[0]) : std::string_view{};
             if (n == "int" || n == "float") {
                 diags_.error(fd.span, std::format("'{}' has no fixed C width; write {} in a @repr(C) field", n,
@@ -273,11 +277,11 @@ void Checker::completeTypes() {
             }
         }
         for (const ir::Field& f : types_->info(entryPtr->type).fields) {
-            bool ok = types_->isScalar(f.type) ||
-                      (types_->kind(f.type) == ir::TypeKind::Struct && types_->info(f.type).reprC);
+            TypeId ft = types_->isArray(f.type) ? types_->info(f.type).elems[0] : f.type;
+            bool ok = types_->isScalar(ft) || (types_->kind(ft) == ir::TypeKind::Struct && types_->info(ft).reprC);
             if (!ok) {
-                diags_.error(entryPtr->decl->span, std::format("@repr(C) field '{}' must be a number, bool, char or "
-                                                               "another @repr(C) struct",
+                diags_.error(entryPtr->decl->span, std::format("@repr(C) field '{}' must be a number, bool, char, "
+                                                               "another @repr(C) struct or an array of them",
                                                                f.name));
             }
         }
@@ -417,8 +421,7 @@ TypeId Checker::resolveTypeExpr(TypeExpr* t) {
     }
     case TypeExprKind::List: return types_->list(resolveType(static_cast<ListTypeExpr*>(t)->elem));
     case TypeExprKind::Array:
-        diags_.error(t->span, "fixed-size arrays are not supported yet; use a list");
-        return types_->list(resolveType(static_cast<ArrayTypeExpr*>(t)->elem));
+        return arrayType(static_cast<ArrayTypeExpr*>(t));
     case TypeExprKind::Tuple: {
         std::vector<TypeId> elems;
         for (TypeExpr* e : static_cast<TupleTypeExpr*>(t)->elems) {
@@ -573,7 +576,17 @@ void Checker::declareFunctions() {
                 }
                 typeScopes_.pop_back();
                 declareImplTrait(impl, owner, methods, ip);
-            } else if (d->kind == DeclKind::Const) {
+            }
+        }
+    }
+}
+
+// Before the types are completed: an array length in a field can name a constant.
+void Checker::declareGlobals() {
+    for (Module* mod : modules_) {
+        currentFile_ = mod->file->id();
+        for (Decl* d : mod->decls) {
+            if (d->kind == DeclKind::Const) {
                 auto* c = static_cast<ConstDecl*>(d);
                 auto* g = prog_->globalStorage.emplace_back(std::make_unique<GlobalInfo>()).get();
                 g->decl = c;
@@ -588,6 +601,7 @@ void Checker::declareFunctions() {
 std::unique_ptr<Program> Checker::run() {
     indexFiles();
     declareTypes();
+    declareGlobals();
     completeTypes();
     declareTraits();
     resolveTypeBounds();

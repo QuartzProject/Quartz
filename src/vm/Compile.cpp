@@ -142,7 +142,7 @@ private:
             if (in.dst != ir::kNoReg) {
                 ++defs_[in.dst];
             }
-            if (in.op == Op::FieldSet) {
+            if (in.op == Op::FieldSet || in.op == Op::ArraySet) {
                 ++defs_[in.a];
             } else if (in.a != ir::kNoReg) {
                 ++uses_[in.a];
@@ -808,6 +808,18 @@ private:
             return;
         }
         case Op::Intrinsic: intrinsic(in); return;
+        case Op::ArrayGet:
+        case Op::ArraySet: {
+            const ir::TypeInfo& info = types.info(ty(in.a));
+            std::uint32_t shape = static_cast<std::uint32_t>(info.elems.size()) << 16 | lay_.slots(info.elems[0]);
+            if (in.op == Op::ArrayGet) {
+                put(Opc::AGet, s(in.dst), s(in.a), s(in.b));
+            } else {
+                put(Opc::ASet, s(in.a), s(fn_.args[in.argBegin]), s(in.b));
+            }
+            word(shape);
+            return;
+        }
         case Op::FieldGet: {
             TypeId agg = ty(in.a);
             std::uint32_t off = lay_.fieldOffset(agg, in.imm);

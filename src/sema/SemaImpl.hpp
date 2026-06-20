@@ -41,6 +41,7 @@ public:
     void declareTypes();
     void completeTypes();
     void declareFunctions();
+    void declareGlobals();
     struct ImplParams {
         std::vector<TypeId> ids;
         std::vector<Symbol> names;
@@ -243,6 +244,12 @@ public:
     [[nodiscard]] std::uint64_t normalizeInt(std::uint64_t bits, TypeId t) const;
     void evaluateGlobals();
     std::optional<ConstValue> notConstant(Span span, std::string_view why);
+
+    // Arrays.cpp
+    TypeId arrayType(ArrayTypeExpr* t);
+    TypeId checkArrayLiteral(Expr* e, TypeId want);
+    TypeId checkArrayIndex(IndexExpr* e, TypeId array);
+    TypeId arrayMethod(CallExpr* call, MemberExpr* callee, TypeId recv);
 
     // Lint.cpp: warnings about code that compiles but is likely a mistake; never in libraries or interfaces.
     [[nodiscard]] bool lintable(std::uint32_t file) const;

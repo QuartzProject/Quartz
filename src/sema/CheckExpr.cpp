@@ -180,6 +180,9 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
         diags_.error(e->span, "a range can only be used in a 'for' loop or a match pattern");
         return ir::kError;
     case ExprKind::ListLit: {
+        if (want != ir::kError && types_->isArray(want)) {
+            return checkArrayLiteral(e, want);
+        }
         auto* l = static_cast<ListLitExpr*>(e);
         TypeId elem = types_->kind(want) == ir::TypeKind::List ? types_->info(want).elem : ir::kError;
         if (l->elems.empty()) {
@@ -201,6 +204,9 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
         return elem == ir::kNull ? ir::kError : types_->list(elem);
     }
     case ExprKind::ListRepeat: {
+        if (want != ir::kError && types_->isArray(want)) {
+            return checkArrayLiteral(e, want);
+        }
         auto* r = static_cast<ListRepeatExpr*>(e);
         TypeId elem = types_->kind(want) == ir::TypeKind::List ? types_->info(want).elem : ir::kError;
         TypeId vt = checkValue(r->value, elem);
@@ -484,6 +490,9 @@ TypeId Checker::checkIndex(IndexExpr* e) {
         return ot;
     }
     const ir::TypeInfo& info = types_->info(ot);
+    if (info.array) {
+        return checkArrayIndex(e, ot);
+    }
     if (info.kind == ir::TypeKind::List) {
         TypeId it = checkValue(e->index, ir::kI64);
         if (it != ir::kError && !types_->isInteger(it)) {

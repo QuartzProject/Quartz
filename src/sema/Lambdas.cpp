@@ -278,6 +278,11 @@ Local* Checker::assignedLocal(Expr* target) const {
         ir::TypeKind k = m->object->type < types_->size() ? types_->kind(m->object->type) : ir::TypeKind::Error;
         return k == ir::TypeKind::Struct || k == ir::TypeKind::Tuple ? assignedLocal(m->object) : nullptr;
     }
+    case ExprKind::Index: {
+        auto* ix = static_cast<IndexExpr*>(target);
+        bool array = ix->object->type < types_->size() && types_->isArray(ix->object->type);
+        return array ? assignedLocal(ix->object) : nullptr;
+    }
     default:
         return nullptr;
     }

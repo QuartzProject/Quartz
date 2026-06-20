@@ -270,8 +270,46 @@ std::optional<ConstValue> Checker::evalConst(const Expr* e) {
         return v;
     }
     case ExprKind::ListLit:
-    case ExprKind::ListRepeat:
-        return notConstant(e->span, "lists can change, so they cannot be constants; use a function");
+    case ExprKind::ListRepeat: {
+        if (!types_->isArray(t)) {
+            return notConstant(e->span, "lists can change, so they cannot be constants; use a function");
+        }
+        ConstValue v;
+        v.kind = Kind::Aggregate;
+        v.type = t;
+        TypeId elem = types_->info(t).elems[0];
+        if (e->kind == ExprKind::ListLit) {
+            for (const Expr* x : static_cast<const ListLitExpr*>(e)->elems) {
+                std::optional<ConstValue> part = evalConst(x);
+                if (!part) {
+                    return std::nullopt;
+                }
+                v.parts.push_back(coerceConst(std::move(*part), elem));
+            }
+        } else {
+            std::optional<ConstValue> part = evalConst(static_cast<const ListRepeatExpr*>(e)->value);
+            if (!part) {
+                return std::nullopt;
+            }
+            v.parts.assign(types_->info(t).elems.size(), coerceConst(std::move(*part), elem));
+        }
+        return v;
+    }
+    case ExprKind::Index: {
+        const auto* ix = static_cast<const IndexExpr*>(e);
+        if (!types_->isArray(ix->object->type)) {
+            return notConstant(e->span, "only fixed-size arrays are indexed at compile time");
+        }
+        std::optional<ConstValue> arr = evalConst(ix->object);
+        std::optional<ConstValue> at = arr ? evalConst(ix->index) : std::nullopt;
+        if (!arr || !at) {
+            return std::nullopt;
+        }
+        if (at->bits >= arr->parts.size()) {
+            return notConstant(ix->index->span, "the index is out of bounds");
+        }
+        return arr->parts[static_cast<std::size_t>(at->bits)];
+    }
     case ExprKind::Interp:
         return notConstant(e->span, "interpolation is not evaluated at compile time; use '+'");
     case ExprKind::Lambda:
@@ -294,7 +332,8 @@ std::optional<ConstValue> Checker::evalMember(const MemberExpr* e) {
         return v;
     }
     ir::TypeKind k = types_->kind(e->object->type);
-    if (e->safe || e->isProperty || (k != ir::TypeKind::Struct && k != ir::TypeKind::Tuple)) {
+    if (e->safe || e->isProperty || (k != ir::TypeKind::Struct && k != ir::TypeKind::Tuple) ||
+        types_->isArray(e->object->type)) {
         return notConstant(e->span, "only fields of constant structs and tuples are constant");
     }
     std::optional<ConstValue> v = evalConst(e->object);

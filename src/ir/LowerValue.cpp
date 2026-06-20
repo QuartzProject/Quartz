@@ -56,4 +56,104 @@ Reg Lowerer::lowerConst(const sema::ConstValue& v, TypeId t) {
     return newReg(t);
 }
 
+Reg Lowerer::arrayIndex(Expr* index) {
+    Reg idx = lowerExpr(index);
+    if (T(index->type) == kI64) {
+        return idx;
+    }
+    Reg c = newReg(kI64);
+    emit(Op::Convert, c, idx);
+    return c;
+}
+
+// An element store changes the array value, which then goes back to wherever the array came from.
+void Lowerer::storeArray(IndexExpr* target, Reg array, Reg index, Reg value) {
+    Inst& in = emitArgs(Op::ArraySet, kNoReg, 0, {index});
+    in.a = array;
+    in.b = value;
+    Expr* object = target->object;
+    if (!(object->kind == ExprKind::Ident && static_cast<IdentExpr*>(object)->ref == IdentRef::Local)) {
+        assignPlace(object, array);
+    }
+}
+
+Reg Lowerer::lowerArrayGet(IndexExpr* e) {
+    Reg obj = lowerExpr(e->object);
+    Reg idx = arrayIndex(e->index);
+    Reg r = newReg(T(e->type));
+    emit(Op::ArrayGet, r, obj, idx);
+    return r;
+}
+
+Reg Lowerer::lowerArrayLiteral(Expr* e) {
+    TypeId t = T(e->type);
+    const TypeInfo& info = types_->info(t);
+    TypeId elem = info.elems[0];
+    std::vector<Reg> parts;
+    if (e->kind == ExprKind::ListLit) {
+        for (Expr* x : static_cast<ListLitExpr*>(e)->elems) {
+            parts.push_back(lowerExpr(x, elem));
+        }
+    } else {
+        auto* r = static_cast<ListRepeatExpr*>(e);
+        parts.assign(info.elems.size(), lowerExpr(r->value, elem));
+    }
+    Reg out = newReg(t);
+    emitArgs(Op::Make, out, 0, parts);
+    return out;
+}
+
+Reg Lowerer::lowerArrayMethod(CallExpr* e, Reg dst) {
+    TypeId t = T(e->receiver->type);
+    const TypeInfo info = types_->info(t);
+    if (static_cast<SpecialOp>(e->builtin) == SpecialOp::ArrayLen) {
+        Reg n = constInt(static_cast<std::int64_t>(info.elems.size()), kI64);
+        emit(Op::Move, dst, n);
+        return dst;
+    }
+    Reg arr = lowerExpr(e->receiver);
+    emitArgs(Op::Intrinsic, dst, static_cast<std::uint32_t>(Intrinsic::ListNew), {});
+    for (std::uint32_t i = 0; i < info.elems.size(); ++i) {
+        Reg x = newReg(info.elems[i]);
+        emit(Op::FieldGet, x, arr, kNoReg, i);
+        emitArgs(Op::Intrinsic, kNoReg, static_cast<std::uint32_t>(Intrinsic::ListPush), {dst, x});
+    }
+    return dst;
+}
+
+// Iterates over a copy taken before the first round, so assigning to the array's elements in the body is not seen.
+void Lowerer::lowerForArray(ForStmt* s, TypeId t) {
+    const TypeInfo info = types_->info(t);
+    std::size_t exit = depth_;
+    Reg arr = newReg(t);
+    emit(Op::Move, arr, lowerExpr(s->iterable));
+    Reg idx = newReg(kI64);
+    emit(Op::Move, idx, constInt(0, kI64));
+    Reg len = constInt(static_cast<std::int64_t>(info.elems.size()), kI64);
+    Reg one = constInt(1, kI64);
+    open(Op::Block);
+    std::size_t loop = depth_;
+    open(Op::Loop);
+    Reg x = newReg(info.elems[0]);
+    s->local->reg = x;
+    s->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
+    emit(Op::ArrayGet, x, arr, idx);
+    if (s->indexLocal != nullptr) {
+        s->indexLocal->reg = newReg(kI64);
+        emit(Op::Move, s->indexLocal->reg, idx);
+    }
+    std::size_t cont = depth_;
+    open(Op::Block);
+    loops_.push_back({exit, cont, scopes_.size()});
+    lowerBlockStmts(s->body);
+    loops_.pop_back();
+    close();
+    emit(Op::Add, idx, idx, one);
+    Reg more = newReg(kBool);
+    emit(Op::Lt, more, idx, len);
+    brIf(more, loop);
+    close();
+    close();
+}
+
 } // namespace quartz::ir

@@ -167,7 +167,7 @@ bool Checker::unify(TypeId pattern, TypeId actual, ir::TypeSubst& bindings) {
         }
         return unify(p.elem, a.kind == ir::TypeKind::Nullable ? a.elem : actual, bindings);
     }
-    if (p.kind != a.kind) {
+    if (p.kind != a.kind || p.array != a.array) {
         return false;
     }
     switch (p.kind) {

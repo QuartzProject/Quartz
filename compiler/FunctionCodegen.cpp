@@ -146,6 +146,10 @@ void FunctionCodegen::lower(const ir::Inst& in) {
     case Op::FieldSet:
         field(in);
         return;
+    case Op::ArrayGet:
+    case Op::ArraySet:
+        arrayOp(in);
+        return;
     case Op::Make: {
         Values all;
         for (std::uint32_t i = 0; i < in.argCount; ++i) {

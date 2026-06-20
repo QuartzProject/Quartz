@@ -13,16 +13,17 @@ const std::vector<SlotKind>& FunctionCodegen::kindsOf(ir::Reg r) { return U.kind
 
 FunctionCodegen::Values FunctionCodegen::read(ir::Reg r) {
     Values out;
-    const std::vector<llvm::AllocaInst*>& slots = regs_[r];
+    const std::vector<llvm::Value*>& slots = regs_[r];
+    const std::vector<SlotKind>& k = kindsOf(r);
     out.reserve(slots.size());
-    for (llvm::AllocaInst* a : slots) {
-        out.push_back(B_.CreateLoad(a->getAllocatedType(), a));
+    for (std::size_t i = 0; i < slots.size(); ++i) {
+        out.push_back(B_.CreateLoad(U.kindType(k[i]), slots[i]));
     }
     return out;
 }
 
 void FunctionCodegen::write(ir::Reg r, const Values& v) {
-    const std::vector<llvm::AllocaInst*>& slots = regs_[r];
+    const std::vector<llvm::Value*>& slots = regs_[r];
     for (std::size_t i = 0; i < slots.size() && i < v.size(); ++i) {
         B_.CreateStore(v[i], slots[i]);
     }
@@ -212,9 +213,19 @@ std::string FunctionCodegen::run() {
             U.tbaaFuel),
         fuel_);
     regs_.resize(fn_.regs.size());
+    arrays_.assign(fn_.regs.size(), nullptr);
     for (std::size_t r = 0; r < fn_.regs.size(); ++r) {
-        for (SlotKind k : U.kinds(fn_.regs[r])) {
-            regs_[r].push_back(entryB_.CreateAlloca(U.kindType(k)));
+        const std::vector<SlotKind>& kinds = U.kinds(fn_.regs[r]);
+        if (U.T.isArray(fn_.regs[r])) {
+            auto* block = llvm::ArrayType::get(U.i64, kinds.size());
+            arrays_[r] = entryB_.CreateAlloca(block);
+            for (std::size_t j = 0; j < kinds.size(); ++j) {
+                regs_[r].push_back(entryB_.CreateConstInBoundsGEP2_64(block, arrays_[r], 0, j));
+            }
+        } else {
+            for (SlotKind k : kinds) {
+                regs_[r].push_back(entryB_.CreateAlloca(U.kindType(k)));
+            }
         }
         if (regs_[r].size() != U.L.slots(fn_.regs[r])) {
             return "slot layout mismatch";
@@ -222,7 +233,7 @@ std::string FunctionCodegen::run() {
     }
     unsigned arg = 3;
     for (std::uint32_t p = 0; p < fn_.paramCount; ++p) {
-        for (llvm::AllocaInst* a : regs_[p]) {
+        for (llvm::Value* a : regs_[p]) {
             entryB_.CreateStore(F_->getArg(arg++), a);
         }
     }

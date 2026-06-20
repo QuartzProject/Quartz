@@ -1,3 +1,4 @@
+// expect: array 0=0 1=5 2=7 3=9 [0, 5, 7, 0] [0, 5, 7, 9] [1, 2, 3, 4] 21 4 [, x, o] [1.5, 2.5, 3.5] true 4 30 3
 // expect: with 3 2 q 4 9 b 1
 // expect: const -2147483648 45 abcd 5 7 2.5 -3 4 -4 2 0.30000001192092896 2 -4 true 3
 
@@ -29,12 +30,50 @@ const Shifted = 1 << 65
 const Signed = -16 >> 2
 const Ordered = Joined < "abd" && !(1 > 2)
 
+const Width = 4
+const Weights: [int; 3] = [10, 20, Width * 0 + 30]
+
+struct Grid {
+    cells: [int; Width]
+    name: str
+}
+
+state Board {
+    marks: [str; 3]
+}
+
+fn sum(xs: [int; Width]) -> int {
+    var t = 0
+    for x in xs {
+        t += x
+    }
+    return t
+}
+
+fn arrays(b: Board) -> str {
+    var a: [int; 4] = [0; Width]
+    a[1] = 5
+    a[2] += 7
+    var g = Grid(a, "g")
+    g.cells[3] = 9
+    let h = g with { cells = [1, 2, 3, 4] }
+    var seen = ""
+    for i, x in g.cells {
+        seen = seen + " {i}={x}"
+    }
+    b.marks[1] = "x"
+    b.marks[2] = "o"
+    let f: [f32; 3] = [1.5, 2.5, 3.5]
+    return "array{seen} {a} {g.cells} {h.cells} {sum(g.cells)} {a.len()} {b.marks} {f} {a == [0, 5, 7, 0]} " +
+        "{g.cells.toList().len()} {Weights[2]} {Weights.len()}"
+}
+
 struct Box<T> {
     v: T
     n: int
 }
 
-fn main() -> int {
+fn main(board: Board) -> int {
     let p = P(1, 2)
     let q = p with { x = 3, name = "q" }
     let r = q with {
@@ -42,6 +81,7 @@ fn main() -> int {
         x = q.x + 1
     }
     let b = Box("a", 1) with { v = "b" }
+    print(arrays(board))
     print("with {q.x} {p.y} {q.name} {r.x} {r.y} {b.v} {b.n}")
     const local = Fallback - 1
     let level = match Picked {

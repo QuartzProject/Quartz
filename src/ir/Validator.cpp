@@ -602,6 +602,22 @@ private:
             }
             return {};
         }
+        case Op::ArrayGet:
+        case Op::ArraySet: {
+            if (auto r = needA(); !r) {
+                return r;
+            }
+            if (auto r = needB(); !r) {
+                return r;
+            }
+            if (std::string why = arrayMismatch(m_, fn_, in); !why.empty()) {
+                return fail(std::move(why));
+            }
+            if (in.op == Op::ArrayGet) {
+                return def(in.dst);
+            }
+            return use(args(in)[0]);
+        }
         case Op::Make: {
             if (!reg(in.dst)) {
                 return fail("register out of range");

@@ -321,6 +321,9 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
             lowerAssert(e);
             return dst;
         }
+        if (static_cast<SpecialOp>(e->builtin) >= SpecialOp::ArrayLen) {
+            return lowerArrayMethod(e, dst);
+        }
         if (static_cast<SpecialOp>(e->builtin) >= SpecialOp::DecodeValue) {
             return lowerCodecCall(e, dst);
         }
@@ -505,6 +508,9 @@ Reg Lowerer::lowerInner(Expr* e) {
     case ExprKind::Member: return lowerMember(static_cast<MemberExpr*>(e));
     case ExprKind::Index: {
         auto* ix = static_cast<IndexExpr*>(e);
+        if (types_->isArray(T(ix->object->type))) {
+            return lowerArrayGet(ix);
+        }
         Reg obj = lowerExpr(ix->object);
         bool isMap = types_->kind(T(ix->object->type)) == TypeKind::Map;
         Reg idx = lowerExpr(ix->index, isMap ? types_->info(T(ix->object->type)).key : kError);
@@ -562,6 +568,9 @@ Reg Lowerer::lowerInner(Expr* e) {
         return r;
     }
     case ExprKind::ListLit: {
+        if (types_->isArray(T(e->type))) {
+            return lowerArrayLiteral(e);
+        }
         auto* l = static_cast<ListLitExpr*>(e);
         TypeId elem = types_->info(T(e->type)).elem;
         Reg r = newReg(T(e->type));
@@ -573,6 +582,9 @@ Reg Lowerer::lowerInner(Expr* e) {
         return r;
     }
     case ExprKind::ListRepeat: {
+        if (types_->isArray(T(e->type))) {
+            return lowerArrayLiteral(e);
+        }
         auto* l = static_cast<ListRepeatExpr*>(e);
         TypeId elem = types_->info(T(e->type)).elem;
         Reg n = lowerExpr(l->count);

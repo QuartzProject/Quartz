@@ -15,14 +15,14 @@ using bin::TypeTag;
 namespace {
 
 // The encoding stores these enums by value: a change to any of them needs a new kFormatVersion.
-static_assert(static_cast<int>(Op::CallValue) == 49);
+static_assert(static_cast<int>(Op::ArraySet) == 51);
 static_assert(static_cast<int>(Intrinsic::Count) == 88);
 static_assert(static_cast<int>(TrapCode::HostError) == 9);
 static_assert(static_cast<int>(ConstKind::Str) == 2);
 static_assert(static_cast<int>(AnnotationArg::Kind::Name) == 4);
 static_assert(kFirstUserType == 18);
 
-constexpr std::uint32_t kOpCount = static_cast<std::uint32_t>(Op::CallValue) + 1;
+constexpr std::uint32_t kOpCount = static_cast<std::uint32_t>(Op::ArraySet) + 1;
 constexpr std::uint32_t kMaxElements = 1u << 24;
 
 class Decoder {
@@ -246,6 +246,15 @@ private:
                 TypeId res = component(r, self, depth);
                 got = r.failed() ? kError : t.fn(elems, res);
             }
+            break;
+        }
+        case TypeTag::Array: {
+            TypeId e = component(r, self, depth);
+            std::uint64_t n = r.u64();
+            if (n == 0 || n > kMaxArrayLength) {
+                r.fail("array length out of range");
+            }
+            got = r.failed() ? kError : t.array(e, static_cast<std::uint32_t>(n));
             break;
         }
         case TypeTag::Result: {

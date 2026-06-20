@@ -47,6 +47,10 @@ void Lowerer::lowerFor(ForStmt* s) {
         return;
     }
     TypeId lt = T(s->iterable->type);
+    if (types_->isArray(lt)) {
+        lowerForArray(s, lt);
+        return;
+    }
     if (types_->kind(lt) != TypeKind::List) {
         lowerForEach(s, lt);
         return;

@@ -118,6 +118,12 @@ public:
     // LowerValue.cpp: value types built from parts
     Reg lowerWith(WithExpr* e);
     Reg lowerConst(const sema::ConstValue& v, TypeId t);
+    Reg arrayIndex(Expr* index);
+    void storeArray(IndexExpr* target, Reg array, Reg index, Reg value);
+    Reg lowerArrayGet(IndexExpr* e);
+    Reg lowerArrayLiteral(Expr* e);
+    Reg lowerArrayMethod(CallExpr* e, Reg dst);
+    void lowerForArray(ForStmt* s, TypeId t);
 
     // LowerExpr.cpp
     Reg lowerExpr(Expr* e, TypeId want = kError);

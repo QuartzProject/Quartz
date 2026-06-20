@@ -16,8 +16,9 @@ void FunctionCodegen::zeroRefRegisters() {
         if (!U.T.hasRefs(fn_.regs[r])) {
             continue;
         }
-        for (llvm::AllocaInst* a : regs_[r]) {
-            entryB_.CreateStore(llvm::Constant::getNullValue(a->getAllocatedType()), a);
+        const std::vector<SlotKind>& k = kindsOf(static_cast<ir::Reg>(r));
+        for (std::size_t i = 0; i < regs_[r].size(); ++i) {
+            entryB_.CreateStore(llvm::Constant::getNullValue(U.kindType(k[i])), regs_[r][i]);
         }
     }
 }

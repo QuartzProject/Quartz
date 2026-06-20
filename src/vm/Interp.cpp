@@ -827,6 +827,24 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
             NEXT();
             CASE(StrFmt) CHECK((RA.p = formatValue(RB, ins.pad, RC.i)) != nullptr);
             NEXT();
+            CASE(AGet) {
+                std::uint32_t shape = WORD();
+                std::uint32_t k = shape & 0xFFFF;
+                if (RC.u >= shape >> 16) {
+                    TRAP(ir::TrapCode::IndexOutOfBounds, {});
+                }
+                std::memmove(&RA, &RB + RC.u * k, k * sizeof(Slot));
+                NEXT();
+            }
+            CASE(ASet) {
+                std::uint32_t shape = WORD();
+                std::uint32_t k = shape & 0xFFFF;
+                if (RB.u >= shape >> 16) {
+                    TRAP(ir::TrapCode::IndexOutOfBounds, {});
+                }
+                std::memmove(&RA + RB.u * k, &RC, k * sizeof(Slot));
+                NEXT();
+            }
 #if QUARTZ_SWITCH_DISPATCH
         case Opc::Count: break;
         }

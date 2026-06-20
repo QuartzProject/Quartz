@@ -12,6 +12,11 @@
 // error: 'self' is only allowed in impl blocks
 // error: 'with' needs a struct value, found 'int'
 // error: field 'x' is set twice
+// error: this has 2 elements; '[int; 3]' needs 3
+// error: an array length must be between 1 and 4096
+// error: a constant needs a value known at compile time: 'n' is not a constant
+// error: an array has no fields; write '[0]' to read an element
+// error: a tuple pattern of 3 cannot match '[int; 3]'
 
 enum Color {
     Red
@@ -56,4 +61,13 @@ fn needsInput(x: int) {}
 fn updates(p: P) -> P {
     let n = 1 with { x = 2 }
     return p with { x = 1, x = n }
+}
+
+fn arrays(n: int) -> int {
+    let a: [int; 3] = [1, 2]
+    let b: [int; 0] = [1; 0]
+    let c: [int; n] = [1; n]
+    let (x, y, z) = a
+    a[0] = 4
+    return a.0 + x
 }

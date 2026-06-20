@@ -192,6 +192,8 @@ enum class SpecialOp : std::uint8_t {
     MapValues,
     DecodeValue, // org.quartzlang.data's `decodeAs::<T>(value)`: the body comes from T's Decode
     EncodeValue, // `encodeAs(x)`
+    ArrayLen,
+    ArrayToList,
 };
 
 struct CallExpr : Expr {

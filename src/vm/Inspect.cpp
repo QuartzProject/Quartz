@@ -162,7 +162,7 @@ public:
             compound(v, depth, "{ ", " }", true);
             return;
         case TypeKind::Tuple:
-            compound(v, depth, "(", ")", false);
+            compound(v, depth, info.array ? "[" : "(", info.array ? "]" : ")", false);
             return;
         case TypeKind::List:
         case TypeKind::Map: {
@@ -291,8 +291,8 @@ std::vector<ValueChild> childrenOf(const Program& p, const ValueRef& v, std::siz
     }
     case TypeKind::Tuple:
         for (std::size_t i = start; i < end; ++i) {
-            out.push_back(
-                {std::to_string(i), at(info.elems[i], s + lay.fieldOffset(v.type, static_cast<std::uint32_t>(i)))});
+            out.push_back({info.array ? std::format("[{}]", i) : std::to_string(i),
+                           at(info.elems[i], s + lay.fieldOffset(v.type, static_cast<std::uint32_t>(i)))});
         }
         break;
     case TypeKind::Enum: {
