@@ -1,0 +1,19 @@
+// error: a constant needs a value known at compile time: function calls run when the program runs
+// error: a constant needs a value known at compile time: lists can change, so they cannot be constants; use a function
+// error: a constant needs a value known at compile time: this divides by zero
+// error: a constant needs a value known at compile time: interpolation is not evaluated at compile time; use '+'
+// error: a constant needs a value known at compile time: 'n' is not a constant
+
+fn one() -> int {
+    return 1
+}
+
+const Called = one()
+const Listed = [1, 2]
+const Divided = 1 / (2 - 2)
+const Joined = "{Called}"
+
+fn f(n: int) -> int {
+    const twice = n * 2
+    return twice
+}

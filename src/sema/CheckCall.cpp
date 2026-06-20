@@ -626,21 +626,7 @@ TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
             return ir::kError;
         }
         e->global = g;
-        if (g->type == ir::kError && !g->checking) {
-            g->checking = true;
-            auto saved = std::move(scopes_);
-            scopes_.clear();
-            std::uint32_t savedFile = currentFile_;
-            currentFile_ = g->decl->span.file;
-            TypeId declared = g->decl->type != nullptr ? resolveType(g->decl->type) : ir::kError;
-            g->type = checkValue(g->decl->value, declared);
-            if (declared != ir::kError) {
-                g->type = declared;
-            }
-            scopes_ = std::move(saved);
-            currentFile_ = savedFile;
-        }
-        return g->type;
+        return checkGlobal(g, e->span);
     }
     if (!e->safe) {
         auto* id = e->object->kind == ExprKind::Ident ? static_cast<IdentExpr*>(e->object) : nullptr;

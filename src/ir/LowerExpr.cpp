@@ -183,7 +183,7 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
 
 Reg Lowerer::lowerMember(MemberExpr* e) {
     if (e->global != nullptr) {
-        return lowerExpr(e->global->decl->value, e->global->type);
+        return lowerConst(*e->global->value, e->global->type);
     }
     if (e->isVariant) {
         Reg r = newReg(T(e->type));
@@ -478,7 +478,7 @@ Reg Lowerer::lowerInner(Expr* e) {
             return id->local->reg;
         }
         if (id->ref == IdentRef::Const) {
-            return lowerExpr(id->global->decl->value, T(id->global->type));
+            return lowerConst(*id->global->value, T(id->global->type));
         }
         if (id->ref == IdentRef::Function) {
             return lowerFunctionValue(id);

@@ -598,15 +598,8 @@ std::unique_ptr<Program> Checker::run() {
     flushPendingChecks();
     checkFunctionTypes();
     for (GlobalInfo* g : globalList_) {
-        currentFile_ = g->decl->span.file;
         if (g->type == ir::kError && !g->checking) {
-            g->checking = true;
-            TypeId declared = g->decl->type != nullptr ? resolveType(g->decl->type) : ir::kError;
-            g->type = checkValue(g->decl->value, declared);
-            if (declared != ir::kError) {
-                expectAssignable(g->type, declared, g->decl->value->span);
-                g->type = declared;
-            }
+            checkGlobal(g, {});
         }
     }
     for (auto& [type, decl] : prog_->structDecls) {
@@ -625,6 +618,7 @@ std::unique_ptr<Program> Checker::run() {
         }
         selfType_ = ir::kError;
     }
+    evaluateGlobals();
     collectFixedSignatures();
     for (std::size_t i = 0; i < prog_->functions.size(); ++i) {
         checkFunction(prog_->functions[i]);

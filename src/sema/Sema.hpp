@@ -17,6 +17,17 @@ namespace quartz::sema {
 
 using ir::TypeId;
 
+/// A value computed by the compiler for a `const` (D143).
+struct ConstValue {
+    enum class Kind : std::uint8_t { Int, Float, Str, Null, Some, Aggregate, Variant };
+    Kind kind = Kind::Int;
+    TypeId type = ir::kError;
+    std::uint64_t bits = 0; // Int: integers, bool and char, normalized to the type; Float: the double's bits
+    std::string text;
+    std::vector<ConstValue> parts; // Some: the value; Aggregate: fields or elements; Variant: payload
+    std::uint32_t variant = 0;
+};
+
 struct Local {
     Symbol name;
     TypeId type = ir::kError;
@@ -30,6 +41,7 @@ struct Local {
     bool param = false;      // a function or lambda parameter, for the unused warnings
     std::uint32_t reads = 0; // uses as a value; assignments to it count in `writes`
     std::uint32_t writes = 0;
+    std::shared_ptr<const ConstValue> constant; // a local `const`
 };
 
 struct AnnotationInfo {
@@ -83,6 +95,9 @@ struct GlobalInfo {
     syntax::ConstDecl* decl = nullptr;
     TypeId type = ir::kError;
     bool checking = false;
+    bool evaluating = false;
+    bool evaluated = false;
+    std::shared_ptr<const ConstValue> value; // null until evaluated, or when the initializer is not constant
 };
 
 /// A handle property maps a field of a `@handle struct` to a host getter.

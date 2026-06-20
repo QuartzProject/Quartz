@@ -273,26 +273,7 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
     if (GlobalInfo* g = findGlobal(e->name)) {
         e->ref = IdentRef::Const;
         e->global = g;
-        if (g->type == ir::kError) {
-            if (g->checking) {
-                diags_.error(e->span, std::format("constant '{}' depends on itself", str(e->name)));
-                return ir::kError;
-            }
-            g->checking = true;
-            auto saved = std::move(scopes_);
-            scopes_.clear();
-            std::uint32_t savedFile = currentFile_;
-            currentFile_ = g->decl->span.file;
-            TypeId declared = g->decl->type != nullptr ? resolveType(g->decl->type) : ir::kError;
-            g->type = checkValue(g->decl->value, declared);
-            if (declared != ir::kError) {
-                expectAssignable(g->type, declared, g->decl->value->span);
-                g->type = declared;
-            }
-            scopes_ = std::move(saved);
-            currentFile_ = savedFile;
-        }
-        return g->type;
+        return checkGlobal(g, e->span);
     }
     if (FnInfo* fn = findFunction(e->name)) {
         return checkFunctionValue(e, fn, expected);

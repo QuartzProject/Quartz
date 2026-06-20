@@ -424,6 +424,11 @@ void Checker::checkLet(LetStmt* s) {
     }
     s->local = declareLocal(s->name, t, s->mutable_, s->nameSpan);
     checkViewBinding(s->local, s->init, s->nameSpan);
+    if (s->isConst && s->init != nullptr && t != ir::kError) {
+        if (std::optional<ConstValue> v = evalConst(s->init)) {
+            s->local->constant = std::make_shared<const ConstValue>(coerceConst(std::move(*v), t));
+        }
+    }
 }
 
 bool Checker::isPlace(Expr* e, bool& mutableOut) {

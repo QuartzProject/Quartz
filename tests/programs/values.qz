@@ -1,10 +1,33 @@
 // expect: with 3 2 q 4 9 b 1
+// expect: const -2147483648 45 abcd 5 7 2.5 -3 4 -4 2 0.30000001192092896 2 -4 true 3
 
 struct P {
     x: int
     y: int
     name: str = "p"
 }
+
+enum Mode {
+    Off
+    Level(i32)
+}
+
+const Wrapped: i32 = 2147483647 + 1
+const Byte: u8 = (300 as u8) + 1
+const Joined = "ab" + "cd"
+const Base = P(1, 7)
+const Moved = Base with { x = 5 }
+const Pair = (1, 2.5)
+const Picked = Mode.Level(-3)
+const Missing: int? = null
+const Fallback = Missing ?? 4
+const Truncated = -7 / 2 + -7 % 2
+const Saturated = (2.9 as int) + (-1.5 as u8) as int
+const Small: f32 = 0.1
+const Widened = (Small + 0.2) as float
+const Shifted = 1 << 65
+const Signed = -16 >> 2
+const Ordered = Joined < "abd" && !(1 > 2)
 
 struct Box<T> {
     v: T
@@ -20,5 +43,11 @@ fn main() -> int {
     }
     let b = Box("a", 1) with { v = "b" }
     print("with {q.x} {p.y} {q.name} {r.x} {r.y} {b.v} {b.n}")
+    const local = Fallback - 1
+    let level = match Picked {
+        Off => 0
+        Level(v) => v as int
+    }
+    print("const {Wrapped} {Byte} {Joined} {Moved.x} {Moved.y} {Pair.1} {level} {Fallback} {Truncated} {Saturated} {Widened} {Shifted} {Signed} {Ordered} {local}")
     return 0
 }

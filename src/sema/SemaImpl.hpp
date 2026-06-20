@@ -231,6 +231,19 @@ public:
     void checkFunctionTypes();
     bool mentions(TypeId t, const std::vector<TypeId>& ids) const;
 
+    // Constants.cpp
+    TypeId checkGlobal(GlobalInfo* g, Span use);
+    std::shared_ptr<const ConstValue> constantOf(Expr* e);
+    std::optional<ConstValue> evalConst(const Expr* e);
+    std::optional<ConstValue> evalBinary(const BinaryExpr* e);
+    std::optional<ConstValue> evalCast(const CastExpr* e);
+    std::optional<ConstValue> evalMember(const MemberExpr* e);
+    const ConstValue* globalValue(GlobalInfo* g, Span use);
+    ConstValue coerceConst(ConstValue v, TypeId to) const;
+    [[nodiscard]] std::uint64_t normalizeInt(std::uint64_t bits, TypeId t) const;
+    void evaluateGlobals();
+    std::optional<ConstValue> notConstant(Span span, std::string_view why);
+
     // Lint.cpp: warnings about code that compiles but is likely a mistake; never in libraries or interfaces.
     [[nodiscard]] bool lintable(std::uint32_t file) const;
     void collectFixedSignatures();

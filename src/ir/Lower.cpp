@@ -464,7 +464,9 @@ void Lowerer::lowerLet(LetStmt* s) {
         return;
     }
     sema::Local* l = s->local;
-    Reg v = s->init != nullptr ? lowerExpr(s->init, T(l->type)) : zeroValue(T(l->type), s->span);
+    Reg v = l->constant != nullptr ? lowerConst(*l->constant, T(l->type))
+            : s->init != nullptr   ? lowerExpr(s->init, T(l->type))
+                                   : zeroValue(T(l->type), s->span);
     l->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
     l->reg = newReg(T(l->type));
     emit(Op::Move, l->reg, v);

@@ -117,6 +117,7 @@ public:
     Reg encodeEnum(Reg x, TypeId t);
     // LowerValue.cpp: value types built from parts
     Reg lowerWith(WithExpr* e);
+    Reg lowerConst(const sema::ConstValue& v, TypeId t);
 
     // LowerExpr.cpp
     Reg lowerExpr(Expr* e, TypeId want = kError);
