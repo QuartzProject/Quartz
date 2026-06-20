@@ -437,3 +437,52 @@ fn f() {
         (block
           (expression_statement
             (integer_literal)))))))
+
+================================================================================
+With
+================================================================================
+
+fn f(p: P) -> P {
+    let q = p with { x = 1, y = 2 }
+    return q with {
+        x = 3
+        y = q.x + 1
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_declaration
+    (identifier)
+    (parameters
+      (parameter
+        (identifier)
+        (type_identifier)))
+    (type_identifier)
+    (block
+      (let_declaration
+        (identifier)
+        (with_expression
+          (identifier)
+          (field_updates
+            (field_update
+              (identifier)
+              (integer_literal))
+            (field_update
+              (identifier)
+              (integer_literal)))))
+      (return_statement
+        (with_expression
+          (identifier)
+          (field_updates
+            (field_update
+              (identifier)
+              (integer_literal))
+            (field_update
+              (identifier)
+              (binary_expression
+                (field_expression
+                  (identifier)
+                  (identifier))
+                (integer_literal)))))))))

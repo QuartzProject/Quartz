@@ -1,6 +1,7 @@
 [
   (block)
   (field_declaration_list)
+  (field_updates)
   (enum_variant_list)
   (declaration_list)
   (match_block)

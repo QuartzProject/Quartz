@@ -24,7 +24,7 @@
             <Keywords name="Folders in comment, open"></Keywords>
             <Keywords name="Folders in comment, middle"></Keywords>
             <Keywords name="Folders in comment, close"></Keywords>
-            <Keywords name="Keywords1">package import pub internal private let var const fn suspend struct state enum trait impl if else match for in while break continue return wait at scope every ref as is self</Keywords>
+            <Keywords name="Keywords1">package import pub internal private let var const fn suspend struct state enum trait impl if else match for in while break continue return wait at scope every ref as is with self</Keywords>
             <Keywords name="Keywords2">int float byte bool char str Bytes void List Map Result Self i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 Eq Hash Ord Show Iterator</Keywords>
             <Keywords name="Keywords3">@</Keywords>
             <Keywords name="Keywords4">true false null</Keywords>

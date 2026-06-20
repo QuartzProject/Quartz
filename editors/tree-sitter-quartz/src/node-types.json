@@ -144,6 +144,10 @@
       {
         "type": "wait_expression",
         "named": true
+      },
+      {
+        "type": "with_expression",
+        "named": true
       }
     ]
   },
@@ -962,6 +966,47 @@
       "types": [
         {
           "type": "safe_navigation",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "field_update",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "field_updates",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "field_update",
           "named": true
         }
       ]
@@ -2552,6 +2597,32 @@
     }
   },
   {
+    "type": "with_expression",
+    "named": true,
+    "fields": {
+      "fields": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "field_updates",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "!",
     "named": false
   },
@@ -2924,6 +2995,10 @@
   {
     "type": "wildcard_pattern",
     "named": true
+  },
+  {
+    "type": "with",
+    "named": false
   },
   {
     "type": "{",

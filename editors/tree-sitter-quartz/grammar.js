@@ -284,6 +284,7 @@ module.exports = grammar({
       $.wait_expression,
       $.cast_expression,
       $.is_expression,
+      $.with_expression,
       $.call_expression,
       $.index_expression,
       $.field_expression,
@@ -356,6 +357,22 @@ module.exports = grammar({
       'is',
       field('pattern', $._pattern),
     )),
+
+    // `with` is contextual in the compiler; here it is a keyword, which only matters for code naming something `with`.
+    with_expression: $ => prec.left(PREC.cast, seq(
+      field('value', $._expression),
+      'with',
+      field('fields', $.field_updates),
+    )),
+
+    field_updates: $ => seq(
+      '{',
+      repeat(seq($.field_update, choice(',', $._terminator))),
+      optional($.field_update),
+      '}',
+    ),
+
+    field_update: $ => seq(field('name', $.identifier), '=', field('value', $._expression)),
 
     call_expression: $ => prec(PREC.postfix, seq(
       field('function', $._expression),

@@ -21,6 +21,9 @@
 (field_declaration
   name: (identifier) @variable.member)
 
+(field_update
+  name: (identifier) @variable.member)
+
 (field_expression
   field: (identifier) @variable.member)
 
@@ -197,6 +200,7 @@
 [
   "as"
   "is"
+  "with"
 ] @keyword.operator
 
 ; Operators and punctuation
