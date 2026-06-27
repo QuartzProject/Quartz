@@ -16,6 +16,11 @@ namespace quartz::vm {
 
 namespace {
 
+// Elements of more than one slot; the one-slot case is inline in the dispatch loop.
+[[gnu::noinline]] void arrayMove(Slot* dst, const Slot* src, std::uint32_t k) {
+    std::memmove(dst, src, k * sizeof(Slot));
+}
+
 Slot saturate(double d, ir::TypeId t) {
     Slot out{};
     if (std::isnan(d)) {
@@ -829,20 +834,28 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
             NEXT();
             CASE(AGet) {
                 std::uint32_t shape = WORD();
-                std::uint32_t k = shape & 0xFFFF;
                 if (RC.u >= shape >> 16) {
                     TRAP(ir::TrapCode::IndexOutOfBounds, {});
                 }
-                std::memmove(&RA, &RB + RC.u * k, k * sizeof(Slot));
+                std::uint32_t k = shape & 0xFFFF;
+                if (k == 1) {
+                    RA = (&RB)[RC.u];
+                } else {
+                    arrayMove(&RA, &RB + RC.u * k, k);
+                }
                 NEXT();
             }
             CASE(ASet) {
                 std::uint32_t shape = WORD();
-                std::uint32_t k = shape & 0xFFFF;
                 if (RB.u >= shape >> 16) {
                     TRAP(ir::TrapCode::IndexOutOfBounds, {});
                 }
-                std::memmove(&RA + RB.u * k, &RC, k * sizeof(Slot));
+                std::uint32_t k = shape & 0xFFFF;
+                if (k == 1) {
+                    (&RA)[RB.u] = RC;
+                } else {
+                    arrayMove(&RA + RB.u * k, &RC, k);
+                }
                 NEXT();
             }
 #if QUARTZ_SWITCH_DISPATCH
