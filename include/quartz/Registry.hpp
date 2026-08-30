@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-/// Package registries (registry/FORMAT.md): the index, the lockfile, source archives and dependency resolution.
+/// Package registries (the "Registry format" chapter of the book): the index, the lockfile, source archives and dependency resolution.
 namespace quartz::registry {
 
 struct Dependency {
