@@ -242,6 +242,7 @@ void Lowerer::lowerFilter(sema::AnnotationInfo& a, sema::FnInfo* fn, Function& o
     depth_ = 0;
     loops_.clear();
     out.name = fn->name + ".where";
+    out.package = fn->package;
     out.result = kBool;
     out.exported = true;
     a.whereParam->reg = newReg(T(a.whereParam->type));
@@ -268,6 +269,13 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
         out.name += ">";
     }
     out.result = T(fn->result);
+    out.package = fn->package;
+    if (fn->decl != nullptr) {
+        out.visibility = fn->decl->privateKeyword                               ? FnVisibility::Private
+                         : fn->decl->visibility == syntax::Visibility::Pub      ? FnVisibility::Public
+                         : fn->decl->visibility == syntax::Visibility::Internal ? FnVisibility::Internal
+                                                                                : FnVisibility::Default;
+    }
     if (fn->derived != sema::LangTrait::None) {
         lowerDerived(fn, out);
         return;
@@ -283,6 +291,11 @@ void Lowerer::lowerFunction(sema::FnInfo* fn, Function& out) {
     }
     out.paramCount = static_cast<std::uint32_t>(out.regs.size());
     out.exported = fn->owner == kError && !signatureHasFn(out);
+    if (out.exported && prog_.names != nullptr && fn->paramLocals.size() == out.paramCount) {
+        for (sema::Local* l : fn->paramLocals) {
+            out.paramNames.emplace_back(prog_.names->name(l->name));
+        }
+    }
     retReg_ = fn->result != kVoid ? newReg(fn->result) : kNoReg;
     setLine(fn->decl->span);
     lowerBlockStmts(fn->decl->body);

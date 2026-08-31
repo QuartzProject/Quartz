@@ -64,16 +64,12 @@ bool trampoline(quartz::vm::HostCall& call, void* user) {
 }
 
 std::size_t importArgSlots(const quartz::vm::Program& p, std::string_view name) {
-    for (const quartz::ir::HostImport& imp : p.module->imports) {
-        if (imp.name == name) {
-            std::size_t n = 0;
-            for (quartz::ir::TypeId t : imp.params) {
-                n += p.layouts->slots(t);
-            }
-            return n;
-        }
+    auto found = p.lookupImport(name);
+    std::size_t n = 0;
+    for (quartz::ir::TypeId t : found ? p.module->imports[*found].params : std::vector<quartz::ir::TypeId>{}) {
+        n += p.layouts->slots(t);
     }
-    return 0;
+    return n;
 }
 
 bool bindWith(qz_sandbox* sandbox, const char* import_name, qz_sandbox::Binding b) {
@@ -231,7 +227,8 @@ qz_program* qz_load(const uint8_t* bytes, size_t length, const uint8_t (*trusted
 void qz_program_free(qz_program* program) { delete program; }
 
 uint32_t qz_program_function(const qz_program* program, const char* name) {
-    return program != nullptr && name != nullptr ? program->program->findFunction(name) : UINT32_MAX;
+    return program != nullptr && name != nullptr ? program->program->lookupFunction(name).value_or(UINT32_MAX)
+                                                 : UINT32_MAX;
 }
 
 qz_sandbox* qz_sandbox_new(const qz_program* program, const qz_limits* limits) {

@@ -98,7 +98,11 @@ std::expected<void, std::string> Sandbox::link(std::string_view package, Sandbox
             continue;
         }
         std::string name = imp.name.substr(prefix.size());
-        std::uint32_t f = provider.program_->findFunction(name);
+        auto found = provider.program_->lookupFunction(imp.name);
+        if (!found && found.error() == LookupError::NotFound) {
+            found = provider.program_->lookupFunction(name);
+        }
+        std::uint32_t f = found.value_or(~0U);
         if (f == ~0U || !provider.program_->functions[f].exported || provider.program_->functions[f].isSuspend) {
             return std::unexpected(std::format("{} does not export '{}'", package, name));
         }

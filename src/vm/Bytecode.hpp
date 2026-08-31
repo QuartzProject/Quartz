@@ -4,8 +4,10 @@
 #include "vm/Layout.hpp"
 #include "vm/Value.hpp"
 
+#include <expected>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace quartz::vm {
@@ -166,6 +168,8 @@ struct CompiledFunction {
 };
 
 /// A validated module lowered to bytecode; immutable and shareable between sandboxes.
+enum class LookupError : std::uint8_t { NotFound, Ambiguous };
+
 struct Program {
     std::unique_ptr<ir::Module> module;
     std::unique_ptr<Layouts> layouts;
@@ -175,12 +179,17 @@ struct Program {
     std::uint32_t maxFrameSlots = 0;
     std::vector<std::uint32_t> importResultSlots;
     std::vector<bool> importReprC; // an import passes or returns a @repr(C) struct
+    std::vector<bool> importRequired; // some function calls it: `start` demands a binding only for these
     std::shared_ptr<TierState> tier; // native code and hotness counters
     std::vector<std::uint32_t> closureConst; // per function: constant holding its capture-free closure, or ~0
     Probes probes;
     std::vector<ProbeSite> probeSites;
 
     [[nodiscard]] std::uint32_t findFunction(std::string_view name) const;
+    /// A function by `name` or `package.name`; exported functions first, and never a pick among several.
+    [[nodiscard]] std::expected<std::uint32_t, LookupError> lookupFunction(std::string_view name) const;
+    /// An import by its full name or, when only one import has it, by its name without the package.
+    [[nodiscard]] std::expected<std::uint32_t, LookupError> lookupImport(std::string_view name) const;
 };
 
 const char* opcodeName(Opc op);

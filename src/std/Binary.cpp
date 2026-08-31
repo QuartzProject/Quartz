@@ -528,13 +528,13 @@ bool writeZip(vm::HostCall& call, void*) {
 
 void addBinaryNatives(std::vector<Native>& out) {
     out.insert(out.end(), {
-                              {"Bytes.len", bytesLen},
-                              {"Bytes.get", bytesGet},
-                              {"Bytes.slice", bytesSlice},
-                              {"Bytes.toStr", bytesToStr},
-                              {"Bytes.toList", bytesToList},
-                              {"Bytes.hex", bytesHex},
-                              {"str.toBytes", strToBytes},
+                              {"org.quartzlang.bytes.Bytes.len", bytesLen},
+                              {"org.quartzlang.bytes.Bytes.get", bytesGet},
+                              {"org.quartzlang.bytes.Bytes.slice", bytesSlice},
+                              {"org.quartzlang.bytes.Bytes.toStr", bytesToStr},
+                              {"org.quartzlang.bytes.Bytes.toList", bytesToList},
+                              {"org.quartzlang.bytes.Bytes.hex", bytesHex},
+                              {"org.quartzlang.bytes.str.toBytes", strToBytes},
                               {"org.quartzlang.bytes.bytesOf", bytesFromList},
                               {"org.quartzlang.bytes.concatBytes", bytesConcat},
                               {"org.quartzlang.bytes.readUInt", readUInt},

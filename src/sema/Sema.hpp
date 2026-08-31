@@ -65,7 +65,8 @@ struct FnInfo {
     LangTrait derived = LangTrait::None;     // made by `@derive`: no declaration, lowering builds the body
     [[nodiscard]] bool generic() const { return !typeParams.empty(); }
     std::vector<AnnotationInfo> annotations;
-    std::string name;            // `Type.method` for methods
+    std::string name;            // `Type.method` for methods; host functions start with their package
+    std::string package;         // of the declaring file
     TypeId owner = ir::kError;   // receiver type for methods
     bool hasSelf = false;
     bool isHost = false;         // declared without a body in a `.qzi`

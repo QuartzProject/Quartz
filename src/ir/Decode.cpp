@@ -113,6 +113,53 @@ public:
         }
     }
 
+    void names(Reader& r) {
+        std::uint32_t n = r.count(kMaxElements);
+        std::vector<std::string> packages;
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i) {
+            packages.push_back(r.str());
+        }
+        auto package = [&]() -> std::string {
+            std::uint32_t p = r.u32();
+            if (p > packages.size()) {
+                r.fail("bad package index");
+                return {};
+            }
+            return p == 0 ? std::string() : packages[p - 1];
+        };
+        for (Function& f : m_.functions) {
+            f.package = package();
+            std::uint8_t v = r.u8();
+            if (v > static_cast<std::uint8_t>(FnVisibility::Public)) {
+                r.fail("unknown function visibility");
+                return;
+            }
+            f.visibility = static_cast<FnVisibility>(v);
+            std::uint32_t count = r.count(kMaxElements);
+            if (count != 0 && count != f.paramCount) {
+                r.fail("parameter names do not match the parameters");
+                return;
+            }
+            for (std::uint32_t i = 0; i < count && !r.failed(); ++i) {
+                f.paramNames.push_back(r.str());
+            }
+            if (r.failed()) {
+                return;
+            }
+        }
+        for (HostImport& imp : m_.imports) {
+            imp.package = package();
+            if (!imp.package.empty() && (imp.name.size() <= imp.package.size() + 1 ||
+                                         !imp.name.starts_with(imp.package) || imp.name[imp.package.size()] != '.')) {
+                r.fail("an import's package is not a prefix of its name");
+                return;
+            }
+        }
+        for (TypeId id = kFirstUserType; id < m_.types.size() && !r.failed(); ++id) {
+            m_.types.mutableInfo(id).package = package();
+        }
+    }
+
     void manifest(Reader& r) {
         m_.manifest = r.str();
         if (m_.manifest.size() > 65536) {
@@ -456,12 +503,13 @@ std::expected<std::unique_ptr<Module>, std::string> decodePayload(std::span<cons
         if (top.failed()) {
             break;
         }
-        if (id <= last || id > static_cast<std::uint8_t>(Section::Manifest)) {
+        if (id <= last || id > static_cast<std::uint8_t>(Section::Names)) {
             top.fail("unknown or out of order section");
             break;
         }
         for (std::uint8_t skipped = last + 1; skipped < id; ++skipped) {
-            if (skipped != static_cast<std::uint8_t>(Section::Lines)) {
+            if (skipped != static_cast<std::uint8_t>(Section::Lines) &&
+                skipped != static_cast<std::uint8_t>(Section::Manifest)) {
                 top.fail("missing section");
             }
         }
@@ -491,6 +539,9 @@ std::expected<std::unique_ptr<Module>, std::string> decodePayload(std::span<cons
             break;
         case Section::Manifest:
             d.manifest(r);
+            break;
+        case Section::Names:
+            d.names(r);
             break;
         }
         if (!r.failed() && !r.atEnd()) {

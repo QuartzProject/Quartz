@@ -208,13 +208,19 @@ bool Sandbox::bind(std::string_view importName, HostFn fn, void* user) {
             found = true;
         }
     }
+    if (!found) {
+        if (auto i = program_->lookupImport(importName)) {
+            bindings_[*i] = {fn, user};
+            found = true;
+        }
+    }
     return found;
 }
 
 std::expected<void, Trap> Sandbox::start() {
     const ir::Module& m = *program_->module;
     for (std::size_t i = 0; i < bindings_.size(); ++i) {
-        if (bindings_[i].fn == nullptr) {
+        if (bindings_[i].fn == nullptr && program_->importRequired[i]) {
             return std::unexpected(Trap{ir::TrapCode::HostError, std::format("host import '{}' is not bound", m.imports[i].name), {}, 0});
         }
     }

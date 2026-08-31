@@ -166,11 +166,16 @@ int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const 
         std::fprintf(stderr, "%s\n", s.error().describe().c_str());
         return 3;
     }
-    std::uint32_t fn = program->findFunction(entry);
-    if (fn == ~0U) {
-        std::fprintf(stderr, "no function '%s'\n", entry.c_str());
+    auto found = program->lookupFunction(entry);
+    if (!found) {
+        std::fprintf(stderr,
+                     found.error() == quartz::vm::LookupError::Ambiguous
+                         ? "several functions are called '%s'; add their package\n"
+                         : "no function '%s'\n",
+                     entry.c_str());
         return 2;
     }
+    std::uint32_t fn = *found;
     auto t = sb.spawn(fn, {});
     std::uint64_t ticks = 0;
     std::uint64_t yields = 0;

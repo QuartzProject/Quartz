@@ -112,3 +112,137 @@ const char* qz_warning_rule(size_t index) {
 }
 
 } // extern "C"
+
+namespace {
+
+void makeNames(const qz_program& p) {
+    const quartz::ir::Module& m = *p.program->module;
+    p.functionNames.reserve(m.functions.size());
+    for (std::uint32_t f = 0; f < m.functions.size(); ++f) {
+        const quartz::ir::Function& fn = m.functions[f];
+        p.functionNames.push_back(fn.package.empty() ? fn.name : fn.package + "." + fn.name);
+        if (fn.exported) {
+            p.exports.push_back(f);
+        }
+    }
+    p.typeNames.reserve(m.types.size());
+    for (quartz::ir::TypeId t = 0; t < m.types.size(); ++t) {
+        p.typeNames.push_back(m.types.name(t));
+    }
+}
+
+const qz_program* named(const qz_program* p) {
+    std::call_once(p->namesOnce, makeNames, *p);
+    return p;
+}
+
+const quartz::ir::Function* functionOf(const qz_program* p, uint32_t function) {
+    const auto& fns = p->program->module->functions;
+    return function < fns.size() ? &fns[function] : nullptr;
+}
+
+const quartz::ir::HostImport* importOf(const qz_program* p, uint32_t import) {
+    const auto& imports = p->program->module->imports;
+    return import < imports.size() ? &imports[import] : nullptr;
+}
+
+qz_lookup lookupResult(const std::expected<std::uint32_t, quartz::vm::LookupError>& found, uint32_t* index) {
+    if (index != nullptr) {
+        *index = found.value_or(UINT32_MAX);
+    }
+    if (found) {
+        return QZ_LOOKUP_FOUND;
+    }
+    return found.error() == quartz::vm::LookupError::Ambiguous ? QZ_LOOKUP_AMBIGUOUS : QZ_LOOKUP_NOT_FOUND;
+}
+
+} // namespace
+
+extern "C" {
+
+qz_lookup qz_program_find_function(const qz_program* program, const char* name, uint32_t* index) {
+    if (program == nullptr || name == nullptr) {
+        return lookupResult(std::unexpected(quartz::vm::LookupError::NotFound), index);
+    }
+    return lookupResult(program->program->lookupFunction(name), index);
+}
+
+qz_lookup qz_program_find_import(const qz_program* program, const char* name, uint32_t* index) {
+    if (program == nullptr || name == nullptr) {
+        return lookupResult(std::unexpected(quartz::vm::LookupError::NotFound), index);
+    }
+    return lookupResult(program->program->lookupImport(name), index);
+}
+
+uint32_t qz_program_export_count(const qz_program* program) {
+    return static_cast<uint32_t>(named(program)->exports.size());
+}
+
+uint32_t qz_program_export(const qz_program* program, uint32_t index) {
+    const auto& exports = named(program)->exports;
+    return index < exports.size() ? exports[index] : UINT32_MAX;
+}
+
+const char* qz_program_function_name(const qz_program* program, uint32_t function) {
+    const auto& names = named(program)->functionNames;
+    return function < names.size() ? names[function].c_str() : "";
+}
+
+const char* qz_program_function_package(const qz_program* program, uint32_t function) {
+    const quartz::ir::Function* f = functionOf(program, function);
+    return f != nullptr ? f->package.c_str() : "";
+}
+
+const char* qz_program_function_param_name(const qz_program* program, uint32_t function, uint32_t index) {
+    const quartz::ir::Function* f = functionOf(program, function);
+    if (f == nullptr || f->paramNames.size() != f->paramCount) {
+        return "";
+    }
+    const quartz::ir::TypeTable& types = program->program->module->types;
+    for (std::uint32_t r = 0; r < f->paramCount; ++r) {
+        if (types.kind(f->regs[r]) == quartz::ir::TypeKind::State) {
+            continue; // the sandbox supplies states, so callers do not count them
+        }
+        if (index-- == 0) {
+            return f->paramNames[r].c_str();
+        }
+    }
+    return "";
+}
+
+qz_visibility qz_program_function_visibility(const qz_program* program, uint32_t function) {
+    const quartz::ir::Function* f = functionOf(program, function);
+    return f != nullptr ? static_cast<qz_visibility>(f->visibility) : QZ_VISIBILITY_DEFAULT;
+}
+
+bool qz_program_function_is_suspend(const qz_program* program, uint32_t function) {
+    const quartz::ir::Function* f = functionOf(program, function);
+    return f != nullptr && f->isSuspend;
+}
+
+bool qz_program_function_is_exported(const qz_program* program, uint32_t function) {
+    const quartz::ir::Function* f = functionOf(program, function);
+    return f != nullptr && f->exported;
+}
+
+const char* qz_program_import_package(const qz_program* program, uint32_t import) {
+    const quartz::ir::HostImport* imp = importOf(program, import);
+    return imp != nullptr ? imp->package.c_str() : "";
+}
+
+bool qz_program_import_is_required(const qz_program* program, uint32_t import) {
+    const auto& required = program->program->importRequired;
+    return import < required.size() && required[import];
+}
+
+const char* qz_type_name(const qz_program* program, uint32_t type) {
+    const auto& names = named(program)->typeNames;
+    return type != 0 && type < names.size() ? names[type].c_str() : "";
+}
+
+const char* qz_type_package(const qz_program* program, uint32_t type) {
+    const quartz::ir::TypeTable& types = program->program->module->types;
+    return type != 0 && type < types.size() ? types.info(type).package.c_str() : "";
+}
+
+} // extern "C"

@@ -101,7 +101,7 @@ public:
     Sandbox& operator=(const Sandbox&) = delete;
     ~Sandbox();
 
-    /// Binds a host import by its `.qzi` name (`trusted`, `Player.level`).
+    /// Binds a host import by its full name (`org.example.host.Player.level`) or, unambiguous, without the package.
     bool bind(std::string_view importName, HostFn fn, void* user = nullptr);
     /// Checks every import is bound, creates the states and runs their initializers.
     std::expected<void, Trap> start();

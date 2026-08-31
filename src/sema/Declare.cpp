@@ -47,6 +47,7 @@ void Checker::declareTypes() {
             }
             TypeEntry entry;
             entry.type = types_->declareNominal(kind, std::string(str(d->name)));
+            types_->mutableInfo(entry.type).package = files_[currentFile_].package;
             std::span<TypeParam> tps;
             if (d->kind == DeclKind::Enum) {
                 entry.enumDecl = static_cast<EnumDecl*>(d);
@@ -142,7 +143,9 @@ void Checker::completeTypes() {
             fields.push_back({std::string(str(f.name)), ft, renamed});
             if (isHandle) {
                 auto* getter = prog_->fnStorage.emplace_back(std::make_unique<FnInfo>()).get();
-                getter->name = std::format("{}.{}", str(name), str(f.name));
+                const std::string& pkg = files_[currentFile_].package;
+                getter->name = std::format("{}{}{}.{}", pkg, pkg.empty() ? "" : ".", str(name), str(f.name));
+                getter->package = pkg;
                 getter->isHost = true;
                 getter->owner = entry.type;
                 getter->hasSelf = true;
@@ -483,15 +486,17 @@ FnInfo* Checker::declareFn(FnDecl* fn, TypeId owner, bool inInterface, const Imp
     }
     TypeId savedSelf = selfType_;
     selfType_ = owner;
+    const std::string& pkg = files_[fn->span.file].package;
+    info->package = pkg;
     if (owner != ir::kError) {
-        info->name = std::format("{}.{}", typeName(owner), str(fn->name));
+        info->name = std::format("{}{}{}.{}", info->isHost ? pkg : "", info->isHost && !pkg.empty() ? "." : "",
+                                 typeName(owner), str(fn->name));
         if (fn->hasSelf) {
             info->params.push_back(owner);
             info->paramNames.push_back(names_.intern("self"));
             info->defaults.push_back(nullptr);
         }
     } else {
-        const std::string& pkg = files_[fn->span.file].package;
         info->name = info->isHost && !pkg.empty() ? pkg + "." + std::string(str(fn->name)) : std::string(str(fn->name));
         if (fn->hasSelf) {
             diags_.error(fn->span, "'self' is only allowed in impl blocks");

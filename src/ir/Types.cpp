@@ -123,6 +123,7 @@ TypeId TypeTable::instantiate(TypeId base, const std::vector<TypeId>& args) {
     t.name = std::move(name);
     t.genericBase = base;
     t.typeArgs = args;
+    t.package = types_[base].package;
     auto id = static_cast<TypeId>(types_.size());
     types_.push_back(std::move(t));
     instances_.emplace(key, id);

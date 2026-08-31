@@ -5,6 +5,7 @@
 
 #include <bit>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <string>
 #include <vector>
@@ -12,6 +13,11 @@
 struct qz_program {
     std::shared_ptr<const quartz::vm::Program> program;
     std::vector<std::uint8_t> binary;
+    // Qualified function names and type names, made on first use; a program is shared across threads.
+    mutable std::once_flag namesOnce{};
+    mutable std::vector<std::string> functionNames{};
+    mutable std::vector<std::string> typeNames{};
+    mutable std::vector<std::uint32_t> exports{};
 };
 
 struct qz_call {
@@ -48,6 +54,7 @@ CompileOutput compileSources(const qz_source* sources, std::size_t count, const 
 
 static_assert(sizeof(qz_slot) == sizeof(vm::Slot));
 static_assert(static_cast<int>(ir::TrapCode::HostError) + 1 == QZ_TRAP_HOST_ERROR);
+static_assert(static_cast<int>(ir::FnVisibility::Public) == QZ_VISIBILITY_PUBLIC);
 
 inline vm::Slot toVm(qz_slot s) { return std::bit_cast<vm::Slot>(s); }
 

@@ -184,9 +184,14 @@ public final class Program implements AutoCloseable {
         }
     }
 
-    /** The import called {@code name}, if the program has one. */
+    /** The import called {@code name}, or the only one whose name without its package is {@code name}. */
     public Optional<Import> findImport(String name) {
-        return imports().stream().filter(i -> i.name().equals(name)).findFirst();
+        Optional<Import> exact = imports().stream().filter(i -> i.name().equals(name)).findFirst();
+        if (exact.isPresent()) {
+            return exact;
+        }
+        List<Import> shortForm = imports().stream().filter(i -> i.name().endsWith("." + name)).toList();
+        return shortForm.size() == 1 ? Optional.of(shortForm.get(0)) : Optional.empty();
     }
 
     /** The .qzi other packages compile against, for a program built with a package.toml. */

@@ -317,6 +317,40 @@ QZ_API void qz_diagnostic_range(const qz_diagnostics* diagnostics, size_t index,
 QZ_API size_t qz_warning_rule_count(void);
 QZ_API const char* qz_warning_rule(size_t index);
 
+typedef enum qz_lookup { QZ_LOOKUP_FOUND = 0, QZ_LOOKUP_NOT_FOUND, QZ_LOOKUP_AMBIGUOUS } qz_lookup;
+
+/* A function by name or by package and name (`org.example.greet`). Exported functions come first, and a name that
+ * several share is ambiguous (qz_program_function then gives UINT32_MAX). */
+QZ_API qz_lookup qz_program_find_function(const qz_program* program, const char* name, uint32_t* index);
+/* An import by its full name (`org.example.host.Player.name`) or, when only one has it, without the package. */
+QZ_API qz_lookup qz_program_find_import(const qz_program* program, const char* name, uint32_t* index);
+
+/* What the source wrote: nothing, `private` (not meant for the host), `internal` or `pub`. */
+typedef enum qz_visibility {
+    QZ_VISIBILITY_DEFAULT = 0,
+    QZ_VISIBILITY_PRIVATE,
+    QZ_VISIBILITY_INTERNAL,
+    QZ_VISIBILITY_PUBLIC
+} qz_visibility;
+
+/* The functions a host may call: count, then each one's function index. */
+QZ_API uint32_t qz_program_export_count(const qz_program* program);
+QZ_API uint32_t qz_program_export(const qz_program* program, uint32_t index);
+/* Name with its package (`org.example.greet`, `org.example.Shop.buy`); strings live as long as the program. */
+QZ_API const char* qz_program_function_name(const qz_program* program, uint32_t function);
+QZ_API const char* qz_program_function_package(const qz_program* program, uint32_t function);
+/* Name of parameter `index` as qz_program_function_param counts them; "" for functions that are not exported. */
+QZ_API const char* qz_program_function_param_name(const qz_program* program, uint32_t function, uint32_t index);
+QZ_API qz_visibility qz_program_function_visibility(const qz_program* program, uint32_t function);
+QZ_API bool qz_program_function_is_suspend(const qz_program* program, uint32_t function);
+QZ_API bool qz_program_function_is_exported(const qz_program* program, uint32_t function);
+QZ_API const char* qz_program_import_package(const qz_program* program, uint32_t import);
+/* False for an import no function calls: qz_sandbox_start does not ask for its binding (binding it still works). */
+QZ_API bool qz_program_import_is_required(const qz_program* program, uint32_t import);
+/* How the source writes a type (`Player`, `[int]`, `Map<str, Pt>`, `Box<int>`), and a nominal type's package. */
+QZ_API const char* qz_type_name(const qz_program* program, uint32_t type);
+QZ_API const char* qz_type_package(const qz_program* program, uint32_t type);
+
 #ifdef __cplusplus
 }
 #endif

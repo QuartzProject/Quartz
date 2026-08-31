@@ -211,8 +211,12 @@ struct LocalName {
     std::uint32_t to = 0;
 };
 
+/// What the source says about who may call a function: nothing, `private`, `internal` or `pub`.
+enum class FnVisibility : std::uint8_t { Default, Private, Internal, Public };
+
 struct Function {
     std::string name;
+    std::string package;        // of the declaring file; empty without a `package` line
     std::string file;           // source file of the code, for trap traces; empty when lines are stripped
     std::vector<TypeId> regs;   // regs[0 .. paramCount) are the parameters
     std::uint32_t paramCount = 0;
@@ -223,12 +227,15 @@ struct Function {
     bool isSuspend = false;
     Inlining inlining = Inlining::Default; // `@inline` / `@noinline`, hints for the native tier (D71)
     std::vector<LocalName> locals;         // parameters and locals by name; dropped with the lines
+    FnVisibility visibility = FnVisibility::Default;
+    std::vector<std::string> paramNames{}; // exported functions: every parameter's name, kept without the lines
 };
 
 struct HostImport {
-    std::string name; // `Type.member` for handle members, plain name otherwise
+    std::string name; // `package.fn` or `package.Type.member`, without `package.` when the `.qzi` has none
     std::vector<TypeId> params;
     TypeId result = kVoid;
+    std::string package{}; // a prefix of `name`; binding by the rest works while it is unambiguous
 };
 
 /// One argument of a declaration attribute, kept for the host (`@command("heal", perm = "example.heal")`).

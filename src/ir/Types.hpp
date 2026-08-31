@@ -92,6 +92,7 @@ struct TypeInfo {
     std::vector<TypeId> typeParams; // generic bases: their parameters (Param types)
     TypeId genericBase = 0;         // instances: the generic base they come from (0 = none)
     std::vector<TypeId> typeArgs;   // instances: the arguments
+    std::string package{};          // nominal types: the package declaring them
 };
 
 using TypeSubst = std::vector<std::pair<TypeId, TypeId>>;

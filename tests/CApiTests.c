@@ -180,6 +180,72 @@ static void diagnosticTests(void) {
     CHECK(qz_warning_rule_count() > 10 && strcmp(qz_warning_rule(0), "unused-variable") == 0);
 }
 
+static bool playerName(qz_call* call, const qz_slot* args, qz_slot* result, void* user) {
+    (void)args;
+    (void)user;
+    *result = qz_call_str(call, "Ann", 3);
+    return true;
+}
+
+static void packages(void) {
+    static const char kHostIface[] = "package org.example.host\n@handle\nstruct Player {}\n"
+                                     "impl Player {\n    fn name(self) -> str\n}\nfn unused(n: int)\n";
+    static const char kA[] = "package org.example.a\nimport org.example.host.Player\n"
+                             "pub struct Pt {\n    x: int\n}\n"
+                             "pub fn greet(p: Player, times: int) -> str {\n    return p.name().repeat(times)\n}\n"
+                             "suspend fn later() {}\n";
+    static const char kB[] = "package org.example.b\nfn greet() -> int {\n    return 2\n}\n";
+    qz_source sources[] = {
+        {"host.qzi", kHostIface, sizeof kHostIface - 1}, {"a.qz", kA, sizeof kA - 1}, {"b.qz", kB, sizeof kB - 1}};
+    qz_compile_options options = {true, false, NULL};
+    char* diagnostics = NULL;
+    qz_program* compiled = qz_compile(sources, 3, &options, &diagnostics);
+    CHECK(compiled != NULL);
+    if (compiled == NULL) {
+        fprintf(stderr, "%s\n", diagnostics);
+        qz_free(diagnostics);
+        return;
+    }
+    qz_free(diagnostics);
+    size_t size = 0;
+    uint8_t* binary = qz_program_binary(compiled, &size);
+    qz_program* program = qz_load(binary, size, NULL, 0, false, NULL);
+    qz_free(binary);
+    qz_program_free(compiled);
+
+    uint32_t greet = UINT32_MAX;
+    CHECK(qz_program_function(program, "greet") == UINT32_MAX);
+    CHECK(qz_program_find_function(program, "greet", NULL) == QZ_LOOKUP_AMBIGUOUS);
+    CHECK(qz_program_find_function(program, "org.example.a.greet", &greet) == QZ_LOOKUP_FOUND);
+    CHECK(strcmp(qz_program_function_name(program, greet), "org.example.a.greet") == 0);
+    CHECK(qz_program_function_visibility(program, greet) == QZ_VISIBILITY_PUBLIC);
+    CHECK(strcmp(qz_program_function_param_name(program, greet, 1), "times") == 0);
+    uint32_t player = qz_program_function_param_type(program, greet, 0);
+    CHECK(strcmp(qz_type_name(program, player), "Player") == 0);
+    CHECK(strcmp(qz_type_package(program, player), "org.example.host") == 0);
+    uint32_t later = qz_program_function(program, "later");
+    CHECK(qz_program_function_is_suspend(program, later) && qz_program_function_is_exported(program, later));
+    CHECK(qz_program_export_count(program) == 3);
+
+    uint32_t name = UINT32_MAX;
+    uint32_t unused = UINT32_MAX;
+    CHECK(qz_program_find_import(program, "Player.name", &name) == QZ_LOOKUP_FOUND);
+    CHECK(strcmp(qz_program_import_name(program, name), "org.example.host.Player.name") == 0);
+    CHECK(qz_program_find_import(program, "unused", &unused) == QZ_LOOKUP_FOUND);
+    CHECK(qz_program_import_is_required(program, name) && !qz_program_import_is_required(program, unused));
+    qz_limits limits = {0, 0, 0, 0};
+    qz_sandbox* sb = qz_sandbox_new(program, &limits);
+    CHECK(qz_sandbox_bind_direct(sb, "Player.name", playerName, NULL));
+    CHECK(qz_sandbox_start(sb) == QZ_OK);
+    qz_slot args[2] = {{.u = 1}, {.i = 2}};
+    qz_slot result = {0};
+    size_t len = 0;
+    CHECK(qz_sandbox_call(sb, greet, args, 2, &result) == QZ_OK);
+    CHECK(memcmp(qz_str(result, &len), "AnnAnn", 6) == 0 && len == 6);
+    qz_sandbox_free(sb);
+    qz_program_free(program);
+}
+
 int main(void) {
     CHECK(qz_abi_version() == QZ_ABI_VERSION);
     qz_source sources[] = {{"host.qzi", kHost, sizeof kHost - 1}, {"plugin.qz", kPlugin, sizeof kPlugin - 1}};
@@ -264,6 +330,7 @@ int main(void) {
 
     maps();
     diagnosticTests();
+    packages();
     if (failures == 0) {
         printf("C interface: all checks passed\n");
     }

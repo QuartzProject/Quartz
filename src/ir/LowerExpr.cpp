@@ -644,7 +644,7 @@ std::unique_ptr<Module> Lowerer::run() {
     mod_->functions.resize(prog_.functions.size());
     nextFn_ = static_cast<std::uint32_t>(prog_.functions.size());
     for (sema::FnInfo* imp : prog_.imports) {
-        mod_->imports.push_back({imp->name, imp->params, imp->result});
+        mod_->imports.push_back({imp->name, imp->params, imp->result, imp->package});
     }
     for (sema::FnInfo* fn : prog_.functions) {
         lowerFunction(fn, mod_->functions[fn->index]);

@@ -178,6 +178,42 @@ void writeAnnotation(Writer& w, const Annotation& a) {
     }
 }
 
+// Packages, visibility and parameter names: what a host looks functions up by and generates bindings from.
+void writeNames(Writer& w, const Module& m) {
+    std::vector<std::string_view> packages;
+    auto index = [&](std::string_view p) -> std::uint32_t {
+        if (p.empty()) {
+            return 0;
+        }
+        auto at = std::find(packages.begin(), packages.end(), p);
+        if (at == packages.end()) {
+            packages.push_back(p);
+            return static_cast<std::uint32_t>(packages.size());
+        }
+        return static_cast<std::uint32_t>(at - packages.begin()) + 1;
+    };
+    Writer body;
+    for (const Function& f : m.functions) {
+        body.u32(index(f.package));
+        body.u8(static_cast<std::uint8_t>(f.visibility));
+        body.u32(static_cast<std::uint32_t>(f.paramNames.size()));
+        for (const std::string& n : f.paramNames) {
+            body.str(n);
+        }
+    }
+    for (const HostImport& imp : m.imports) {
+        body.u32(index(imp.package));
+    }
+    for (TypeId id = kFirstUserType; id < m.types.size(); ++id) {
+        body.u32(index(m.types.info(id).package));
+    }
+    w.u32(static_cast<std::uint32_t>(packages.size()));
+    for (std::string_view p : packages) {
+        w.str(p);
+    }
+    w.bytes(body.out);
+}
+
 void section(Writer& out, Section id, const Writer& body) {
     out.u8(static_cast<std::uint8_t>(id));
     out.u64(body.out.size());
@@ -283,6 +319,9 @@ std::vector<std::uint8_t> encodePayload(const Module& m, WriteOptions options) {
         w.str(m.manifest);
         section(out, Section::Manifest, w);
     }
+    w.out.clear();
+    writeNames(w, m);
+    section(out, Section::Names, w);
     return std::move(out.out);
 }
 

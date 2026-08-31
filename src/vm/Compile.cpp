@@ -1003,8 +1003,12 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module, Probes prob
         prog->constants.push_back(v);
     }
     prog->closureConst.assign(prog->module->functions.size(), ~0U);
+    prog->importRequired.assign(prog->module->imports.size(), false);
     for (const ir::Function& fn : prog->module->functions) {
         for (const ir::Inst& in : fn.code) {
+            if (in.op == ir::Op::CallHost && in.imm < prog->importRequired.size()) {
+                prog->importRequired[in.imm] = true;
+            }
             if (in.op != ir::Op::Closure || in.argCount != 0 || prog->closureConst[in.imm] != ~0U) {
                 continue;
             }
