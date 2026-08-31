@@ -131,7 +131,7 @@ export class Values {
             return this.#newStr(encoder.encode(value), call);
         case "bytes":
             if (!(value instanceof Uint8Array)) throw fail();
-            return this.#newStr(value, call);
+            return this.#newStr(value, call, true);
         case "list":
             if (!Array.isArray(value)) throw fail();
             return this.#newList(type, value, call);
@@ -153,14 +153,15 @@ export class Values {
         }
     }
 
-    #newStr(bytes, call) {
+    #newStr(bytes, call, raw = false) {
         const q = this.#q;
+        const m = q.module;
         const data = q.bytesIn(bytes);
         const out = q.scratch + 40;
         if (call) {
-            q.module._qzw_call_str(call, data, bytes.length, out);
+            (raw ? m._qz_call_bytes_into : m._qzw_call_str)(call, data, bytes.length, out);
         } else {
-            q.module._qzw_sandbox_str(this.#sandbox.address, data, bytes.length, out);
+            (raw ? m._qz_sandbox_bytes_into : m._qzw_sandbox_str)(this.#sandbox.address, data, bytes.length, out);
         }
         q.module._free(data);
         const bits = q.slot(out);

@@ -1,6 +1,6 @@
-#include "vm/Sandbox.hpp"
-
 #include "std/Std.hpp"
+#include "support/Utf8.hpp"
+#include "vm/Sandbox.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -487,7 +487,10 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
         if (node.kind != JNode::Kind::Str) {
             return bad("expected a string");
         }
-        out->p = newStr(node.text);
+        if (!validUtf8(node.text)) {
+            return bad("a string is not valid UTF-8");
+        }
+        out->p = copyStr(node.text);
         return out->p != nullptr;
     case TypeKind::Bytes: {
         if (node.kind != JNode::Kind::Str || node.text.size() % 2 != 0) {
@@ -501,7 +504,7 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
             }
             raw += static_cast<char>(v);
         }
-        out->p = newStr(raw);
+        out->p = copyStr(raw);
         return out->p != nullptr;
     }
     case TypeKind::List: {

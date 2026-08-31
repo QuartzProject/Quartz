@@ -171,7 +171,7 @@ Str* qzFromU64(NativeCtx* c, std::uint64_t v) { return sb(c).fromU64(v); }
 
 Str* qzFromF64(NativeCtx* c, double v) { return sb(c).fromF64(v); }
 
-Str* qzFromBool(NativeCtx* c, std::uint32_t v) { return sb(c).newStr(v != 0 ? "true" : "false"); }
+Str* qzFromBool(NativeCtx* c, std::uint32_t v) { return sb(c).copyStr(v != 0 ? "true" : "false"); }
 
 Str* qzFromChar(NativeCtx* c, std::uint64_t v) { return sb(c).fromChar(static_cast<std::uint32_t>(v)); }
 

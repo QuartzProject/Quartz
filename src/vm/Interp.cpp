@@ -758,7 +758,7 @@ bool Sandbox::callHost(std::uint32_t import, const Slot* args, Slot* result) {
                 NEXT();
             }
             CASE(StrFromB) {
-                Str* s = newStr(RB.u != 0 ? "true" : "false");
+                Str* s = copyStr(RB.u != 0 ? "true" : "false");
                 CHECK(s != nullptr);
                 RA.p = s;
                 NEXT();

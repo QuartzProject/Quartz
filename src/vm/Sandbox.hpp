@@ -15,6 +15,7 @@ struct NativeCtx;
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace quartz::vm {
@@ -67,7 +68,10 @@ struct HostCall {
     std::string error;  // set it and return false to trap with HostError
     Slot* out = nullptr; // results wider than one slot (structs, Result) are written here directly
 
+    /// A str of `text`; when it is not valid UTF-8 the call traps (even if the function then returns true).
     Str* string(std::string_view text);
+    /// A `Bytes` value of any bytes.
+    Str* bytes(std::string_view data);
     /// Charges fuel for work done natively (spec 9.2); false when the budget is gone.
     bool charge(std::int64_t units);
 };
@@ -150,8 +154,17 @@ public:
     [[nodiscard]] std::span<const Slot> resultSlots(std::size_t count) const { return stack_.first(count); }
     /// Fuel left after the last call.
     [[nodiscard]] std::int64_t fuelLeft() const { return fuel_; }
-    /// Outside a call: a string for the next call's arguments, valid until the call after it starts.
+
+    /// Outside a call: a string for the next call's arguments, valid until the call after it starts. Null when `text`
+    /// is not valid UTF-8 or memory ran out: then the next call, spawn or resume fails with that error.
     Str* newStr(std::string_view text);
+    /// Like `newStr` for a `Bytes` argument: any bytes.
+    Str* newBytes(std::string_view data);
+    /// Copies text the runtime and its natives know to be valid UTF-8 (or the bytes of a `Bytes`), unchecked.
+    Str* copyStr(std::string_view text);
+
+    /// The failure `newStr` or `newBytes` left for the next call, cleared; empty when there is none.
+    std::string takeHostValueError() { return std::exchange(hostValueError_, {}); }
     /// An empty list of `listType` the host fills with `hostListPush`: an argument, a `resume` value or, inside a
     /// host function, its result. It lives as long as `newStr`'s strings.
     List* hostList(ir::TypeId listType);
@@ -315,6 +328,7 @@ private:
     InvocationArena hostArenas_[2];
     int hostArena_ = 0;
     bool inCall_ = false;
+    std::string hostValueError_; // a host value that could not be built outside a call
     StateHeap heap_;
     std::unique_ptr<Slot[]> stackMem_;
     std::span<Slot> stack_;

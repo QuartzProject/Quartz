@@ -246,6 +246,42 @@ static void packages(void) {
     qz_program_free(program);
 }
 
+static bool echo(qz_call* call, const qz_slot* args, qz_slot* result, void* user) {
+    (void)user;
+    size_t len = 0;
+    const char* text = qz_str(args[0], &len);
+    *result = len == 3 && memcmp(text, "bad", 3) == 0 ? qz_call_str(call, "\xc3\x28", 2) : args[0];
+    return true;
+}
+
+static void utf8(void) {
+    static const char kIface[] = "fn echo(s: str) -> str\n";
+    static const char kCode[] = "fn run(s: str) -> str {\n    return echo(s)\n}\n"
+                                "fn size(b: Bytes) -> int {\n    return b.len()\n}\n";
+    qz_source sources[] = {{"h.qzi", kIface, sizeof kIface - 1}, {"u.qz", kCode, sizeof kCode - 1}};
+    qz_program* program = qz_compile(sources, 2, NULL, NULL);
+    CHECK(program != NULL);
+    if (program == NULL) {
+        return;
+    }
+    qz_sandbox* sb = qz_sandbox_new(program, NULL);
+    CHECK(qz_sandbox_bind_direct(sb, "echo", echo, NULL) && qz_sandbox_start(sb) == QZ_OK);
+    uint32_t run = qz_program_function(program, "run");
+    qz_slot result = {0};
+    qz_slot arg = qz_sandbox_str(sb, "\xed\xa0\x80", 3);
+    CHECK(arg.p == NULL);
+    CHECK(qz_sandbox_call(sb, run, &arg, 1, &result) == QZ_ERROR && strstr(qz_sandbox_error(sb), "UTF-8") != NULL);
+    arg = qz_sandbox_str(sb, "bad", 3);
+    CHECK(qz_sandbox_call(sb, run, &arg, 1, &result) == QZ_TRAP && qz_sandbox_trap_code(sb) == QZ_TRAP_HOST_ERROR);
+    arg = qz_sandbox_str(sb, "\xc3\xa9", 2);
+    CHECK(qz_sandbox_call(sb, run, &arg, 1, &result) == QZ_OK);
+    const uint8_t raw[] = {0xff, 0x00, 0xfe};
+    arg = qz_sandbox_bytes(sb, raw, 3);
+    CHECK(qz_sandbox_call(sb, qz_program_function(program, "size"), &arg, 1, &result) == QZ_OK && result.i == 3);
+    qz_sandbox_free(sb);
+    qz_program_free(program);
+}
+
 int main(void) {
     CHECK(qz_abi_version() == QZ_ABI_VERSION);
     qz_source sources[] = {{"host.qzi", kHost, sizeof kHost - 1}, {"plugin.qz", kPlugin, sizeof kPlugin - 1}};
@@ -331,6 +367,7 @@ int main(void) {
     maps();
     diagnosticTests();
     packages();
+    utf8();
     if (failures == 0) {
         printf("C interface: all checks passed\n");
     }

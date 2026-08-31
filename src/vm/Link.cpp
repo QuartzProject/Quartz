@@ -181,7 +181,7 @@ bool Sandbox::copyAcross(const Sandbox& from, TypeId fromType, const Slot* src, 
     case TypeKind::Str:
     case TypeKind::Bytes: {
         const auto* s = static_cast<const Str*>(src->p);
-        dst->p = s == nullptr ? nullptr : newStr(s->view());
+        dst->p = s == nullptr ? nullptr : copyStr(s->view());
         return s == nullptr || dst->p != nullptr;
     }
     case TypeKind::List: {

@@ -27,6 +27,9 @@ qz_status qz_sandbox_resume_wide(qz_sandbox* sandbox, uint32_t task, const qz_sl
                                  qz_task_outcome* outcome) {
     return guarded(sandbox, [&] {
         sandbox->error.clear();
+        if (quartz::capi::hostValueFailed(sandbox)) {
+            return QZ_ERROR;
+        }
         auto r = sandbox->sandbox->resume(task, view(value, value != nullptr ? slots : 0));
         if (!r) {
             return trapped(sandbox, r.error());

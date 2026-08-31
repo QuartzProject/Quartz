@@ -26,7 +26,7 @@ inline bool putBytes(vm::HostCall& call, std::span<const std::uint8_t> data, vm:
     if (!chargeWrite(call, data.size())) {
         return false;
     }
-    into->p = call.string(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+    into->p = call.bytes(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
     return into->p != nullptr;
 }
 

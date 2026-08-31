@@ -62,7 +62,7 @@ public:
         set(v, Tag::Float, s);
     }
     bool setStr(vm::Slot* v, std::string_view text) {
-        vm::Str* s = sb_.newStr(text);
+        vm::Str* s = sb_.copyStr(text);
         if (s == nullptr) {
             return false;
         }
@@ -101,12 +101,12 @@ public:
             (*lines)[{m, std::string(key)}] = line;
         }
         vm::Slot k{};
-        k.p = sb_.newStr(key);
+        k.p = sb_.copyStr(key);
         return k.p != nullptr && sb_.mapSet(m, &k, v);
     }
     vm::Slot* find(vm::Map* m, std::string_view key) {
         vm::Slot k{};
-        k.p = sb_.newStr(key);
+        k.p = sb_.copyStr(key);
         return k.p != nullptr ? sb_.mapFind(m, &k) : nullptr;
     }
 
@@ -119,7 +119,7 @@ public:
     }
     bool err(vm::Slot* out, std::string_view message) {
         out[0].u = 1;
-        out[1].p = sb_.newStr(message);
+        out[1].p = sb_.copyStr(message);
         return out[1].p != nullptr;
     }
 

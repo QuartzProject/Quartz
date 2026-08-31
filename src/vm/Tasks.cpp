@@ -294,6 +294,9 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
     if (!started_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "sandbox not started", {}, 0});
     }
+    if (!hostValueError_.empty()) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, takeHostValueError(), {}, 0});
+    }
     if (inCall_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "re-entrant call into a running sandbox", {}, 0});
     }
@@ -457,6 +460,9 @@ namespace {
 std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, std::span<const Slot> value) {
     if (id >= tasks_.size() || !tasks_[id].live) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "no such task", {}, 0});
+    }
+    if (!hostValueError_.empty()) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, takeHostValueError(), {}, 0});
     }
     const std::size_t width = tasks_[id].waitDst != 0xFFFF ? program_->layouts->slots(tasks_[id].waitType) : 0;
     if (value.size() < width) {

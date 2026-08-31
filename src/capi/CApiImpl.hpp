@@ -78,6 +78,12 @@ qz_status guarded(qz_sandbox* sb, F&& body) {
     return QZ_ERROR;
 }
 
+// A str or Bytes the host could not build outside a call fails the next call, before it runs.
+inline bool hostValueFailed(qz_sandbox* sb) {
+    sb->error = sb->sandbox->takeHostValueError();
+    return !sb->error.empty();
+}
+
 inline qz_status trapped(qz_sandbox* sb, const vm::Trap& trap) {
     sb->error = trap.describe();
     sb->trap = static_cast<qz_trap>(static_cast<int>(trap.code) + 1);

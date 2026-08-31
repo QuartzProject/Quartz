@@ -246,3 +246,35 @@ const char* qz_type_package(const qz_program* program, uint32_t type) {
 }
 
 } // extern "C"
+
+namespace {
+
+std::string_view bytesView(const uint8_t* data, size_t length) {
+    return {reinterpret_cast<const char*>(data), data != nullptr ? length : 0};
+}
+
+} // namespace
+
+extern "C" {
+
+qz_slot qz_sandbox_bytes(qz_sandbox* sandbox, const uint8_t* data, size_t length) {
+    qz_slot out{};
+    out.p = sandbox->sandbox->newBytes(bytesView(data, length));
+    return out;
+}
+
+qz_slot qz_call_bytes(qz_call* call, const uint8_t* data, size_t length) {
+    qz_slot out{};
+    out.p = call->call.bytes(bytesView(data, length));
+    return out;
+}
+
+void qz_sandbox_bytes_into(qz_sandbox* sandbox, const uint8_t* data, size_t length, qz_slot* out) {
+    *out = qz_sandbox_bytes(sandbox, data, length);
+}
+
+void qz_call_bytes_into(qz_call* call, const uint8_t* data, size_t length, qz_slot* out) {
+    *out = qz_call_bytes(call, data, length);
+}
+
+} // extern "C"

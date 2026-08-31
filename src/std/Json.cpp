@@ -441,7 +441,7 @@ bool writeJsonText(vm::HostCall& call, bool sorted) {
     if (!call.charge(static_cast<std::int64_t>(out.size() / 4 + 1))) {
         return false;
     }
-    call.result.p = call.string(out);
+    call.result.p = call.sandbox.copyStr(out);
     return call.result.p != nullptr;
 }
 

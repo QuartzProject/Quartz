@@ -274,6 +274,9 @@ qz_status qz_sandbox_start(qz_sandbox* sandbox) {
 qz_status qz_sandbox_call(qz_sandbox* sandbox, uint32_t function, const qz_slot* args, size_t count, qz_slot* result) {
     return guarded(sandbox, [&] {
         sandbox->error.clear();
+        if (quartz::capi::hostValueFailed(sandbox)) {
+            return QZ_ERROR;
+        }
         if (function >= sandbox->sandbox->program().functions.size()) {
             sandbox->error = "no such function";
             return QZ_ERROR;
@@ -293,6 +296,9 @@ qz_status qz_sandbox_spawn(qz_sandbox* sandbox, uint32_t function, const qz_slot
                            qz_task_outcome* outcome) {
     return guarded(sandbox, [&] {
         sandbox->error.clear();
+        if (quartz::capi::hostValueFailed(sandbox)) {
+            return QZ_ERROR;
+        }
         if (function >= sandbox->sandbox->program().functions.size()) {
             sandbox->error = "no such function";
             return QZ_ERROR;
@@ -311,6 +317,9 @@ qz_status qz_sandbox_spawn(qz_sandbox* sandbox, uint32_t function, const qz_slot
 qz_status qz_sandbox_resume(qz_sandbox* sandbox, uint32_t task, qz_slot value, qz_task_outcome* outcome) {
     return guarded(sandbox, [&] {
         sandbox->error.clear();
+        if (quartz::capi::hostValueFailed(sandbox)) {
+            return QZ_ERROR;
+        }
         auto r = sandbox->sandbox->resume(task, toVm(value));
         if (!r) {
             return trapped(sandbox, r.error());
@@ -530,6 +539,9 @@ qz_status qz_sandbox_call_wide(qz_sandbox* sandbox, uint32_t function, const qz_
                                qz_slot* result, size_t slots) {
     return guarded(sandbox, [&] {
         sandbox->error.clear();
+        if (quartz::capi::hostValueFailed(sandbox)) {
+            return QZ_ERROR;
+        }
         const quartz::vm::Program& p = sandbox->sandbox->program();
         if (function >= p.functions.size() || slots != p.layouts->slots(p.functions[function].result)) {
             sandbox->error = function >= p.functions.size() ? "no such function" : "wrong number of result slots";

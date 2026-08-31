@@ -154,7 +154,7 @@ Str* Sandbox::formatValue(Slot v, std::uint32_t kind, std::int64_t specBits) {
             appendChar(out, fill);
         }
     }
-    return newStr(out);
+    return copyStr(out);
 }
 
 } // namespace quartz::vm

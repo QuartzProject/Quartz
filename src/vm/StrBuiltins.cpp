@@ -67,7 +67,7 @@ bool tooLarge(std::string_view s) {
     return seen && lead + exp >= 0;
 }
 
-Str* copyOf(Sandbox& sb, std::string_view s) { return sb.newStr(s); }
+Str* copyOf(Sandbox& sb, std::string_view s) { return sb.copyStr(s); }
 
 bool setStr(Slot* out, Str* s) {
     out[0].p = s;
@@ -134,7 +134,7 @@ Str* allocLength(Sandbox& sb, std::uint64_t len) {
 
 bool pushStr(Sandbox& sb, List* l, std::string_view piece) {
     Slot v{};
-    v.p = sb.newStr(piece);
+    v.p = sb.copyStr(piece);
     return v.p != nullptr && sb.listPush(l, &v);
 }
 

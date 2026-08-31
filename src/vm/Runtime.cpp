@@ -1,7 +1,7 @@
-#include "vm/Sandbox.hpp"
-
+#include "support/Utf8.hpp"
 #include "vm/Builtins.hpp"
 #include "vm/ReprC.hpp"
+#include "vm/Sandbox.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -141,6 +141,27 @@ Str* Sandbox::allocStr(std::size_t len) {
 }
 
 Str* Sandbox::newStr(std::string_view text) {
+    if (!validUtf8(text)) {
+        constexpr std::string_view kWhy = "a str from the host is not valid UTF-8";
+        if (inCall_) {
+            fail(ir::TrapCode::HostError, std::string(kWhy));
+        } else {
+            hostValueError_ = kWhy;
+        }
+        return nullptr;
+    }
+    return newBytes(text);
+}
+
+Str* Sandbox::newBytes(std::string_view data) {
+    Str* s = copyStr(data);
+    if (s == nullptr && !inCall_) {
+        hostValueError_ = "out of memory for a host value";
+    }
+    return s;
+}
+
+Str* Sandbox::copyStr(std::string_view text) {
     if (!inCall_) {
         auto* h = static_cast<Str*>(hostArenas_[hostArena_ ^ 1].allocate(kStrHeader + text.size() + 1));
         if (h == nullptr) {
@@ -164,6 +185,8 @@ Str* Sandbox::newStr(std::string_view text) {
 }
 
 Str* HostCall::string(std::string_view text) { return sandbox.newStr(text); }
+
+Str* HostCall::bytes(std::string_view data) { return sandbox.newBytes(data); }
 
 // `@repr(C)` structs reach the host as one slot holding a pointer to a C struct (D66).
 bool Sandbox::callHostC(std::uint32_t import, const Slot* args, Slot* result) {
@@ -268,7 +291,7 @@ Str* Sandbox::sliceStr(const Str* s, std::int64_t begin, std::int64_t end) {
     if (!Builtins::chargeBytes(*this, kFuelWriteFactor * static_cast<std::uint64_t>(to - from))) {
         return nullptr;
     }
-    return newStr(std::string_view(s->data + from, static_cast<std::size_t>(to - from)));
+    return copyStr(std::string_view(s->data + from, static_cast<std::size_t>(to - from)));
 }
 
 Str* Sandbox::caseMap(const Str* s, bool upper) {
@@ -294,21 +317,21 @@ Str* Sandbox::caseMap(const Str* s, bool upper) {
 Str* Sandbox::fromI64(std::int64_t v) {
     char buf[24];
     auto r = std::to_chars(buf, buf + sizeof buf, v);
-    return newStr(std::string_view(buf, static_cast<std::size_t>(r.ptr - buf)));
+    return copyStr(std::string_view(buf, static_cast<std::size_t>(r.ptr - buf)));
 }
 
 Str* Sandbox::fromU64(std::uint64_t v) {
     char buf[24];
     auto r = std::to_chars(buf, buf + sizeof buf, v);
-    return newStr(std::string_view(buf, static_cast<std::size_t>(r.ptr - buf)));
+    return copyStr(std::string_view(buf, static_cast<std::size_t>(r.ptr - buf)));
 }
 
 Str* Sandbox::fromF64(double v) {
     if (v != v) {
-        return newStr("nan"); // the sign of a NaN differs between CPUs (0.0 / 0.0 is -nan on x86, nan on arm64)
+        return copyStr("nan"); // the sign of a NaN differs between CPUs (0.0 / 0.0 is -nan on x86, nan on arm64)
     }
     char buf[40];
-    return newStr(shortestF64(v, buf));
+    return copyStr(shortestF64(v, buf));
 }
 
 Str* Sandbox::fromChar(std::uint32_t cp) {
@@ -329,7 +352,7 @@ Str* Sandbox::fromChar(std::uint32_t cp) {
         buf[n++] = static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
         buf[n++] = static_cast<char>(0x80 | (cp & 0x3F));
     }
-    return newStr(std::string_view(buf, n));
+    return copyStr(std::string_view(buf, n));
 }
 
 List* Sandbox::newList(TypeId elem) {

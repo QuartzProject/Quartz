@@ -1,5 +1,6 @@
 #include "std/Builder.hpp"
 #include "std/Deflate.hpp"
+#include "support/Utf8.hpp"
 
 #include <algorithm>
 #include <format>
@@ -20,7 +21,7 @@ bool returnBytes(vm::HostCall& call, std::span<const std::uint8_t> data, vm::Slo
     if (!call.charge(static_cast<std::int64_t>(data.size() / 8 + 1))) {
         return false;
     }
-    vm::Str* s = call.string(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
+    vm::Str* s = call.bytes(std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
     into->p = s;
     return s != nullptr;
 }
@@ -65,32 +66,9 @@ bool bytesSlice(vm::HostCall& call, void*) {
                        &call.result);
 }
 
-bool validUtf8(std::span<const std::uint8_t> s) {
-    for (std::size_t i = 0; i < s.size();) {
-        std::uint8_t c = s[i];
-        std::size_t n = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 0;
-        if (n == 0 || i + n > s.size()) {
-            return false;
-        }
-        std::uint32_t cp = n == 1 ? c : c & (0x7F >> n);
-        for (std::size_t k = 1; k < n; ++k) {
-            if ((s[i + k] & 0xC0) != 0x80) {
-                return false;
-            }
-            cp = (cp << 6) | (s[i + k] & 0x3F);
-        }
-        static constexpr std::uint32_t kMin[] = {0, 0, 0x80, 0x800, 0x10000};
-        if (cp < kMin[n] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-            return false;
-        }
-        i += n;
-    }
-    return true;
-}
-
 bool bytesToStr(vm::HostCall& call, void*) {
     auto b = bytesOf(call.args[0]);
-    if (!validUtf8(b)) {
+    if (!validUtf8(std::string_view(reinterpret_cast<const char*>(b.data()), b.size()))) {
         call.result.p = nullptr;
         return true;
     }
@@ -422,6 +400,9 @@ bool readZip(vm::HostCall& call, void* user) {
             return errText(call, "zip: unsupported or truncated entry (zip64 is not supported)");
         }
         std::string_view name(reinterpret_cast<const char*>(in.data() + pos + 46), nameLen);
+        if (!validUtf8(name)) {
+            return errText(call, "zip: an entry name is not valid UTF-8");
+        }
         pos += 46 + nameLen + extraLen + commentLen;
         if (local + 30 > in.size() || le32(in, local) != 0x04034b50) {
             return errText(call, "zip: bad local header");

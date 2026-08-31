@@ -111,7 +111,8 @@ QZ_API qz_status qz_sandbox_resume(qz_sandbox* sandbox, uint32_t task, qz_slot v
 QZ_API void qz_sandbox_cancel(qz_sandbox* sandbox, uint32_t task);
 /* Why the last call failed or trapped, valid until the next call on this sandbox; "" when it did not. */
 QZ_API const char* qz_sandbox_error(const qz_sandbox* sandbox);
-/* A string argument for the next call, valid until the call after it starts. */
+/* A string argument for the next call, valid until the call after it starts. Text that is not valid UTF-8 gives a
+ * 0 slot and makes the next call, spawn or resume fail with QZ_ERROR (Bytes go through qz_sandbox_bytes). */
 QZ_API qz_slot qz_sandbox_str(qz_sandbox* sandbox, const char* utf8, size_t length);
 QZ_API void qz_sandbox_set_fuel(qz_sandbox* sandbox, int64_t fuel_per_call);
 QZ_API int64_t qz_sandbox_fuel_left(const qz_sandbox* sandbox);
@@ -130,6 +131,7 @@ QZ_API const qz_slot* qz_call_args(const qz_call* call);
 QZ_API void qz_call_set_result(qz_call* call, qz_slot value);
 /* Results wider than one slot (structs, Result) are written here. */
 QZ_API qz_slot* qz_call_result_slots(qz_call* call);
+/* A str result; text that is not valid UTF-8 traps the call, whatever the host function returns. */
 QZ_API qz_slot qz_call_str(qz_call* call, const char* utf8, size_t length);
 /* Charges fuel for native work; false when the budget is gone (then return false). */
 QZ_API bool qz_call_charge(qz_call* call, int64_t units);
@@ -350,6 +352,12 @@ QZ_API bool qz_program_import_is_required(const qz_program* program, uint32_t im
 /* How the source writes a type (`Player`, `[int]`, `Map<str, Pt>`, `Box<int>`), and a nominal type's package. */
 QZ_API const char* qz_type_name(const qz_program* program, uint32_t type);
 QZ_API const char* qz_type_package(const qz_program* program, uint32_t type);
+
+/* Bytes values, any bytes: an argument like qz_sandbox_str, and a result inside a host function. */
+QZ_API qz_slot qz_sandbox_bytes(qz_sandbox* sandbox, const uint8_t* data, size_t length);
+QZ_API qz_slot qz_call_bytes(qz_call* call, const uint8_t* data, size_t length);
+QZ_API void qz_sandbox_bytes_into(qz_sandbox* sandbox, const uint8_t* data, size_t length, qz_slot* out);
+QZ_API void qz_call_bytes_into(qz_call* call, const uint8_t* data, size_t length, qz_slot* out);
 
 #ifdef __cplusplus
 }

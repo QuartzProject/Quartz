@@ -268,6 +268,9 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     if (!started_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "sandbox not started", {}, 0});
     }
+    if (!hostValueError_.empty()) {
+        return std::unexpected(Trap{ir::TrapCode::HostError, takeHostValueError(), {}, 0});
+    }
     if (function >= program_->functions.size() || !program_->functions[function].exported) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "no such exported function", {}, 0});
     }

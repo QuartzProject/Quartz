@@ -1,5 +1,6 @@
 #include "std/Builder.hpp"
 #include "std/Natives.hpp"
+#include "support/Utf8.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -12,29 +13,6 @@ namespace quartz::stdlib {
 namespace {
 
 constexpr int kMaxDepth = 256;
-
-bool validUtf8(std::string_view s) {
-    for (std::size_t i = 0; i < s.size();) {
-        auto c = static_cast<unsigned char>(s[i]);
-        std::size_t n = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 0;
-        if (n == 0 || i + n > s.size()) {
-            return false;
-        }
-        std::uint32_t cp = n == 1 ? c : c & (0x7F >> n);
-        for (std::size_t k = 1; k < n; ++k) {
-            if ((static_cast<unsigned char>(s[i + k]) & 0xC0) != 0x80) {
-                return false;
-            }
-            cp = (cp << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
-        }
-        static constexpr std::uint32_t kMin[] = {0, 0, 0x80, 0x800, 0x10000};
-        if (cp < kMin[n] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
-            return false;
-        }
-        i += n;
-    }
-    return true;
-}
 
 // One NaN for every payload, as everywhere else in Quartz (D24).
 double canonical(double d) { return d != d ? std::numeric_limits<double>::quiet_NaN() : d; }

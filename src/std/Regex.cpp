@@ -371,7 +371,7 @@ bool regexReplace(vm::HostCall& call, void* user) {
     if (!ok || !append(text.substr(copied))) {
         return false;
     }
-    call.result.p = call.string(out);
+    call.result.p = call.sandbox.copyStr(out);
     return call.result.p != nullptr;
 }
 
