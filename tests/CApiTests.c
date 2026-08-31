@@ -150,6 +150,36 @@ static void maps(void) {
     qz_program_free(program);
 }
 
+static void diagnosticTests(void) {
+    static const char kLint[] = "fn f(x: int) -> int {\n    let y = 1\n    return x\n}\n";
+    qz_source source = {"lint.qz", kLint, sizeof kLint - 1};
+    qz_diagnostics* d = NULL;
+    qz_program* program = qz_compile_with(&source, 1, NULL, NULL, 0, &d);
+    CHECK(program != NULL && qz_diagnostics_count(d) == 1);
+    uint32_t line = 0;
+    uint32_t column = 0;
+    uint32_t endColumn = 0;
+    qz_diagnostic_range(d, 0, &line, &column, NULL, &endColumn);
+    CHECK(qz_diagnostic_severity(d, 0) == QZ_SEVERITY_WARNING &&
+          strcmp(qz_diagnostic_rule(d, 0), "unused-variable") == 0);
+    CHECK(strcmp(qz_diagnostic_file(d, 0), "lint.qz") == 0 && line == 2 && column == 9 && endColumn == 10);
+    CHECK(strstr(qz_diagnostics_text(d), "[unused-variable]") != NULL);
+    qz_diagnostics_free(d);
+    qz_program_free(program);
+
+    qz_rule_level deny[] = {{"*", QZ_LEVEL_ERROR}, {"unused-parameter", QZ_LEVEL_IGNORE}};
+    CHECK(qz_compile_with(&source, 1, NULL, deny, 2, &d) == NULL);
+    CHECK(qz_diagnostics_count(d) == 1 && qz_diagnostic_severity(d, 0) == QZ_SEVERITY_ERROR);
+    CHECK(strcmp(qz_diagnostic_rule(d, 0), "unused-variable") == 0);
+    qz_diagnostics_free(d);
+    qz_rule_level quiet[] = {{"unused-variable", QZ_LEVEL_IGNORE}};
+    program = qz_compile_with(&source, 1, NULL, quiet, 1, &d);
+    CHECK(program != NULL && qz_diagnostics_count(d) == 0);
+    qz_diagnostics_free(d);
+    qz_program_free(program);
+    CHECK(qz_warning_rule_count() > 10 && strcmp(qz_warning_rule(0), "unused-variable") == 0);
+}
+
 int main(void) {
     CHECK(qz_abi_version() == QZ_ABI_VERSION);
     qz_source sources[] = {{"host.qzi", kHost, sizeof kHost - 1}, {"plugin.qz", kPlugin, sizeof kPlugin - 1}};
@@ -233,6 +263,7 @@ int main(void) {
     qz_free(diagnostics);
 
     maps();
+    diagnosticTests();
     if (failures == 0) {
         printf("C interface: all checks passed\n");
     }

@@ -1,15 +1,15 @@
-// warning: unused import 'org.quartzlang.text.*'
-// warning: unused import 'parseUuid' from 'org.quartzlang.encoding'
-// warning: unused parameter 'b'
-// warning: unused variable 'unused'
-// warning: variable 'total' is assigned but never read
-// warning: 'x' shadows another local variable of this function
-// warning: unused private function 'helper'
-// warning: unused private method 'P.twice'
-// warning: this 'Result' is discarded; handle the error or write 'let _ = ...'
-// warning: this match arm is unreachable: the arms above match every value it matches
-// warning: unused parameter 'y'
-// warning: unused variable 'v'
+// warning: unused import 'org.quartzlang.text.*' [unused-import]
+// warning: unused import 'parseUuid' from 'org.quartzlang.encoding' [unused-import]
+// warning: unused parameter 'b' [unused-parameter]
+// warning: unused variable 'unused' [unused-variable]
+// warning: variable 'total' is assigned but never read [unused-assignment]
+// warning: 'x' shadows another local variable of this function [shadowed-variable]
+// warning: unused private function 'helper' [unused-private]
+// warning: unused private method 'P.twice' [unused-private]
+// warning: this 'Result' is discarded; handle the error or write 'let _ = ...' [discarded-result]
+// warning: this match arm is unreachable: the arms above match every value it matches [unreachable-pattern]
+// warning: unused parameter 'y' [unused-parameter]
+// warning: unused variable 'v' [unused-variable]
 
 import org.quartzlang.text.*
 import org.quartzlang.encoding.{parseUuid, uuidV5, NIL_UUID}

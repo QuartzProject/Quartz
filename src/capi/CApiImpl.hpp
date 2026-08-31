@@ -20,6 +20,11 @@ struct qz_call {
     std::size_t argSlots;
 };
 
+struct qz_diagnostics {
+    std::string text;
+    std::vector<quartz::CompileMessage> items;
+};
+
 struct qz_sandbox {
     struct Binding {
         qz_host_fn fn;
@@ -36,6 +41,10 @@ struct qz_sandbox {
 };
 
 namespace quartz::capi {
+
+/// The front end behind qz_compile and qz_compile_with.
+CompileOutput compileSources(const qz_source* sources, std::size_t count, const qz_compile_options* options,
+                             std::vector<RuleSetting> rules);
 
 static_assert(sizeof(qz_slot) == sizeof(vm::Slot));
 static_assert(static_cast<int>(ir::TrapCode::HostError) + 1 == QZ_TRAP_HOST_ERROR);

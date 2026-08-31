@@ -23,7 +23,7 @@ extern "C" {
 /* Bumped on any incompatible change to this header; compare with qz_abi_version() at run time. */
 #define QZ_ABI_VERSION 1
 /* Raised when functions are added; a host needing newer ones checks qz_api_level() before looking them up. */
-#define QZ_API_LEVEL 3
+#define QZ_API_LEVEL 4
 
 typedef struct qz_program qz_program;
 typedef struct qz_sandbox qz_sandbox;
@@ -281,6 +281,41 @@ QZ_API qz_status qz_sandbox_import_handle(qz_sandbox* sandbox, uint64_t handle, 
 QZ_API void qz_sandbox_drop_handle(qz_sandbox* sandbox, uint64_t handle);
 QZ_API size_t qz_sandbox_live_tasks(const qz_sandbox* sandbox);
 QZ_API int64_t qz_sandbox_fuel_per_call(const qz_sandbox* sandbox);
+
+/* API level 4. */
+
+/* Diagnostics one by one. Lines and columns start at 1, columns count bytes; 0 when there is no source place. */
+typedef struct qz_diagnostics qz_diagnostics;
+
+typedef enum qz_severity { QZ_SEVERITY_ERROR = 0, QZ_SEVERITY_WARNING, QZ_SEVERITY_NOTE } qz_severity;
+
+typedef enum qz_level { QZ_LEVEL_IGNORE = 0, QZ_LEVEL_WARNING, QZ_LEVEL_ERROR } qz_level;
+
+/* The level of a warning rule (`unused-variable`), or of every rule with "*"; later entries win. */
+typedef struct qz_rule_level {
+    const char* rule;
+    qz_level level;
+} qz_rule_level;
+
+/* Like qz_compile, with warning levels; a warning raised to an error fails the compilation. *diagnostics, when not
+ * NULL, gets every diagnostic (also on failure); free it with qz_diagnostics_free. */
+QZ_API qz_program* qz_compile_with(const qz_source* sources, size_t count, const qz_compile_options* options,
+                                   const qz_rule_level* levels, size_t level_count, qz_diagnostics** diagnostics);
+QZ_API void qz_diagnostics_free(qz_diagnostics* diagnostics);
+QZ_API size_t qz_diagnostics_count(const qz_diagnostics* diagnostics);
+/* Everything rendered as qz_compile writes it; valid while the diagnostics live, like every string below. */
+QZ_API const char* qz_diagnostics_text(const qz_diagnostics* diagnostics);
+QZ_API qz_severity qz_diagnostic_severity(const qz_diagnostics* diagnostics, size_t index);
+/* The warning rule id, kept when the warning was raised to an error; "" for other errors and notes. */
+QZ_API const char* qz_diagnostic_rule(const qz_diagnostics* diagnostics, size_t index);
+QZ_API const char* qz_diagnostic_file(const qz_diagnostics* diagnostics, size_t index);
+QZ_API const char* qz_diagnostic_message(const qz_diagnostics* diagnostics, size_t index);
+/* Where it starts and ends (the end column is one past the last byte); any pointer may be NULL. */
+QZ_API void qz_diagnostic_range(const qz_diagnostics* diagnostics, size_t index, uint32_t* line, uint32_t* column,
+                                uint32_t* end_line, uint32_t* end_column);
+/* The warning rule ids this library knows. */
+QZ_API size_t qz_warning_rule_count(void);
+QZ_API const char* qz_warning_rule(size_t index);
 
 #ifdef __cplusplus
 }

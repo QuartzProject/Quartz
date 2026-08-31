@@ -20,12 +20,40 @@ void dropAttribute(syntax::Module& m, Symbol name) {
     }
 }
 
+std::vector<CompileMessage> messagesOf(const Diagnostics& diags, const SourceManager& sources) {
+    std::vector<CompileMessage> out;
+    out.reserve(diags.all().size());
+    for (const Diagnostic& d : diags.all()) {
+        CompileMessage m{d.severity, std::string(d.rule), {}, 0, 0, 0, 0, d.message};
+        if (d.span.file < sources.size()) {
+            const SourceFile& file = sources.file(d.span.file);
+            LineCol begin = file.lineCol(d.span.begin);
+            LineCol end = file.lineCol(d.span.end > d.span.begin ? d.span.end : d.span.begin);
+            m.file = file.name();
+            m.line = begin.line;
+            m.column = begin.column;
+            m.endLine = end.line;
+            m.endColumn = end.column;
+        }
+        out.push_back(std::move(m));
+    }
+    return out;
+}
+
 } // namespace
 
 CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions options) {
     CompileOutput out;
     SourceManager sources;
     Diagnostics diags(sources);
+    diags.setLevels(options.rules);
+    auto finish = [&] {
+        diags.applyLevels();
+        out.diagnostics = diags.render();
+        out.warnings = diags.warningCount();
+        out.messages = messagesOf(diags, sources);
+        return diags.hasErrors();
+    };
     Arena arena;
     Interner names;
     std::vector<syntax::Module*> modules;
@@ -78,20 +106,17 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
         }
     }
     if (diags.hasErrors()) {
-        out.diagnostics = diags.render();
-        out.warnings = diags.warningCount();
+        finish();
         return out;
     }
     auto prog = sema::analyze(modules, names, arena, diags);
+    diags.applyLevels();
     if (diags.hasErrors()) {
-        out.diagnostics = diags.render();
-        out.warnings = diags.warningCount();
+        finish();
         return out;
     }
     auto mod = ir::lower(*prog, sources, diags);
-    out.diagnostics = diags.render();
-    out.warnings = diags.warningCount();
-    if (diags.hasErrors()) {
+    if (finish()) {
         return out;
     }
     ir::pruneLibrary(*mod, "<std>/", stdlib::isNative);
@@ -102,7 +127,9 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
         out.irText = ir::print(*mod);
     }
     if (auto v = ir::validate(*mod); !v) {
-        out.diagnostics += v.error().describe(*mod) + "\n";
+        std::string why = v.error().describe(*mod);
+        out.diagnostics += why + "\n";
+        out.messages.push_back({Severity::Error, {}, {}, 0, 0, 0, 0, std::move(why)});
         return out;
     }
     mod->manifest = options.manifest;

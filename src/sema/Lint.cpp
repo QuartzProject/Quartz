@@ -76,7 +76,8 @@ void Checker::noteShadowing(Symbol name, Span span) {
     }
     for (const auto& scope : scopes_) {
         if (scope.contains(name)) {
-            diags_.warning(span, std::format("'{}' shadows another local variable of this function", str(name)));
+            diags_.warning(span, rule::kShadowedVariable,
+                           std::format("'{}' shadows another local variable of this function", str(name)));
             return;
         }
     }
@@ -108,7 +109,8 @@ void Checker::noteFnUse(FnInfo* fn) {
 
 void Checker::warnDiscarded(const Expr* e) {
     if (lintable(currentFile_) && e->type != ir::kError && types_->isResult(e->type)) {
-        diags_.warning(e->span, "this 'Result' is discarded; handle the error or write 'let _ = ...'");
+        diags_.warning(e->span, rule::kDiscardedResult,
+                       "this 'Result' is discarded; handle the error or write 'let _ = ...'");
     }
 }
 
@@ -205,8 +207,8 @@ void Checker::warnUnreachableArms(MatchExpr* m, TypeId subject) {
     std::vector<PatternRow> rows;
     for (MatchArm& arm : m->arms) {
         if (!useful(rows, {arm.pattern}, {subject})) {
-            diags_.warning(arm.pattern->span, "this match arm is unreachable: the arms above match every value it "
-                                              "matches");
+            diags_.warning(arm.pattern->span, rule::kUnreachablePattern,
+                           "this match arm is unreachable: the arms above match every value it matches");
         }
         if (arm.guard == nullptr) {
             rows.push_back({arm.pattern});
@@ -220,14 +222,15 @@ void Checker::lintImports(const Module& mod) {
         std::string path = joinPath(names_, imp.path);
         if (imp.star) {
             if (!usedPackages_.contains({file, path})) {
-                diags_.warning(imp.span, std::format("unused import '{}.*'", path));
+                diags_.warning(imp.span, rule::kUnusedImport, std::format("unused import '{}.*'", path));
             }
             continue;
         }
         if (!imp.names.empty()) {
             for (Symbol n : imp.names) {
                 if (!usedSymbolImports_.contains({file, n.id})) {
-                    diags_.warning(imp.span, std::format("unused import '{}' from '{}'", str(n), path));
+                    diags_.warning(imp.span, rule::kUnusedImport,
+                                   std::format("unused import '{}' from '{}'", str(n), path));
                 }
             }
             continue;
@@ -236,7 +239,7 @@ void Checker::lintImports(const Module& mod) {
         Symbol local = imp.alias.valid() ? imp.alias : imp.path[imp.path.size() - 1];
         bool used = package ? usedPackages_.contains({file, path}) : usedSymbolImports_.contains({file, local.id});
         if (!used) {
-            diags_.warning(imp.span, std::format("unused import '{}'", path));
+            diags_.warning(imp.span, rule::kUnusedImport, std::format("unused import '{}'", path));
         }
     }
 }
@@ -256,11 +259,12 @@ void Checker::lint() {
             continue;
         }
         if (l->param) {
-            diags_.warning(l->span, std::format("unused parameter '{}'", name));
+            diags_.warning(l->span, rule::kUnusedParameter, std::format("unused parameter '{}'", name));
         } else if (l->writes > 0) {
-            diags_.warning(l->span, std::format("variable '{}' is assigned but never read", name));
+            diags_.warning(l->span, rule::kUnusedAssignment,
+                           std::format("variable '{}' is assigned but never read", name));
         } else {
-            diags_.warning(l->span, std::format("unused variable '{}'", name));
+            diags_.warning(l->span, rule::kUnusedVariable, std::format("unused variable '{}'", name));
         }
     }
     static constexpr std::string_view kImplicit[] = {"eq", "cmp", "show", "next", "hash"};
@@ -277,7 +281,8 @@ void Checker::lint() {
                    : !decl->privateKeyword) {
             continue;
         }
-        diags_.warning(decl->nameSpan, std::format("unused private {} '{}'", method ? "method" : "function", fn->name));
+        diags_.warning(decl->nameSpan, rule::kUnusedPrivate,
+                       std::format("unused private {} '{}'", method ? "method" : "function", fn->name));
     }
 }
 

@@ -257,6 +257,9 @@ void Server::publish(const std::string& folder, const Analysis& a) {
         }
         int severity = d.severity == Severity::Error ? 1 : d.severity == Severity::Warning ? 2 : 3;
         item.set("severity", severity).set("source", "quartz").set("message", message);
+        if (!d.rule.empty()) {
+            item.set("code", std::string(d.rule));
+        }
         byUri[uri].push(std::move(item));
     }
     std::set<std::string>& before = published_[folder];

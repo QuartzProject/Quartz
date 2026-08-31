@@ -180,19 +180,7 @@ void qz_free(void* memory) { std::free(memory); }
 
 qz_program* qz_compile(const qz_source* sources, size_t count, const qz_compile_options* options, char** diagnostics) {
     try {
-        std::vector<quartz::SourceInput> inputs;
-        inputs.reserve(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            inputs.push_back({sources[i].name != nullptr ? sources[i].name : "<source>",
-                              std::string(sources[i].text, sources[i].length)});
-        }
-        quartz::CompileOptions opts;
-        if (options != nullptr) {
-            opts.emitBinary = options->emit_binary;
-            opts.binaryLines = options->keep_lines;
-            opts.manifest = options->manifest != nullptr ? options->manifest : "";
-        }
-        quartz::CompileOutput out = quartz::compile(inputs, opts);
+        quartz::CompileOutput out = quartz::capi::compileSources(sources, count, options, {});
         report(diagnostics, out.diagnostics);
         if (!out.program) {
             return nullptr;

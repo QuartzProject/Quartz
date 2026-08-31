@@ -50,7 +50,7 @@ int usage() {
     std::fprintf(stderr,
                  "usage: quartz check|ir|run|dis|test <file.qz|file.qzi|package dir>... | <file.qzb> [--entry name]\n"
                  "                [--filter text] (test) [--profile] [--profile-out file.json] (run)\n"
-                 "                [--deny-warnings] (check, run, test)\n"
+                 "                [--deny-warnings] [--rule <warning rule|*>=ignore|warning|error]... (also build)\n"
                  "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
                  "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
                  "[--strip-lines] [--host-only]\n"
@@ -208,13 +208,32 @@ struct Args {
     bool hostOnly = false;
     bool profile = false;
     std::string profileOut;
-    bool denyWarnings = false;
+    std::vector<quartz::RuleSetting> rules;
     std::string manifest;
     std::string filter;
     std::filesystem::path packageDir;
     quartz::cli::DependencyOptions deps;
     std::vector<quartz::cli::Plugin> plugins;
 };
+
+std::optional<quartz::RuleSetting> parseRule(std::string_view text) {
+    std::size_t eq = text.find('=');
+    if (eq == std::string_view::npos || eq == 0) {
+        return std::nullopt;
+    }
+    std::string_view level = text.substr(eq + 1);
+    quartz::RuleSetting out{std::string(text.substr(0, eq))};
+    if (level == "ignore") {
+        out.level = quartz::RuleLevel::Ignore;
+    } else if (level == "warning") {
+        out.level = quartz::RuleLevel::Warning;
+    } else if (level == "error") {
+        out.level = quartz::RuleLevel::Error;
+    } else {
+        return std::nullopt;
+    }
+    return out;
+}
 
 // Library sources and plugin interfaces from quartz.lock, fetched and verified first.
 bool addDependencies(Args& a) {
@@ -245,7 +264,14 @@ std::optional<Args> parseArgs(int argc, char** argv) {
         if (arg == "--host-only") {
             a.hostOnly = true;
         } else if (arg == "--deny-warnings") {
-            a.denyWarnings = true;
+            a.rules.push_back({"*", quartz::RuleLevel::Error});
+        } else if (arg == "--rule" && hasValue) {
+            auto setting = parseRule(argv[++i]);
+            if (!setting) {
+                std::fprintf(stderr, "--rule takes <rule>=ignore|warning|error\n");
+                return std::nullopt;
+            }
+            a.rules.push_back(std::move(*setting));
         } else if (arg == "--entry" && hasValue) {
             a.entry = argv[++i];
         } else if (arg == "-o" && hasValue) {
@@ -325,6 +351,7 @@ int build(Args& a) {
     quartz::CompileOptions opts;
     opts.emitBinary = true;
     opts.binaryLines = a.lines;
+    opts.rules = a.rules;
     if (!a.manifest.empty()) {
         auto m = quartz::parseManifest(a.manifest);
         if (!m) {
@@ -475,12 +502,13 @@ int main(int argc, char** argv) {
         quartz::CompileOptions opts;
         opts.printIr = cmd == "ir";
         opts.probes.calls = args->profile && cmd == "run";
+        opts.rules = args->rules;
         quartz::CompileOutput out = quartz::compile(args->inputs, opts);
         std::fputs(out.diagnostics.c_str(), stderr);
         if (cmd == "ir" && !out.program) {
             std::fputs(out.irText.c_str(), stdout);
         }
-        if (!out.program || (args->denyWarnings && out.warnings > 0)) {
+        if (!out.program) {
             return 1;
         }
         program = out.program;

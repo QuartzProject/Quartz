@@ -24,9 +24,9 @@ quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp driver/Bind.
 # Duplicate the dispatch jump into every handler; without it clang shares one indirect jump (D29).
 set_source_files_properties(vm/Interp.cpp PROPERTIES COMPILE_OPTIONS "-mllvm;-tail-dup-indirect-size=200;-mllvm;-tail-dup-size=200")
 # The C interface (include/quartz/quartz.h), static; QUARTZ_SHARED also builds libquartz exporting only qz_*.
-quartz_module(quartz_c SOURCES capi/CApi.cpp capi/CApiValues.cpp DEPS quartz)
+quartz_module(quartz_c SOURCES capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp DEPS quartz)
 if(QUARTZ_SHARED)
-    add_library(quartz_shared SHARED capi/CApi.cpp capi/CApiValues.cpp)
+    add_library(quartz_shared SHARED capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp)
     set_target_properties(quartz_shared PROPERTIES OUTPUT_NAME quartz CXX_VISIBILITY_PRESET hidden
         VERSION ${PROJECT_VERSION} SOVERSION 0)
     target_compile_definitions(quartz_shared PRIVATE QZ_BUILDING_SHARED)

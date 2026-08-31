@@ -126,7 +126,8 @@ void Checker::completeTypes() {
                     continue; // checked with the derive
                 }
                 if (str(a.name) != "renamed") {
-                    diags_.warning(a.span, std::format("unknown field attribute '@{}'", str(a.name)));
+                    diags_.warning(a.span, rule::kUnknownAttribute,
+                                   std::format("unknown field attribute '@{}'", str(a.name)));
                     continue;
                 }
                 if (a.args.size() != 1 || a.args[0].value->kind != ExprKind::StringLit) {
@@ -247,7 +248,7 @@ void Checker::completeTypes() {
                 }
                 types_->mutableInfo(entry.type).reprC = true;
             } else if (an != "handle" && an != "awaitable" && an != "derive") {
-                diags_.warning(a.span, std::format("unknown attribute '@{}'", an));
+                diags_.warning(a.span, rule::kUnknownAttribute, std::format("unknown attribute '@{}'", an));
             }
         }
         ir::TypeInfo& done = types_->mutableInfo(entry.type);

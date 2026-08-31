@@ -64,7 +64,7 @@ void Checker::checkAttributes(FnInfo* fn) {
             }
         }
         if (!found) {
-            diags_.warning(a.span, std::format("unknown attribute '@{}'", name));
+            diags_.warning(a.span, rule::kUnknownAttribute, std::format("unknown attribute '@{}'", name));
             continue;
         }
         if (name == "inline" || name == "noinline") {
@@ -203,7 +203,7 @@ TypeId Checker::checkBlock(BlockExpr* block, TypeId expected, bool wantValue) {
         Stmt* s = block->stmts[i];
         bool last = i + 1 == block->stmts.size();
         if (dead) {
-            diags_.warning(s->span, "unreachable code");
+            diags_.warning(s->span, rule::kUnreachableCode, "unreachable code");
             dead = false;
         }
         if (last && wantValue && s->kind == StmtKind::Expr) {
@@ -582,8 +582,9 @@ void Checker::watchLoop(BlockExpr* body) {
     loopWatch_.pop_back();
     bool warn = w.waits && w.allocates && currentFn_ != nullptr && currentFn_->isSuspend;
     if (warn) {
-        diags_.warning(w.firstAlloc, "this loop waits and allocates outside a 'scope': the task's memory grows every "
-                                     "round until it ends; wrap the body in 'scope { }' or use 'every'");
+        diags_.warning(w.firstAlloc, rule::kUnscopedWaitLoop,
+                       "this loop waits and allocates outside a 'scope': the task's memory grows every "
+                       "round until it ends; wrap the body in 'scope { }' or use 'every'");
     }
     for (LoopWatch& outer : loopWatch_) {
         outer.waits = outer.waits || w.waits;
