@@ -52,6 +52,8 @@ int usage() {
                  "                [--filter text] (test) [--profile] [--profile-out file.json] (run)\n"
                  "                [--deny-warnings] [--rule <warning rule|*>=ignore|warning|error]... (also build)\n"
                  "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
+                 "                [--source-name <name>] <source>: the name traces and lines show for the next file "
+                 "or directory\n"
                  "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
                  "[--strip-lines] [--host-only]\n"
                  "       quartz interface <package.qzb>\n"
@@ -263,10 +265,23 @@ bool addDependencies(Args& a) {
 
 std::optional<Args> parseArgs(int argc, char** argv) {
     Args a;
+    std::optional<std::string> sourceName;
+    // The name recorded for a source, apart from where it is read: `--source-name` replaces the path given.
+    auto nameOf = [&](const std::filesystem::path& file, const std::filesystem::path& given) {
+        if (!sourceName) {
+            return file.string();
+        }
+        if (file == given) {
+            return *sourceName;
+        }
+        return (std::filesystem::path(*sourceName) / file.lexically_relative(given)).generic_string();
+    };
     for (int i = 2; i < argc; ++i) {
         std::string_view arg = argv[i];
         bool hasValue = i + 1 < argc;
-        if (arg == "--host-only") {
+        if (arg == "--source-name" && hasValue) {
+            sourceName = argv[++i];
+        } else if (arg == "--host-only") {
             a.hostOnly = true;
         } else if (arg == "--deny-warnings") {
             a.rules.push_back({"*", quartz::RuleLevel::Error});
@@ -330,15 +345,21 @@ std::optional<Args> parseArgs(int argc, char** argv) {
                 if (!text) {
                     return std::nullopt;
                 }
-                a.inputs.push_back({f.string(), std::move(*text)});
+                a.inputs.push_back({nameOf(f, argv[i]), std::move(*text)});
             }
+            sourceName.reset();
         } else {
             auto text = readFile(argv[i]);
             if (!text) {
                 return std::nullopt;
             }
-            a.inputs.push_back({argv[i], std::move(*text)});
+            a.inputs.push_back({nameOf(argv[i], argv[i]), std::move(*text)});
+            sourceName.reset();
         }
+    }
+    if (sourceName) {
+        std::fprintf(stderr, "--source-name names the source that follows it\n");
+        return std::nullopt;
     }
     if (!a.packageDir.empty() && !addDependencies(a)) {
         return std::nullopt;
