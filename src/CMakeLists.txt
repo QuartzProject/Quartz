@@ -25,13 +25,22 @@ quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp driver/Bind.
 set_source_files_properties(vm/Interp.cpp PROPERTIES COMPILE_OPTIONS "-mllvm;-tail-dup-indirect-size=200;-mllvm;-tail-dup-size=200")
 # The C interface (include/quartz/quartz.h), static; QUARTZ_SHARED also builds libquartz exporting only qz_*.
 quartz_module(quartz_c SOURCES capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp DEPS quartz)
-if(QUARTZ_SHARED)
+if(QUARTZ_SHARED OR QUARTZ_JVM_ENABLED)
     add_library(quartz_shared SHARED capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp)
     set_target_properties(quartz_shared PROPERTIES OUTPUT_NAME quartz CXX_VISIBILITY_PRESET hidden
         VERSION ${PROJECT_VERSION} SOVERSION 0)
     target_compile_definitions(quartz_shared PRIVATE QZ_BUILDING_SHARED)
-    target_link_libraries(quartz_shared PRIVATE quartz)
-    target_include_directories(quartz_shared PUBLIC ${PROJECT_SOURCE_DIR}/include)
+    if(QUARTZ_SHARED)
+        target_link_libraries(quartz_shared PRIVATE quartz)
+    else()
+        # Only the JVM bindings want libquartz here: they get position-independent copies of the core, so the tools
+        # and benchmarks keep the code they had.
+        quartz_pic_copies(quartz_monocypher quartz_support quartz_syntax quartz_sema quartz_ir quartz_vm quartz)
+        set_target_properties(quartz_shared PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        target_link_libraries(quartz_shared PRIVATE quartz_pic)
+    endif()
+    target_include_directories(quartz_shared PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
     if(APPLE)
         target_link_options(quartz_shared PRIVATE -Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/capi/exports.darwin)
     elseif(NOT WIN32)

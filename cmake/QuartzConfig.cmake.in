@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+if(NOT EMSCRIPTEN)
+    find_dependency(Threads)
+endif()
+include(${CMAKE_CURRENT_LIST_DIR}/QuartzTargets.cmake)
+get_target_property(QUARTZ_EXECUTABLE Quartz::quartz-cli IMPORTED_LOCATION_RELEASE)
+if(NOT QUARTZ_EXECUTABLE)
+    get_target_property(QUARTZ_EXECUTABLE Quartz::quartz-cli LOCATION)
+endif()
+check_required_components(Quartz)
