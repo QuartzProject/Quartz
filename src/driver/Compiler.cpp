@@ -140,6 +140,16 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     return out;
 }
 
+std::vector<const ir::Annotation*> attributesOf(const vm::Program& program, std::uint32_t function) {
+    std::vector<const ir::Annotation*> out;
+    for (const ir::Annotation& a : program.module->annotations) {
+        if (a.function == function) {
+            out.push_back(&a);
+        }
+    }
+    return out;
+}
+
 std::expected<std::shared_ptr<const vm::Program>, std::string> load(std::span<const std::uint8_t> bytes,
                                                                     const ir::ReadOptions& options, vm::Probes probes) {
     auto mod = ir::deserialize(bytes, options);

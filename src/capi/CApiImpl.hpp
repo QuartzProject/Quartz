@@ -18,6 +18,7 @@ struct qz_program {
     mutable std::vector<std::string> functionNames{};
     mutable std::vector<std::string> typeNames{};
     mutable std::vector<std::uint32_t> exports{};
+    mutable std::vector<std::vector<const quartz::ir::Annotation*>> attributes{}; // per function
 };
 
 struct qz_call {
@@ -55,6 +56,7 @@ CompileOutput compileSources(const qz_source* sources, std::size_t count, const 
 static_assert(sizeof(qz_slot) == sizeof(vm::Slot));
 static_assert(static_cast<int>(ir::TrapCode::HostError) + 1 == QZ_TRAP_HOST_ERROR);
 static_assert(static_cast<int>(ir::FnVisibility::Public) == QZ_VISIBILITY_PUBLIC);
+static_assert(static_cast<int>(ir::AnnotationArg::Kind::Name) == QZ_ATTRIBUTE_ARG_NAME);
 
 inline vm::Slot toVm(qz_slot s) { return std::bit_cast<vm::Slot>(s); }
 

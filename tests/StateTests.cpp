@@ -375,6 +375,16 @@ std::string shout(std::string_view text, std::int32_t times) {
 
 bool cheap(quartz::vm::HostCall& call, double x) { return call.charge(1) && x > 0.5; }
 
+struct World {
+    std::int64_t base = 0;
+
+    [[nodiscard]] std::int64_t count(quartz::HandleOf<"Player"> p) const {
+        return base + static_cast<std::int64_t>(p.id);
+    }
+};
+
+quartz::Handle firstPlayer(World* world) { return {static_cast<std::uint64_t>(world->base) - 3}; }
+
 } // namespace
 
 TEST_CASE("typed host bindings convert arguments and reject a signature that differs from the interface") {
@@ -395,6 +405,23 @@ TEST_CASE("typed host bindings convert arguments and reject a signature that dif
     auto r = sb.call(out.program->findFunction("run"), {});
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "ababab! true false");
+}
+
+TEST_CASE("typed host bindings call members on their object and pass handles") {
+    quartz::SourceInput in[] = {
+        {"host.qzi", "package org.example.host\n@handle\nstruct Player {}\n"
+                     "fn count(p: Player) -> int\nfn first() -> Player\n"},
+        {"plugin.qz", "import org.example.host.*\nfn run() -> int {\n    return count(first())\n}\n"}};
+    quartz::CompileOutput out = quartz::compile(in);
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    quartz::vm::Sandbox sb(out.program);
+    World world{10};
+    REQUIRE(quartz::bind<&World::count>(sb, "count", &world).has_value());
+    REQUIRE(quartz::bind<&firstPlayer>(sb, "org.example.host.first", &world).has_value());
+    REQUIRE(sb.start().has_value());
+    auto r = sb.call(out.program->findFunction("run"), {});
+    REQUIRE(r.has_value());
+    CHECK(r->i == 17);
 }
 
 TEST_CASE("a host property with a setter in the interface can be assigned") {

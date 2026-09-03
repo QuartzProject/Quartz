@@ -54,6 +54,9 @@ struct CompileOptions {
 /// Front end, lowering, validation and bytecode generation in one call.
 CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions options = {});
 
+/// The attributes written on a function (`@command`, `@on`...), in source order.
+std::vector<const ir::Annotation*> attributesOf(const vm::Program& program, std::uint32_t function);
+
 /// Checks a `.qzb` module's hash and signatures, decodes and validates it, and generates its bytecode.
 std::expected<std::shared_ptr<const vm::Program>, std::string>
 load(std::span<const std::uint8_t> bytes, const ir::ReadOptions& options = {}, vm::Probes probes = {});

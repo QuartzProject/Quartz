@@ -192,6 +192,7 @@ static void packages(void) {
                                      "impl Player {\n    fn name(self) -> str\n}\nfn unused(n: int)\n";
     static const char kA[] = "package org.example.a\nimport org.example.host.Player\n"
                              "pub struct Pt {\n    x: int\n}\n"
+                             "@command(\"greet\", perm = \"x.greet\", times = 2)\n"
                              "pub fn greet(p: Player, times: int) -> str {\n    return p.name().repeat(times)\n}\n"
                              "suspend fn later() {}\n";
     static const char kB[] = "package org.example.b\nfn greet() -> int {\n    return 2\n}\n";
@@ -226,6 +227,13 @@ static void packages(void) {
     uint32_t later = qz_program_function(program, "later");
     CHECK(qz_program_function_is_suspend(program, later) && qz_program_function_is_exported(program, later));
     CHECK(qz_program_export_count(program) == 3);
+    qz_attribute_arg arg;
+    CHECK(qz_program_function_attribute_count(program, greet) == 1);
+    CHECK(strcmp(qz_program_function_attribute_name(program, greet, 0), "command") == 0);
+    CHECK(qz_program_function_attribute_arg_count(program, greet, 0) == 3);
+    CHECK(qz_program_function_attribute_arg(program, greet, 0, 1, &arg) && arg.kind == QZ_ATTRIBUTE_ARG_STR);
+    CHECK(strcmp(arg.key, "perm") == 0 && strcmp(arg.text, "x.greet") == 0);
+    CHECK(qz_program_function_attribute_arg(program, greet, 0, 2, &arg) && arg.int_value == 2);
 
     uint32_t name = UINT32_MAX;
     uint32_t unused = UINT32_MAX;

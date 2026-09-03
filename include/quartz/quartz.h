@@ -353,6 +353,33 @@ QZ_API bool qz_program_import_is_required(const qz_program* program, uint32_t im
 QZ_API const char* qz_type_name(const qz_program* program, uint32_t type);
 QZ_API const char* qz_type_package(const qz_program* program, uint32_t type);
 
+/* Attributes of a function as written (`@command("heal", perm = "x.heal")`, `@on(Join)`), for hosts that register
+ * handlers from them. */
+typedef enum qz_attribute_arg_kind {
+    QZ_ATTRIBUTE_ARG_INT = 0,
+    QZ_ATTRIBUTE_ARG_FLOAT,
+    QZ_ATTRIBUTE_ARG_BOOL,
+    QZ_ATTRIBUTE_ARG_STR,
+    QZ_ATTRIBUTE_ARG_NAME
+} qz_attribute_arg_kind;
+
+typedef struct qz_attribute_arg {
+    const char* key; /* "" for a positional argument */
+    qz_attribute_arg_kind kind;
+    int64_t int_value;  /* INT, and BOOL as 0 or 1 */
+    double float_value; /* FLOAT */
+    const char* text;   /* STR, or the dotted NAME; strings live as long as the program */
+} qz_attribute_arg;
+
+QZ_API uint32_t qz_program_function_attribute_count(const qz_program* program, uint32_t function);
+QZ_API const char* qz_program_function_attribute_name(const qz_program* program, uint32_t function, uint32_t attribute);
+/* `@on(..., where = expr)`: the exported function that tests the handler's first argument; UINT32_MAX otherwise. */
+QZ_API uint32_t qz_program_function_attribute_filter(const qz_program* program, uint32_t function, uint32_t attribute);
+QZ_API uint32_t qz_program_function_attribute_arg_count(const qz_program* program, uint32_t function,
+                                                        uint32_t attribute);
+QZ_API bool qz_program_function_attribute_arg(const qz_program* program, uint32_t function, uint32_t attribute,
+                                              uint32_t index, qz_attribute_arg* out);
+
 /* Bytes values, any bytes: an argument like qz_sandbox_str, and a result inside a host function. */
 QZ_API qz_slot qz_sandbox_bytes(qz_sandbox* sandbox, const uint8_t* data, size_t length);
 QZ_API qz_slot qz_call_bytes(qz_call* call, const uint8_t* data, size_t length);

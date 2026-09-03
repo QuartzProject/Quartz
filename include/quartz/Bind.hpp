@@ -130,14 +130,51 @@ struct Host<std::string> : Host<std::string_view> {
 template <typename T>
 using Plain = std::remove_cvref_t<T>;
 
+template <typename T>
+bool matches(const ir::TypeTable& types, ir::TypeId id) {
+    if constexpr (requires { Host<T>::kType; }) {
+        return id == Host<T>::kType;
+    } else {
+        return Host<T>::matches(types, id);
+    }
+}
+
+template <typename T>
+std::string nameOf(const ir::TypeTable& types) {
+    if constexpr (requires { Host<T>::kType; }) {
+        return types.name(Host<T>::kType);
+    } else {
+        return Host<T>::name();
+    }
+}
+
+template <typename R, typename O, typename... A>
+struct SignatureOf {
+    using Result = R;
+    using Object = O; // the class of a member function, void for a free one
+    using Args = std::tuple<A...>;
+};
+
 template <typename F>
 struct Signature;
 
 template <typename R, typename... A>
-struct Signature<R (*)(A...)> {
-    using Result = R;
-    using Args = std::tuple<A...>;
-};
+struct Signature<R (*)(A...)> : SignatureOf<R, void, A...> {};
+
+template <typename R, typename... A>
+struct Signature<R (*)(A...) noexcept> : SignatureOf<R, void, A...> {};
+
+template <typename R, typename C, typename... A>
+struct Signature<R (C::*)(A...)> : SignatureOf<R, C, A...> {};
+
+template <typename R, typename C, typename... A>
+struct Signature<R (C::*)(A...) noexcept> : SignatureOf<R, C, A...> {};
+
+template <typename R, typename C, typename... A>
+struct Signature<R (C::*)(A...) const> : SignatureOf<R, const C, A...> {};
+
+template <typename R, typename C, typename... A>
+struct Signature<R (C::*)(A...) const noexcept> : SignatureOf<R, const C, A...> {};
 
 // A first parameter of type `vm::HostCall&` receives the call itself (to charge fuel, reach the sandbox or fail).
 template <typename Args>
@@ -145,70 +182,169 @@ constexpr bool kTakesCall = false;
 template <typename First, typename... Rest>
 constexpr bool kTakesCall<std::tuple<First, Rest...>> = std::is_same_v<First, vm::HostCall&>;
 
-template <typename Args, std::size_t Skip>
-struct Params;
-
-template <typename... A, std::size_t Skip>
-struct Params<std::tuple<A...>, Skip> {
-    template <std::size_t... I>
-    static std::vector<ir::TypeId> types(std::index_sequence<I...>) {
-        return {Host<Plain<std::tuple_element_t<I + Skip, std::tuple<A...>>>>::kType...};
-    }
+/// How a bound function's parameters split: the call, then the user pointer of a free function, then the arguments.
+template <auto Fn, bool WithUser>
+struct Shape {
+    using Sig = Signature<decltype(Fn)>;
+    using Args = typename Sig::Args;
+    static constexpr bool kMember = !std::is_void_v<typename Sig::Object>;
+    static constexpr std::size_t kCall = kTakesCall<Args> ? 1 : 0;
+    static constexpr std::size_t kUser = WithUser && !kMember ? 1 : 0;
+    static constexpr std::size_t kSkip = kCall + kUser;
+    static constexpr std::size_t kCount = std::tuple_size_v<Args> - kSkip;
+    template <std::size_t I>
+    using Arg = Plain<std::tuple_element_t<I + kSkip, Args>>;
 };
 
 std::string describe(const ir::TypeTable& types, std::span<const ir::TypeId> params, ir::TypeId result);
 
-template <auto Fn>
-bool thunk(vm::HostCall& call, void*) {
-    using Sig = Signature<decltype(Fn)>;
-    constexpr std::size_t skip = kTakesCall<typename Sig::Args> ? 1 : 0;
-    constexpr std::size_t count = std::tuple_size_v<typename Sig::Args> - skip;
+template <auto Fn, bool WithUser>
+bool thunk(vm::HostCall& call, void* user) {
+    using S = Shape<Fn, WithUser>;
     auto invoke = [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto) {
-        if constexpr (skip == 1) {
-            return Fn(call, Host<Plain<std::tuple_element_t<I + 1, typename Sig::Args>>>::get(call.args[I])...);
-        } else {
-            return Fn(Host<Plain<std::tuple_element_t<I, typename Sig::Args>>>::get(call.args[I])...);
-        }
+        auto prefix = [&] {
+            if constexpr (S::kCall == 1 && S::kUser == 1) {
+                using U = std::tuple_element_t<1, typename S::Args>;
+                return std::tuple<vm::HostCall&, U>(call, static_cast<U>(user));
+            } else if constexpr (S::kCall == 1) {
+                return std::tuple<vm::HostCall&>(call);
+            } else if constexpr (S::kUser == 1) {
+                using U = std::tuple_element_t<0, typename S::Args>;
+                return std::tuple<U>(static_cast<U>(user));
+            } else {
+                return std::tuple<>();
+            }
+        }();
+        auto args = std::tuple_cat(prefix, std::make_tuple(Host<typename S::template Arg<I>>::get(call.args[I])...));
+        return std::apply(
+            [&](auto&&... a) -> decltype(auto) {
+                if constexpr (S::kMember) {
+                    auto* object = static_cast<typename S::Sig::Object*>(user);
+                    return (object->*Fn)(std::forward<decltype(a)>(a)...);
+                } else {
+                    return Fn(std::forward<decltype(a)>(a)...);
+                }
+            },
+            std::move(args));
     };
-    if constexpr (std::is_void_v<typename Sig::Result>) {
-        invoke(std::make_index_sequence<count>{});
+    if constexpr (std::is_void_v<typename S::Sig::Result>) {
+        invoke(std::make_index_sequence<S::kCount>{});
         return call.error.empty();
     } else {
-        if (!Host<Plain<typename Sig::Result>>::put(call, call.result, invoke(std::make_index_sequence<count>{}))) {
+        if (!Host<Plain<typename S::Sig::Result>>::put(call, call.result,
+                                                       invoke(std::make_index_sequence<S::kCount>{}))) {
             return false;
         }
         return call.error.empty();
     }
 }
 
+template <auto Fn, bool WithUser>
+std::expected<void, std::string> bindChecked(vm::Sandbox& sandbox, std::string_view importName, void* user) {
+    using S = Shape<Fn, WithUser>;
+    const ir::Module& m = *sandbox.program().module;
+    auto found = sandbox.program().lookupImport(importName);
+    if (!found) {
+        return std::unexpected(found.error() == vm::LookupError::Ambiguous
+                                   ? std::format("several host imports are called '{}'; add their package", importName)
+                                   : std::format("the program has no host import '{}'", importName));
+    }
+    const ir::HostImport& imp = m.imports[*found];
+    bool same = imp.params.size() == S::kCount;
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        same = same && (matches<typename S::template Arg<I>>(m.types, imp.params[I]) && ...);
+    }(std::make_index_sequence<S::kCount>{});
+    std::string result = "void";
+    if constexpr (std::is_void_v<typename S::Sig::Result>) {
+        same = same && imp.result == ir::kVoid;
+    } else {
+        same = same && matches<Plain<typename S::Sig::Result>>(m.types, imp.result);
+        result = nameOf<Plain<typename S::Sig::Result>>(m.types);
+    }
+    if (!same) {
+        std::string params;
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            ((params += (I ? ", " : "") + nameOf<typename S::template Arg<I>>(m.types)), ...);
+        }(std::make_index_sequence<S::kCount>{});
+        return std::unexpected(std::format("host import '{}' is {}, the C++ function is ({}) -> {}", imp.name,
+                                           describe(m.types, imp.params, imp.result), params, result));
+    }
+    sandbox.bind(imp.name, &thunk<Fn, WithUser>, user);
+    return {};
+}
+
 } // namespace bind_detail
 
-/// Binds a C++ function to a host import, checking its parameter and result types against the `.qzi` declaration.
+/// A `@handle` value in a typed binding, of any handle type.
+struct Handle {
+    std::uint64_t id = 0;
+};
+
+template <std::size_t N>
+struct TypeName {
+    char text[N]{};
+
+    constexpr TypeName(const char (&name)[N]) {
+        for (std::size_t i = 0; i < N; ++i) {
+            text[i] = name[i];
+        }
+    }
+};
+
+/// A `@handle` value whose type has this name (`HandleOf<"Player">`).
+template <TypeName Name>
+struct HandleOf {
+    std::uint64_t id = 0;
+};
+
+namespace bind_detail {
+
+template <>
+struct Host<Handle> {
+    static bool matches(const ir::TypeTable& types, ir::TypeId id) { return types.kind(id) == ir::TypeKind::Handle; }
+
+    static std::string name() { return "Handle"; }
+
+    static Handle get(const vm::Slot& s) { return {s.u}; }
+
+    static bool put(vm::HostCall&, vm::Slot& s, Handle v) {
+        s.u = v.id;
+        return true;
+    }
+};
+
+template <TypeName Name>
+struct Host<HandleOf<Name>> {
+    static bool matches(const ir::TypeTable& types, ir::TypeId id) {
+        return types.kind(id) == ir::TypeKind::Handle && types.info(id).name == Name.text;
+    }
+
+    static std::string name() { return Name.text; }
+
+    static HandleOf<Name> get(const vm::Slot& s) { return {s.u}; }
+
+    static bool put(vm::HostCall&, vm::Slot& s, HandleOf<Name> v) {
+        s.u = v.id;
+        return true;
+    }
+};
+
+} // namespace bind_detail
+
+/// Binds a C++ function to a host import (full name, or without the package while unambiguous), checking its
+/// parameter and result types against the `.qzi` declaration.
 template <auto Fn>
 std::expected<void, std::string> bind(vm::Sandbox& sandbox, std::string_view importName) {
-    using Sig = bind_detail::Signature<decltype(Fn)>;
-    constexpr std::size_t skip = bind_detail::kTakesCall<typename Sig::Args> ? 1 : 0;
-    constexpr std::size_t count = std::tuple_size_v<typename Sig::Args> - skip;
-    std::vector<ir::TypeId> params =
-        bind_detail::Params<typename Sig::Args, skip>::types(std::make_index_sequence<count>{});
-    ir::TypeId result = ir::kVoid;
-    if constexpr (!std::is_void_v<typename Sig::Result>) {
-        result = bind_detail::Host<bind_detail::Plain<typename Sig::Result>>::kType;
-    }
-    const ir::Module& m = *sandbox.program().module;
-    for (const ir::HostImport& imp : m.imports) {
-        if (imp.name != importName) {
-            continue;
-        }
-        if (imp.params != params || imp.result != result) {
-            return std::unexpected(std::format("host import '{}' is {}, the C++ function is {}", importName,
-                                               bind_detail::describe(m.types, imp.params, imp.result),
-                                               bind_detail::describe(m.types, params, result)));
-        }
-        sandbox.bind(importName, &bind_detail::thunk<Fn>);
-        return {};
-    }
-    return std::unexpected(std::format("the program has no host import '{}'", importName));
+    static_assert(!bind_detail::Shape<Fn, false>::kMember,
+                  "a member function needs its object: bind<&C::f>(sb, name, &c)");
+    return bind_detail::bindChecked<Fn, false>(sandbox, importName, nullptr);
+}
+
+/// The same for a member function called on `user`, or a free function whose first parameter (after an optional
+/// `vm::HostCall&`) is the `user` pointer.
+template <auto Fn, typename U>
+std::expected<void, std::string> bind(vm::Sandbox& sandbox, std::string_view importName, U* user) {
+    return bind_detail::bindChecked<Fn, true>(sandbox, importName, const_cast<void*>(static_cast<const void*>(user)));
 }
 
 } // namespace quartz

@@ -125,6 +125,12 @@ void makeNames(const qz_program& p) {
             p.exports.push_back(f);
         }
     }
+    p.attributes.resize(m.functions.size());
+    for (const quartz::ir::Annotation& a : m.annotations) {
+        if (a.function < p.attributes.size()) {
+            p.attributes[a.function].push_back(&a);
+        }
+    }
     p.typeNames.reserve(m.types.size());
     for (quartz::ir::TypeId t = 0; t < m.types.size(); ++t) {
         p.typeNames.push_back(m.types.name(t));
@@ -134,6 +140,11 @@ void makeNames(const qz_program& p) {
 const qz_program* named(const qz_program* p) {
     std::call_once(p->namesOnce, makeNames, *p);
     return p;
+}
+
+const quartz::ir::Annotation* attributeOf(const qz_program* p, uint32_t function, uint32_t attribute) {
+    const auto& all = named(p)->attributes;
+    return function < all.size() && attribute < all[function].size() ? all[function][attribute] : nullptr;
 }
 
 const quartz::ir::Function* functionOf(const qz_program* p, uint32_t function) {
@@ -233,6 +244,38 @@ const char* qz_program_import_package(const qz_program* program, uint32_t import
 bool qz_program_import_is_required(const qz_program* program, uint32_t import) {
     const auto& required = program->program->importRequired;
     return import < required.size() && required[import];
+}
+
+uint32_t qz_program_function_attribute_count(const qz_program* program, uint32_t function) {
+    const auto& all = named(program)->attributes;
+    return function < all.size() ? static_cast<uint32_t>(all[function].size()) : 0;
+}
+
+const char* qz_program_function_attribute_name(const qz_program* program, uint32_t function, uint32_t attribute) {
+    const quartz::ir::Annotation* a = attributeOf(program, function, attribute);
+    return a != nullptr ? a->name.c_str() : "";
+}
+
+uint32_t qz_program_function_attribute_filter(const qz_program* program, uint32_t function, uint32_t attribute) {
+    const quartz::ir::Annotation* a = attributeOf(program, function, attribute);
+    return a != nullptr && a->filter != ~0U ? a->filter : UINT32_MAX;
+}
+
+uint32_t qz_program_function_attribute_arg_count(const qz_program* program, uint32_t function, uint32_t attribute) {
+    const quartz::ir::Annotation* a = attributeOf(program, function, attribute);
+    return a != nullptr ? static_cast<uint32_t>(a->args.size()) : 0;
+}
+
+bool qz_program_function_attribute_arg(const qz_program* program, uint32_t function, uint32_t attribute, uint32_t index,
+                                       qz_attribute_arg* out) {
+    const quartz::ir::Annotation* a = attributeOf(program, function, attribute);
+    if (a == nullptr || index >= a->args.size() || out == nullptr) {
+        return false;
+    }
+    const quartz::ir::AnnotationArg& arg = a->args[index];
+    *out = {arg.key.c_str(), static_cast<qz_attribute_arg_kind>(arg.kind), arg.intValue, arg.floatValue,
+            arg.text.c_str()};
+    return true;
 }
 
 const char* qz_type_name(const qz_program* program, uint32_t type) {
