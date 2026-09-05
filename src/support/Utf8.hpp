@@ -11,11 +11,20 @@ inline bool validUtf8(std::string_view text) {
     const auto* p = reinterpret_cast<const unsigned char*>(text.data());
     const std::size_t n = text.size();
     std::size_t i = 0;
+    constexpr std::uint64_t kHigh = 0x8080808080808080ULL;
+    while (i + 32 <= n) {
+        std::uint64_t w[4];
+        std::memcpy(w, p + i, 32);
+        if (((w[0] | w[1] | w[2] | w[3]) & kHigh) != 0) {
+            break;
+        }
+        i += 32;
+    }
     while (i < n) {
         if (i + 8 <= n) {
             std::uint64_t word = 0;
             std::memcpy(&word, p + i, 8);
-            if ((word & 0x8080808080808080ULL) == 0) {
+            if ((word & kHigh) == 0) {
                 i += 8;
                 continue;
             }
