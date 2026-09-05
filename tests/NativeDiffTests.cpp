@@ -590,7 +590,8 @@ int main(int argc, char** argv) {
 namespace {
 
 bool rawText(quartz::vm::HostCall& call, void*) {
-    call.result.p = call.string(std::string_view("a\xC3\xFF\xE4\xB8\x96\xF0\x9F", 8));
+    // The unchecked copy: hosts can no longer hand over invalid UTF-8, but iteration must still stay safe on it.
+    call.result.p = call.sandbox.copyStr(std::string_view("a\xC3\xFF\xE4\xB8\x96\xF0\x9F", 8));
     return call.result.p != nullptr;
 }
 
