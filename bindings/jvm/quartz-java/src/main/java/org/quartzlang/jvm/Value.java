@@ -2,8 +2,9 @@ package org.quartzlang.jvm;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
-/** One result slot of a known type; a str or list result is readable until the next call into its sandbox. */
+/** A result of a known type; what points into the sandbox (str, lists, maps) is readable until its next call. */
 public final class Value {
     private final long bits;
     private final Sandbox owner;
@@ -36,7 +37,7 @@ public final class Value {
         return bits;
     }
 
-    /** Every raw slot, as many as {@code type().slots()}: how a struct or tuple result comes back for now. */
+    /** Every raw slot, as many as {@code type().slots()}. */
     public long[] slots() {
         return wide == null ? new long[] {bits} : wide.clone();
     }
@@ -99,13 +100,86 @@ public final class Value {
         return owner.readString(bits, generation);
     }
 
-    /** The value boxed by its type: Long, Double, Float, Boolean, Integer (char), String, byte[], List, long[] for a
-     wider value, or null for void and an empty nullable. */
+    /**
+     * The value boxed by its type: Long (integers and handles), Double, Float, Boolean, Integer (char), String,
+     * byte[], List (lists and tuples), Map (in insertion order), {@link Struct}, {@link Variant}, {@link Result}, or
+     * null for void and an empty nullable.
+     */
     public Object get() {
-        if (wide != null) {
-            return wide.clone();
+        if (wide == null && type.slots() > 1) {
+            throw new UnsupportedOperationException("only the first slot of this " + type + " came back: the C "
+                    + "interface returns one slot for a task's result");
         }
-        return Slots.box(type, bits, owner.readers(generation));
+        Slots.Readers readers = owner.readers(generation);
+        if (wide != null) {
+            return Slots.decode(type, wide, 0, readers);
+        }
+        return Slots.box(type, bits, readers);
+    }
+
+    /** The value converted to {@code target}: a record or Kotlin data class (by field name), an enum, a sealed type
+     whose subclasses are named like the variants, a List, Map, Optional, array or a boxed scalar. */
+    public <T> T to(Class<T> target) {
+        Object o = Mapper.convert(get(), target);
+        return o == null ? null : box(target).cast(o);
+    }
+
+    /** The value converted to a generic type: {@code value.to(new TypeRef<List<Point>>() {})}. */
+    @SuppressWarnings("unchecked")
+    public <T> T to(TypeRef<T> target) {
+        return (T) Mapper.convert(get(), target.type());
+    }
+
+    /** The value converted to a generic type given as a {@link java.lang.reflect.Type}. */
+    public Object to(java.lang.reflect.Type target) {
+        return Mapper.convert(get(), target);
+    }
+
+    public Struct asStruct() {
+        if (kind() != Kind.STRUCT) {
+            throw wrong("asStruct");
+        }
+        return (Struct) get();
+    }
+
+    /** An enum result; a {@code Result} reads as variant {@code Ok} or {@code Err} too. */
+    public Variant asVariant() {
+        if (kind() != Kind.ENUM) {
+            throw wrong("asVariant");
+        }
+        return (Variant) Mapper.convert(get(), Variant.class);
+    }
+
+    public Result<Object, Object> asResult() {
+        if (!type.isResult()) {
+            throw wrong("asResult");
+        }
+        @SuppressWarnings("unchecked")
+        Result<Object, Object> r = (Result<Object, Object>) get();
+        return r;
+    }
+
+    /** A tuple result's elements. */
+    @SuppressWarnings("unchecked")
+    public List<Object> asTuple() {
+        if (kind() != Kind.TUPLE) {
+            throw wrong("asTuple");
+        }
+        return (List<Object>) get();
+    }
+
+    /** A map result in insertion order. */
+    @SuppressWarnings("unchecked")
+    public Map<Object, Object> asMap() {
+        if (kind() != Kind.MAP) {
+            throw wrong("asMap");
+        }
+        return (Map<Object, Object>) get();
+    }
+
+    /** True for an empty nullable and for void. */
+    public boolean isNull() {
+        return kind() == Kind.VOID || (kind() == Kind.NULLABLE && bits == 0);
     }
 
     /** Elements of a list result. */
@@ -170,6 +244,14 @@ public final class Value {
         if (kind() != Kind.LIST) {
             throw wrong("a list read");
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T> box(Class<T> c) {
+        if (!c.isPrimitive()) {
+            return c;
+        }
+        return (Class<T>) java.lang.invoke.MethodType.methodType(c).wrap().returnType();
     }
 
     private IllegalStateException wrong(String what) {

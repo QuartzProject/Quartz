@@ -116,24 +116,28 @@ public final class Sandbox implements AutoCloseable {
         return call(program.export(name), args);
     }
 
-    /** Calls an exported function; {@code state} parameters are supplied by the sandbox. Traps throw. */
+    /**
+     * Calls an exported function; {@code state} parameters are supplied by the sandbox and traps throw. Arguments are
+     * boxed scalars, String, byte[], List or array (lists and tuples), Map (maps, or a struct by field name), a record
+     * or Kotlin data class (a struct by field name, a tuple by position), an enum constant, {@link Variant},
+     * {@link Result}, a sealed subclass named like a variant, null for an empty nullable, or a {@link Value}.
+     */
     public Value call(Export function, Object... args) {
         requireOwn(function);
         Confinement c = begin();
         try {
-            MemorySegment slots = slots(function.signature(), args);
+            long count = slots(function, args);
             Type type = function.signature().result();
             c.generation++;
             c.hostFailure = null;
             if (type.slots() > 1) {
                 MemorySegment out = wideResult(type.slots());
-                check((int) Native.SANDBOX_CALL_WIDE.invokeExact(address, function.index(), slots, (long) args.length,
-                        out, (long) type.slots()), c);
+                check((int) Native.SANDBOX_CALL_WIDE.invokeExact(address, function.index(), argv, count, out,
+                        (long) type.slots()), c);
                 long[] wide = out.asSlice(0, (long) type.slots() * Long.BYTES).toArray(JAVA_LONG);
                 return new Value(wide[0], this, c.generation, type, wide);
             }
-            check((int) Native.SANDBOX_CALL.invokeExact(address, function.index(), slots, (long) args.length, result),
-                    c);
+            check((int) Native.SANDBOX_CALL.invokeExact(address, function.index(), argv, count, result), c);
             return new Value(result.get(JAVA_LONG, 0), this, c.generation, type);
         } catch (Throwable t) {
             throw Native.rethrow(t);
@@ -147,11 +151,10 @@ public final class Sandbox implements AutoCloseable {
         requireOwn(function);
         Confinement c = begin();
         try {
-            MemorySegment slots = slots(function.signature(), args);
+            long count = slots(function, args);
             c.generation++;
             c.hostFailure = null;
-            check((int) Native.SANDBOX_SPAWN.invokeExact(address, function.index(), slots, (long) args.length,
-                    outcome), c);
+            check((int) Native.SANDBOX_SPAWN.invokeExact(address, function.index(), argv, count, outcome), c);
             taskResults.put(outcome.get(JAVA_INT, 4), function.signature().result());
             return outcome(c);
         } catch (Throwable t) {
@@ -169,11 +172,26 @@ public final class Sandbox implements AutoCloseable {
     public TaskOutcome resume(int task, Object value) {
         Confinement c = begin();
         try {
-            Type awaited = program.typeOf((int) Native.SANDBOX_WAIT_TYPE.invokeExact(address, task));
-            long slot = value == null ? 0 : Slots.encode(awaited, value, this, makers);
+            int waitType = (int) Native.SANDBOX_WAIT_TYPE.invokeExact(address, task);
+            if (waitType == 0) {
+                throw new IllegalArgumentException("task " + task + " is not waiting for a value");
+            }
+            Type awaited = program.typeOf(waitType);
+            if (awaited.slots() == 1 && !Slots.isComposite(awaited.kind())) {
+                long slot = value == null ? 0 : Slots.encode(awaited, value, this, makers);
+                c.generation++;
+                c.hostFailure = null;
+                check((int) Native.SANDBOX_RESUME.invokeExact(address, task, slot, outcome), c);
+                return outcome(c);
+            }
+            long[] slots = new long[Math.max(1, awaited.slots())];
+            Slots.encode(awaited, value, slots, 0, this, makers);
+            MemorySegment cell = wideResult(slots.length);
+            MemorySegment.copy(slots, 0, cell, JAVA_LONG, 0, slots.length);
             c.generation++;
             c.hostFailure = null;
-            check((int) Native.SANDBOX_RESUME.invokeExact(address, task, slot, outcome), c);
+            check((int) Native.SANDBOX_RESUME_WIDE.invokeExact(address, task, cell, (long) awaited.slots(), outcome),
+                    c);
             return outcome(c);
         } catch (Throwable t) {
             throw Native.rethrow(t);
@@ -446,7 +464,7 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    /** Reads str and list slots, checking that no later call freed them; a negative generation skips the check. */
+    /** Reads str, list and map slots, checking that no later call freed them; a negative generation skips it. */
     Slots.Readers readers(long generation) {
         return new Slots.Readers() {
             @Override
@@ -457,12 +475,26 @@ public final class Sandbox implements AutoCloseable {
             @Override
             public List<Object> list(Type type, long bits) {
                 if (generation < 0) {
-                    return readListSlot(type, bits, this);
+                    return Heap.readList(type, bits, this);
                 }
                 Confinement c = enter();
                 try {
                     requireCurrent(c, generation);
-                    return readListSlot(type, bits, this);
+                    return Heap.readList(type, bits, this);
+                } finally {
+                    c.exit();
+                }
+            }
+
+            @Override
+            public Map<Object, Object> map(Type type, long bits) {
+                if (generation < 0) {
+                    return Heap.readMap(address, type, bits, this);
+                }
+                Confinement c = enter();
+                try {
+                    requireCurrent(c, generation);
+                    return Heap.readMap(address, type, bits, this);
                 } finally {
                     c.exit();
                 }
@@ -470,43 +502,14 @@ public final class Sandbox implements AutoCloseable {
         };
     }
 
-    private List<Object> readListSlot(Type type, long bits, Slots.Readers readers) {
-        Type e = type.element();
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment cell = arena.allocate(JAVA_LONG, Math.max(1, e.slots()));
-            int n = Math.toIntExact((long) Native.LIST_LENGTH.invokeExact(bits));
-            List<Object> out = new ArrayList<>(n);
-            for (int i = 0; i < n; ++i) {
-                if (!(boolean) Native.LIST_GET.invokeExact(bits, (long) i, cell, (long) e.slots())) {
-                    throw new QuartzException("cannot read element " + i + " of a " + type);
-                }
-                out.add(e.slots() > 1 ? cell.toArray(JAVA_LONG) : Slots.box(e, cell.get(JAVA_LONG, 0), readers));
-            }
-            return out;
-        } catch (Throwable t) {
-            throw Native.rethrow(t);
-        }
-    }
-
     /** A list of {@code type} filled with {@code elements}, as an argument or, in a host function, its result. */
     long newList(Type type, List<?> elements, Slots.Makers makers) throws Throwable {
-        if (type.element().slots() != 1) {
-            throw new IllegalArgumentException("lists of " + type.element() + " cannot be passed yet");
-        }
-        long list = (long) Native.SANDBOX_LIST.invokeExact(address, type.id());
-        if (list == 0) {
-            throw new TrapException(TrapCode.OUT_OF_MEMORY, "cannot make a " + type);
-        }
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment cell = arena.allocate(JAVA_LONG);
-            for (Object e : elements) {
-                cell.set(JAVA_LONG, 0, Slots.encode(type.element(), e, this, makers));
-                if (!(boolean) Native.LIST_PUSH.invokeExact(address, list, cell, 1L)) {
-                    throw new TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list");
-                }
-            }
-        }
-        return list;
+        return Heap.newList(address, this, type, elements, makers);
+    }
+
+    /** A map of {@code type} with {@code entries} in their iteration order. */
+    long newMap(Type type, Map<?, ?> entries, Slots.Makers makers) throws Throwable {
+        return Heap.newMap(address, this, type, entries, makers);
     }
 
     byte[] readSlotString(long bits) {
@@ -545,6 +548,11 @@ public final class Sandbox implements AutoCloseable {
         public long list(Type type, List<?> elements) throws Throwable {
             return newList(type, elements, this);
         }
+
+        @Override
+        public long map(Type type, Map<?, ?> entries) throws Throwable {
+            return newMap(type, entries, this);
+        }
     };
 
     private MemorySegment wideResult(int slots) {
@@ -562,18 +570,29 @@ public final class Sandbox implements AutoCloseable {
         return slot;
     }
 
-    private MemorySegment slots(Signature signature, Object[] args) throws Throwable {
+    /** Fills {@code argv} with the arguments' slots and returns how many there are. */
+    private long slots(Export function, Object[] args) throws Throwable {
+        Signature signature = function.signature();
         if (args.length != signature.arity()) {
             throw new IllegalArgumentException("expected " + signature.arity() + " arguments " + signature.params()
                     + ", got " + args.length);
         }
-        if (args.length > argv.byteSize() / Long.BYTES) {
-            argv = scratch.allocate(JAVA_LONG, Math.max(args.length, argv.byteSize() / Long.BYTES * 2));
+        int count = function.argSlots();
+        if (count > argv.byteSize() / Long.BYTES) {
+            argv = scratch.allocate(JAVA_LONG, Math.max(count, argv.byteSize() / Long.BYTES * 2));
         }
+        if (function.simple()) {
+            for (int i = 0; i < args.length; ++i) {
+                argv.setAtIndex(JAVA_LONG, i, Slots.encode(signature.params().get(i), args[i], this, makers));
+            }
+            return count;
+        }
+        long[] wideArgs = new long[count];
         for (int i = 0; i < args.length; ++i) {
-            argv.setAtIndex(JAVA_LONG, i, Slots.encode(signature.params().get(i), args[i], this, makers));
+            Slots.encode(signature.params().get(i), args[i], wideArgs, function.offset(i), this, makers);
         }
-        return argv;
+        MemorySegment.copy(wideArgs, 0, argv, JAVA_LONG, 0, count);
+        return count;
     }
 
     private TaskOutcome outcome(Confinement c) {

@@ -10,7 +10,9 @@ import java.lang.foreign.MemorySegment;
 import java.lang.ref.Cleaner;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -155,19 +157,75 @@ public final class Program implements AutoCloseable {
         }
     }
 
-    /** The type with id {@code id}, its element resolved; the caller holds the handle. */
+    /** The type with id {@code id}, its element, key, fields and variants resolved; the caller holds the handle. */
     Type type(int id) {
         Type known = types.get(id);
         if (known != null) {
             return known;
         }
+        synchronized (types) {
+            Map<Integer, Type> resolving = new HashMap<>();
+            Type t = resolve(id, resolving);
+            types.putAll(resolving);
+            return t;
+        }
+    }
+
+    // Types are cached before their parts resolve, so a struct reached again through a list of itself terminates.
+    private Type resolve(int id, Map<Integer, Type> resolving) {
+        Type known = types.get(id);
+        if (known == null) {
+            known = resolving.get(id);
+        }
+        if (known != null) {
+            return known;
+        }
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment slots = arena.allocate(JAVA_INT);
+            MemorySegment cell = arena.allocate(JAVA_INT);
             MemorySegment p = handle.address();
-            Kind kind = Kind.of((int) Native.TYPE_KIND.invokeExact(p, id, slots));
-            int element = (int) Native.TYPE_ELEM.invokeExact(p, id);
-            Type t = new Type(kind, slots.get(JAVA_INT, 0), id, element == 0 ? null : type(element));
-            types.put(id, t);
+            Kind kind = Kind.of((int) Native.TYPE_KIND.invokeExact(p, id, cell));
+            Type t = new Type(kind, cell.get(JAVA_INT, 0), id, null);
+            resolving.put(id, t);
+            int elementId = (int) Native.TYPE_ELEM.invokeExact(p, id);
+            Type element = elementId == 0 ? null : resolve(elementId, resolving);
+            Type key = null;
+            List<Type.Field> fields = new ArrayList<>();
+            List<Type.Case> cases = new ArrayList<>();
+            boolean pointer = false;
+            switch (kind) {
+                case MAP -> {
+                    int keyId = (int) Native.TYPE_KEY.invokeExact(p, id);
+                    key = keyId == 0 ? null : resolve(keyId, resolving);
+                }
+                case STRUCT, TUPLE -> {
+                    int count = (int) Native.TYPE_FIELD_COUNT.invokeExact(p, id);
+                    for (int i = 0; i < count; ++i) {
+                        int fieldId = (int) Native.TYPE_FIELD.invokeExact(p, id, i, cell);
+                        int offset = cell.get(JAVA_INT, 0);
+                        String name = kind == Kind.STRUCT
+                                ? Native.takeString((MemorySegment) Native.TYPE_FIELD_NAME.invokeExact(p, id, i), false)
+                                : "";
+                        fields.add(new Type.Field(name, resolve(fieldId, resolving), offset));
+                    }
+                }
+                case ENUM -> {
+                    int count = (int) Native.TYPE_VARIANT_COUNT.invokeExact(p, id);
+                    for (int v = 0; v < count; ++v) {
+                        String name = Native.takeString(
+                                (MemorySegment) Native.TYPE_VARIANT_NAME.invokeExact(p, id, v), false);
+                        int n = (int) Native.TYPE_VARIANT_PAYLOAD_COUNT.invokeExact(p, id, v);
+                        List<Type.Field> payload = new ArrayList<>(n);
+                        for (int i = 0; i < n; ++i) {
+                            int valueId = (int) Native.TYPE_VARIANT_PAYLOAD.invokeExact(p, id, v, i, cell);
+                            payload.add(new Type.Field("", resolve(valueId, resolving), cell.get(JAVA_INT, 0)));
+                        }
+                        cases.add(new Type.Case(name, v, payload));
+                    }
+                }
+                case NULLABLE -> pointer = (boolean) Native.TYPE_NULLABLE_IS_POINTER.invokeExact(p, id);
+                default -> {}
+            }
+            t.complete(element, key, fields, cases, pointer);
             return t;
         } catch (Throwable t) {
             throw Native.rethrow(t);

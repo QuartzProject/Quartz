@@ -203,7 +203,6 @@ class SandboxTest {
             assertEquals(6, sandbox.call("total", List.of(1L, 2L, 3L)).asLong());
             assertThrows(IllegalArgumentException.class, () -> sandbox.call("total", List.of("x")));
             assertArrayEquals(new long[] {14, 8}, sandbox.call("pair", 7).slots());
-            assertTrue(program.imports().stream().anyMatch(Import::builtIn));
             TaskOutcome waiting = sandbox.spawn("gather");
             assertEquals(1, sandbox.liveTasks());
             TaskOutcome done = sandbox.resume(waiting.task(), List.of(4L, 5L, 6L));

@@ -14,7 +14,9 @@ static const char kPlugin[] = "fn id(x: int) -> int {\n    return x\n}\n"
                               "fn ups(n: int) -> int {\n    var s = 0\n    var i = 0\n    while i < n {\n"
                               "        s += hostId(i)\n        i += 1\n    }\n    return s\n}\n"
                               "fn upsDirect(n: int) -> int {\n    var s = 0\n    var i = 0\n    while i < n {\n"
-                              "        s += hostDirect(i)\n        i += 1\n    }\n    return s\n}\n";
+                              "        s += hostDirect(i)\n        i += 1\n    }\n    return s\n}\n"
+                              "struct P {\n    x: int\n    y: int\n    z: int\n}\n"
+                              "fn shift(p: P) -> P {\n    return P(p.x + 1, p.y, p.z)\n}\n";
 
 static bool hostId(qz_call* call, void* user) {
     (void)user;
@@ -68,6 +70,7 @@ int main(int argc, char** argv) {
     uint32_t spin = qz_program_function(program, "spin");
     uint32_t ups = qz_program_function(program, "ups");
     uint32_t upsDirect = qz_program_function(program, "upsDirect");
+    uint32_t shift = qz_program_function(program, "shift");
     for (int round = 0; round < rounds; ++round) {
         long long check = 0;
         double t0 = now();
@@ -88,10 +91,19 @@ int main(int argc, char** argv) {
             check += run(sb, upsDirect, inner);
         }
         double t4 = now();
+        qz_slot p[3] = {{.i = 0}, {.i = 2}, {.i = 3}};
+        for (long long i = 0; i < calls; ++i) {
+            if (qz_sandbox_call_wide(sb, shift, p, 3, p, 3) != QZ_OK) {
+                return 1;
+            }
+        }
+        check += p[0].i;
+        double t5 = now();
         if (round == rounds - 1) {
             double perUp = (double)loops * (double)inner;
-            printf("c call_ns=%.1f upcall_ns=%.1f direct_upcall_ns=%.1f check=%lld\n", (t1 - t0) / (double)calls,
-                   ((t3 - t2) - (t2 - t1)) / perUp, ((t4 - t3) - (t2 - t1)) / perUp, check);
+            printf("c call_ns=%.1f upcall_ns=%.1f direct_upcall_ns=%.1f struct_ns=%.1f check=%lld\n",
+                   (t1 - t0) / (double)calls, ((t3 - t2) - (t2 - t1)) / perUp, ((t4 - t3) - (t2 - t1)) / perUp,
+                   (t5 - t4) / (double)calls, check);
         }
     }
     qz_sandbox_free(sb);

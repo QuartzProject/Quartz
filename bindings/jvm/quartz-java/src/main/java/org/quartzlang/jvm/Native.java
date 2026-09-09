@@ -17,6 +17,7 @@ import java.lang.invoke.MethodHandle;
 /** quartz.h as method handles; a qz_slot or an opaque pointer travels as a long, as every 64-bit ABI passes it. */
 final class Native {
     static final int ABI_VERSION = 1;
+    static final int API_LEVEL_NEEDED = 3;
     static final int OK = 0;
     static final int ERROR = 1;
     static final int TRAP = 2;
@@ -91,6 +92,21 @@ final class Native {
     static final MethodHandle TYPE_ELEM;
     static final MethodHandle IMPORT_IS_NATIVE;
     static final MethodHandle SANDBOX_CALL_WIDE;
+    static final MethodHandle API_LEVEL;
+    static final MethodHandle TYPE_FIELD_COUNT;
+    static final MethodHandle TYPE_FIELD;
+    static final MethodHandle TYPE_FIELD_NAME;
+    static final MethodHandle TYPE_VARIANT_COUNT;
+    static final MethodHandle TYPE_VARIANT_NAME;
+    static final MethodHandle TYPE_VARIANT_PAYLOAD_COUNT;
+    static final MethodHandle TYPE_VARIANT_PAYLOAD;
+    static final MethodHandle TYPE_NULLABLE_IS_POINTER;
+    static final MethodHandle TYPE_KEY;
+    static final MethodHandle SANDBOX_RESUME_WIDE;
+    static final MethodHandle SANDBOX_MAP;
+    static final MethodHandle MAP_SET;
+    static final MethodHandle MAP_LENGTH;
+    static final MethodHandle MAP_ENTRY;
 
     static {
         if (ADDRESS.byteSize() != 8) {
@@ -163,9 +179,37 @@ final class Native {
                 CRITICAL);
         SANDBOX_CALL_WIDE = fn("qz_sandbox_call_wide",
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, SIZE_T, ADDRESS, SIZE_T));
+        API_LEVEL = fn("qz_api_level", FunctionDescriptor.of(JAVA_INT), CRITICAL);
+        TYPE_FIELD_COUNT = fn("qz_type_field_count", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
+        TYPE_FIELD = fn("qz_type_field", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, ADDRESS),
+                CRITICAL);
+        TYPE_FIELD_NAME = fn("qz_type_field_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT, JAVA_INT),
+                CRITICAL);
+        TYPE_VARIANT_COUNT = fn("qz_type_variant_count", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
+        TYPE_VARIANT_NAME = fn("qz_type_variant_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT, JAVA_INT),
+                CRITICAL);
+        TYPE_VARIANT_PAYLOAD_COUNT = fn("qz_type_variant_payload_count",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        TYPE_VARIANT_PAYLOAD = fn("qz_type_variant_payload",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS), CRITICAL);
+        TYPE_NULLABLE_IS_POINTER = fn("qz_type_nullable_is_pointer",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT), CRITICAL);
+        TYPE_KEY = fn("qz_type_key", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
+        SANDBOX_RESUME_WIDE = fn("qz_sandbox_resume_wide",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, SIZE_T, ADDRESS));
+        SANDBOX_MAP = fn("qz_sandbox_map", FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT), CRITICAL);
+        MAP_SET = fn("qz_map_set", FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS), CRITICAL);
+        MAP_LENGTH = fn("qz_map_length", FunctionDescriptor.of(SIZE_T, JAVA_LONG), CRITICAL);
+        MAP_ENTRY = fn("qz_map_entry",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, SIZE_T, ADDRESS, ADDRESS), CRITICAL);
         int abi = abiVersion();
         if (abi != ABI_VERSION) {
             throw new UnsatisfiedLinkError("libquartz has ABI " + abi + ", quartz-jvm needs " + ABI_VERSION);
+        }
+        int level = apiLevel();
+        if (level < API_LEVEL_NEEDED) {
+            throw new UnsatisfiedLinkError("libquartz has API level " + level + ", quartz-jvm needs "
+                    + API_LEVEL_NEEDED);
         }
     }
 
@@ -183,6 +227,14 @@ final class Native {
     static int abiVersion() {
         try {
             return (int) ABI.invokeExact();
+        } catch (Throwable t) {
+            throw rethrow(t);
+        }
+    }
+
+    static int apiLevel() {
+        try {
+            return (int) API_LEVEL.invokeExact();
         } catch (Throwable t) {
             throw rethrow(t);
         }

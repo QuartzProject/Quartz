@@ -5,6 +5,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
 import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 /** A running host function's arguments, checked against the import's types, and its fuel; valid while it runs. */
 public final class HostCall {
@@ -91,10 +92,30 @@ public final class HostCall {
     public Object arg(int index) {
         kind(index);
         Type type = signature.params().get(index);
-        if (type.slots() != 1) {
-            throw new UnsupportedOperationException("a " + type + " argument cannot be read yet");
+        if (type.slots() == 1 && !Slots.isComposite(type.kind())) {
+            return Slots.box(type, rawArg(index), sandbox.readers(-1));
         }
-        return Slots.box(type, rawArg(index), sandbox.readers(-1));
+        long[] slots = new long[Math.max(1, type.slots())];
+        MemorySegment.copy(Native.ALL, JAVA_LONG, args + (long) signature.offset(index) * Long.BYTES, slots, 0,
+                type.slots());
+        return Slots.decode(type, slots, 0, sandbox.readers(-1));
+    }
+
+    /** Argument {@code index} converted to {@code target}, as {@link Value#to(Class)} does. */
+    public <T> T arg(int index, Class<T> target) {
+        Object o = Mapper.convert(arg(index), target);
+        return o == null ? null : boxed(target).cast(o);
+    }
+
+    /** Argument {@code index} converted to a generic type: {@code call.arg(0, new TypeRef<List<Point>>() {})}. */
+    @SuppressWarnings("unchecked")
+    public <T> T arg(int index, TypeRef<T> target) {
+        return (T) Mapper.convert(arg(index), target.type());
+    }
+
+    /** Argument {@code index} converted to a generic type given as a {@link java.lang.reflect.Type}. */
+    public Object arg(int index, java.lang.reflect.Type target) {
+        return Mapper.convert(arg(index), target);
     }
 
     /** A list argument with its elements boxed by the element type. */
@@ -103,6 +124,14 @@ public final class HostCall {
             throw wrong(index, "listArg");
         }
         return sandbox.readers(-1).list(signature.params().get(index), rawArg(index));
+    }
+
+    /** A map argument in insertion order. */
+    public Map<Object, Object> mapArg(int index) {
+        if (kind(index) != Kind.MAP) {
+            throw wrong(index, "mapArg");
+        }
+        return sandbox.readers(-1).map(signature.params().get(index), rawArg(index));
     }
 
     /** The first raw slot of parameter {@code index}. */
@@ -147,7 +176,13 @@ public final class HostCall {
         if (type.kind() == Kind.VOID) {
             return;
         }
-        Native.ALL.set(JAVA_LONG, result, Slots.encode(type, value, sandbox, makers));
+        if (type.slots() == 1 && !Slots.isComposite(type.kind())) {
+            Native.ALL.set(JAVA_LONG, result, Slots.encode(type, value, sandbox, makers));
+            return;
+        }
+        long[] slots = new long[Math.max(1, type.slots())];
+        Slots.encode(type, value, slots, 0, sandbox, makers);
+        MemorySegment.copy(slots, 0, Native.ALL, JAVA_LONG, result, type.slots());
     }
 
     private final Slots.Makers makers = new Slots.Makers() {
@@ -160,6 +195,11 @@ public final class HostCall {
         public long list(Type type, List<?> elements) throws Throwable {
             return sandbox.newList(type, elements, this);
         }
+
+        @Override
+        public long map(Type type, Map<?, ?> entries) throws Throwable {
+            return sandbox.newMap(type, entries, this);
+        }
     };
 
     private long string(byte[] utf8) throws Throwable {
@@ -168,6 +208,11 @@ public final class HostCall {
             throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning a string");
         }
         return slot;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T> boxed(Class<T> c) {
+        return c.isPrimitive() ? (Class<T>) java.lang.invoke.MethodType.methodType(c).wrap().returnType() : c;
     }
 
     private Kind kind(int index) {
