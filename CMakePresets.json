@@ -22,12 +22,23 @@
     {
       "name": "asan",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "QUARTZ_SANITIZE": "address,undefined" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "QUARTZ_SANITIZE": "address,undefined",
+        "QUARTZ_COMPILER": "OFF",
+        "QUARTZ_JVM": "OFF"
+      }
     },
     {
       "name": "fuzz",
       "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "QUARTZ_SANITIZE": "address,undefined", "QUARTZ_FUZZ": "ON" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "QUARTZ_SANITIZE": "address,undefined",
+        "QUARTZ_FUZZ": "ON",
+        "QUARTZ_COMPILER": "OFF",
+        "QUARTZ_JVM": "OFF"
+      }
     },
     {
       "name": "wasm",
