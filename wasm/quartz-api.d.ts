@@ -45,6 +45,8 @@ export interface Import {
     name: string;
     index: number;
     native: boolean;
+    /** False when no function calls it: start() does not ask for its binding. */
+    required: boolean;
     signature: Signature;
 }
 
@@ -80,6 +82,21 @@ export interface CompileOptions {
     keepLines?: boolean;
     /** package.toml text. */
     manifest?: string;
+    /** Warning levels by rule id (`unused-variable`), or `*` for every rule; a warning raised to error fails. */
+    rules?: Record<string, "ignore" | "warning" | "error">;
+}
+
+/** One diagnostic; lines and columns start at 1 (columns in bytes) and are 0 when it has no source place. */
+export interface CompileMessage {
+    severity: "error" | "warning" | "note";
+    /** The warning rule id, also on a warning raised to an error; empty otherwise. */
+    rule: string;
+    file: string;
+    line: number;
+    column: number;
+    endLine: number;
+    endColumn: number;
+    message: string;
 }
 
 export interface TaskOutcome {
@@ -94,6 +111,7 @@ export declare class QuartzError extends Error {}
 export declare class CompileError extends QuartzError {
     /** Every error and warning as the compiler printed them. */
     diagnostics: string;
+    messages: CompileMessage[];
 }
 
 /** The program trapped; the sandbox stays usable. When a host function threw, that is the cause. */
@@ -104,6 +122,8 @@ export declare class TrapError extends QuartzError {
 export interface Program {
     /** Warnings the compiler printed; empty for a loaded module. */
     readonly diagnostics: string;
+    /** The same warnings one by one. */
+    readonly messages: CompileMessage[];
     readonly imports: Import[];
     function(name: string): Export | undefined;
     binary(): Uint8Array | null;

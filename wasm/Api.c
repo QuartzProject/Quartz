@@ -25,6 +25,29 @@ EMSCRIPTEN_KEEPALIVE qz_program* qzw_compile(const char* const* names, const cha
     return qz_compile(sources, count, &options, diagnostics);
 }
 
+/// Like qzw_compile with warning levels (`rules[i]` at `levels[i]`) and the diagnostics one by one in `*diagnostics`.
+EMSCRIPTEN_KEEPALIVE qz_program* qzw_compile_with(const char* const* names, const char* const* texts,
+                                                  const uint32_t* lengths, uint32_t count, int flags,
+                                                  const char* manifest, const char* const* rules, const int* levels,
+                                                  uint32_t level_count, qz_diagnostics** diagnostics) {
+    qz_source sources[64];
+    qz_rule_level settings[64];
+    if (count > 64 || level_count > 64) {
+        return NULL;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        sources[i].name = names[i];
+        sources[i].text = texts[i];
+        sources[i].length = lengths[i];
+    }
+    for (uint32_t i = 0; i < level_count; ++i) {
+        settings[i].rule = rules[i];
+        settings[i].level = (qz_level)levels[i];
+    }
+    qz_compile_options options = {(flags & 1) != 0, (flags & 2) != 0, manifest};
+    return qz_compile_with(sources, count, &options, settings, level_count, diagnostics);
+}
+
 EMSCRIPTEN_KEEPALIVE qz_sandbox* qzw_sandbox_new(const qz_program* program, uint32_t memory, const int64_t* fuel,
                                                  uint32_t depth, int tier) {
     qz_limits limits = {memory, *fuel, depth, tier};

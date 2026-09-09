@@ -19,12 +19,16 @@ export class QuartzError extends Error {
 }
 
 export class CompileError extends QuartzError {
-    constructor(diagnostics) {
+    constructor(diagnostics, messages = []) {
         super(diagnostics.trim() || "compilation failed");
         this.name = "CompileError";
         this.diagnostics = diagnostics;
+        this.messages = messages;
     }
 }
+
+const Severity = Object.freeze(["error", "warning", "note"]);
+const Level = { ignore: 0, warning: 1, error: 2 };
 
 export class TrapError extends QuartzError {
     constructor(code, message, cause) {
@@ -89,14 +93,51 @@ class Quartz {
         const manifest = options.manifest == null ? 0 : this.cString(options.manifest);
         owned.push(manifest);
         const flags = (options.emitBinary ? 1 : 0) | (options.keepLines === false ? 0 : 2);
+        const rules = Object.entries(options.rules ?? {});
+        const rulePtrs = m._malloc(4 * rules.length + 4);
+        const levels = m._malloc(4 * rules.length + 4);
+        owned.push(rulePtrs, levels);
+        rules.forEach(([rule, level], i) => {
+            if (!(level in Level)) {
+                throw new RangeError(`a rule level is ignore, warning or error, not ${level}`);
+            }
+            const r = this.cString(rule);
+            owned.push(r);
+            this.i32(rulePtrs + 4 * i, r);
+            this.i32(levels + 4 * i, Level[level]);
+        });
         this.i32(this.scratch, 0);
-        const p = m._qzw_compile(names, texts, lengths, list.length, flags, manifest, this.scratch) >>> 0;
+        const p = m._qzw_compile_with(names, texts, lengths, list.length, flags, manifest, rulePtrs, levels,
+            rules.length, this.scratch) >>> 0;
         owned.forEach((ptr) => ptr && m._free(ptr));
-        const diagnostics = this.take(this.u32(this.scratch)) ?? "";
+        const { diagnostics, messages } = this.#diagnostics(this.u32(this.scratch));
         if (p === 0) {
-            throw new CompileError(diagnostics);
+            throw new CompileError(diagnostics, messages);
         }
-        return new Program(this, p, diagnostics);
+        const program = new Program(this, p, diagnostics);
+        program.messages = messages;
+        return program;
+    }
+
+    #diagnostics(d) {
+        const m = this.#m;
+        const messages = [];
+        for (let i = 0; i < (m._qz_diagnostics_count(d) >>> 0); ++i) {
+            m._qz_diagnostic_range(d, i, this.scratch, this.scratch + 4, this.scratch + 8, this.scratch + 12);
+            messages.push({
+                severity: Severity[m._qz_diagnostic_severity(d, i)],
+                rule: m.UTF8ToString(m._qz_diagnostic_rule(d, i)),
+                file: m.UTF8ToString(m._qz_diagnostic_file(d, i)),
+                line: this.u32(this.scratch),
+                column: this.u32(this.scratch + 4),
+                endLine: this.u32(this.scratch + 8),
+                endColumn: this.u32(this.scratch + 12),
+                message: m.UTF8ToString(m._qz_diagnostic_message(d, i)),
+            });
+        }
+        const diagnostics = d === 0 ? "" : m.UTF8ToString(m._qz_diagnostics_text(d));
+        m._qz_diagnostics_free(d);
+        return { diagnostics, messages };
     }
 
     /** Loads a .qzb module, checking its hash and, with trusted Ed25519 keys, its signature. */
@@ -250,6 +291,7 @@ class Program {
         this.#q = quartz;
         this.#address = address;
         this.diagnostics = diagnostics;
+        this.messages = [];
     }
 
     get address() {
@@ -294,7 +336,8 @@ class Program {
                 }
                 const result = this.#q.type(p, m._qz_program_import_result_type(p, i));
                 this.#imports.push({ name: m.UTF8ToString(m._qz_program_import_name(p, i)), index: i,
-                    native: !!m._qz_program_import_is_native(p, i), signature: { params, result } });
+                    native: !!m._qz_program_import_is_native(p, i), required: !!m._qz_program_import_is_required(p, i),
+                    signature: { params, result } });
             }
         }
         return this.#imports;

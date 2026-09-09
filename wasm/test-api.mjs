@@ -86,6 +86,10 @@ assert.throws(() => sandbox.call("check", 9),
     (e) => e.code === "host_error" && e.cause instanceof Error && e.cause.message === "boom 9");
 assert.equal(sandbox.call("divide", 7, 2), 3n);
 assert.throws(() => quartz.compile({ "bad.qz": 'fn f() -> int {\n    return "x"\n}\n' }), api.CompileError);
+const lint = { "lint.qz": "fn f() {\n    let y = 1\n}\n" };
+assert.equal(quartz.compile(lint).messages[0].rule, "unused-variable");
+assert.throws(() => quartz.compile(lint, { rules: { "*": "error" } }),
+    (e) => e instanceof api.CompileError && e.messages[0].severity === "error" && e.messages[0].line === 2);
 
 const json = sandbox.exportState();
 const copy = quartz.sandbox(program);
