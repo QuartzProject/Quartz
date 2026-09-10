@@ -18,6 +18,20 @@ public final class Struct {
         this.values = values;
     }
 
+    /** A struct to pass, with these fields in this order; a struct parameter takes it by name, a tuple by position. */
+    public static Struct of(Map<String, ?> fields) {
+        List<Type.Field> layout = new ArrayList<>(fields.size());
+        Object[] values = new Object[fields.size()];
+        int i = 0;
+        for (Map.Entry<String, ?> e : fields.entrySet()) {
+            layout.add(new Type.Field(e.getKey(), new Type(Kind.OTHER, 1), i));
+            values[i++] = e.getValue();
+        }
+        Type type = new Type(Kind.STRUCT, values.length);
+        type.complete(null, null, layout, List.of(), false);
+        return new Struct(type, values);
+    }
+
     public Type type() {
         return type;
     }

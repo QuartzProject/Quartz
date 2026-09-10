@@ -278,6 +278,8 @@ final class Slots {
         Object[] out;
         if (value instanceof List<?> list) {
             out = list.toArray();
+        } else if (value instanceof Struct s) {
+            out = s.values();
         } else if (value instanceof Object[] array) {
             out = array;
         } else if (value == null) {
