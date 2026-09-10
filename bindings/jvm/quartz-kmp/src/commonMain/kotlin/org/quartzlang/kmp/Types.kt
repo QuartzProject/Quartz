@@ -33,22 +33,77 @@ public enum class TrapCode {
     }
 }
 
-/** A type: its kind, the slots it takes (a struct takes one per field), its id and the element of a list or nullable. */
-public data class Type(val kind: Kind, val slots: Int = 1, val id: Int = 0, val element: Type? = null) {
+/** A type: its kind, the slots it takes (a struct takes the sum of its fields), its id and its parts. */
+public class Type(public val kind: Kind, public val slots: Int = 1, public val id: Int = 0, element: Type? = null) {
+    /** A field of a struct, an element of a tuple ([name] empty) or a value of a variant, at slot [offset]. */
+    public data class Field(val name: String, val type: Type, val offset: Int)
+
+    /** A variant of an enum: its [name], the value of slot 0 ([index]) and the values it carries. */
+    public data class Case(val name: String, val index: Int, val payload: List<Field>)
+
+    /** The element of a list or nullable, the value of a map, or null. */
+    public var element: Type? = element
+        private set
+
+    /** The key of a map, or null. */
+    public var key: Type? = null
+        private set
+
+    /** Fields of a struct or elements of a tuple, empty for other kinds. */
+    public var fields: List<Field> = emptyList()
+        private set
+
+    /** Variants of an enum, empty for other kinds. */
+    public var cases: List<Case> = emptyList()
+        private set
+
+    private var pointer: Boolean = kind == Kind.NULLABLE && slots == 1
+
+    /** Filled in once the type is cached, so recursive types resolve. */
+    internal fun complete(element: Type?, key: Type?, fields: List<Field>, cases: List<Case>, pointer: Boolean) {
+        this.element = element
+        this.key = key
+        this.fields = fields
+        this.cases = cases
+        this.pointer = pointer
+    }
+
+    /** A nullable that is one slot, 0 when null (str, Bytes, lists, maps); other nullables add a presence slot. */
+    public val isPointerNullable: Boolean get() = kind == Kind.NULLABLE && pointer
+
     /** A one-slot nullable str, Bytes or list, which is null or a pointer. */
-    val isNullableReference: Boolean
+    public val isNullableReference: Boolean
         get() = kind == Kind.NULLABLE && slots == 1 && element?.kind in setOf(Kind.STR, Kind.BYTES, Kind.LIST, Kind.MAP)
 
+    /** An enum shaped like `Result<T, E>`: variants `Ok` and `Err` with one value each. */
+    public val isResult: Boolean
+        get() = kind == Kind.ENUM && cases.size == 2 && cases[0].name == "Ok" && cases[1].name == "Err" &&
+            cases[0].payload.size == 1 && cases[1].payload.size == 1
+
+    /** True for structs, tuples, enums and nullables, which the bindings lay out field by field. */
+    public val isComposite: Boolean
+        get() = kind == Kind.STRUCT || kind == Kind.TUPLE || kind == Kind.ENUM || kind == Kind.NULLABLE
+
+    /** The variant called [name], matched exactly or else ignoring case and underscores. */
+    public fun findCase(name: String): Case? =
+        cases.firstOrNull { it.name == name } ?: cases.firstOrNull { normalize(it.name) == normalize(name) }
+
     override fun equals(other: Any?): Boolean =
-        other is Type && other.kind == kind && other.slots == slots && other.element == element
+        other is Type && other.kind == kind && other.slots == slots && other.element == element &&
+            other.key == key && other.cases.map { it.name } == cases.map { it.name } &&
+            other.fields.map { it.name to it.type.kind } == fields.map { it.name to it.type.kind }
 
     override fun hashCode(): Int = kind.hashCode() * 31 + slots
 
     override fun toString(): String {
-        val name = kind.name.lowercase() + (element?.let { "<$it>" } ?: "")
+        val inner = element?.let { "<" + (key?.let { k -> "$k, " } ?: "") + it + ">" } ?: ""
+        val name = kind.name.lowercase() + inner
         return if (slots == 1) name else "$name[$slots]"
     }
 }
+
+/** `IN_PROGRESS`, `InProgress` and `in_progress` all become `inprogress`. */
+internal fun normalize(name: String): String = name.replace("_", "").lowercase()
 
 /** What a caller passes (`state` parameters left out) and what comes back. */
 public data class Signature(val params: List<Type>, val result: Type) {

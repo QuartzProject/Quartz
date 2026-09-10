@@ -391,11 +391,12 @@ internal actual fun qzSandboxList(sandbox: Long, type: Int): Long {
     return peek64(scratch + 32)
 }
 
-internal actual fun qzListPush(sandbox: Long, list: Long, element: Long): Boolean = withBuffer(16) { cell ->
-    poke64(cell, list)
-    poke64(cell + 8, element)
-    wasm("qzw_list_push", p(sandbox), cell, cell + 8, 1) != 0
-}
+internal actual fun qzListPush(sandbox: Long, list: Long, element: LongArray, slots: Int): Boolean =
+    withBuffer(8 + 8 * element.size) { cell ->
+        poke64(cell, list)
+        element.forEachIndexed { i, v -> poke64(cell + 8 + 8 * i, v) }
+        wasm("qz_list_push_at", p(sandbox), cell, cell + 8, slots) != 0
+    }
 
 internal actual fun qzListLength(list: Long): Long {
     poke64(scratch + 40, list)
@@ -408,6 +409,77 @@ internal actual fun qzListGet(list: Long, index: Long, out: LongArray, slots: In
         val ok = wasm("qzw_list_get", cell, index.toInt(), cell + 8, slots) != 0
         for (i in 0 until slots) {
             out[i] = peek64(cell + 8 + 8 * i)
+        }
+        ok
+    }
+
+internal actual fun qzTypeFieldCount(program: Long, type: Int): Int = wasm("qz_type_field_count", p(program), type)
+
+internal actual fun qzTypeField(program: Long, type: Int, index: Int): Long = withBuffer(4) { offset ->
+    val id = wasm("qz_type_field", p(program), type, index, offset)
+    (id.toLong() shl 32) or (peekI32(offset).toLong() and 0xFFFF_FFFFL)
+}
+
+internal actual fun qzTypeFieldName(program: Long, type: Int, index: Int): String =
+    stringAt(wasm("qz_type_field_name", p(program), type, index))
+
+internal actual fun qzTypeVariantCount(program: Long, type: Int): Int = wasm("qz_type_variant_count", p(program), type)
+
+internal actual fun qzTypeVariantName(program: Long, type: Int, variant: Int): String =
+    stringAt(wasm("qz_type_variant_name", p(program), type, variant))
+
+internal actual fun qzTypeVariantPayloadCount(program: Long, type: Int, variant: Int): Int =
+    wasm("qz_type_variant_payload_count", p(program), type, variant)
+
+internal actual fun qzTypeVariantPayload(program: Long, type: Int, variant: Int, index: Int): Long =
+    withBuffer(4) { offset ->
+        val id = wasm("qz_type_variant_payload", p(program), type, variant, index, offset)
+        (id.toLong() shl 32) or (peekI32(offset).toLong() and 0xFFFF_FFFFL)
+    }
+
+internal actual fun qzTypeNullableIsPointer(program: Long, type: Int): Boolean =
+    wasm("qz_type_nullable_is_pointer", p(program), type) != 0
+
+internal actual fun qzTypeKey(program: Long, type: Int): Int = wasm("qz_type_key", p(program), type)
+
+internal actual fun qzResumeWide(sandbox: Long, task: Int, value: LongArray, slots: Int, outcome: LongArray): Int =
+    withBuffer(24 + 8 * value.size) { out ->
+        value.forEachIndexed { i, v -> poke64(out + 24 + 8 * i, v) }
+        wasm("qz_sandbox_resume_wide", p(sandbox), task, out + 24, slots, out).also { storeOutcome(out, outcome) }
+    }
+
+internal actual fun qzSandboxMap(sandbox: Long, type: Int): Long = withBuffer(8) { out ->
+    poke64(out, 0)
+    wasm("qz_sandbox_map_into", p(sandbox), type, out)
+    peek64(out)
+}
+
+internal actual fun qzMapSet(sandbox: Long, map: Long, key: LongArray, value: LongArray): Boolean =
+    withBuffer(8 + 8 * (key.size + value.size)) { cell ->
+        poke64(cell, map)
+        key.forEachIndexed { i, v -> poke64(cell + 8 + 8 * i, v) }
+        val at = cell + 8 + 8 * key.size
+        value.forEachIndexed { i, v -> poke64(at + 8 * i, v) }
+        wasm("qz_map_set_at", p(sandbox), cell, cell + 8, at) != 0
+    }
+
+internal actual fun qzMapLength(map: Long): Long = withBuffer(8) { cell ->
+    poke64(cell, map)
+    addr(wasm("qz_map_length_at", cell))
+}
+
+internal actual fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongArray, value: LongArray): Boolean =
+    withBuffer(8 + 8 * (key.size + value.size)) { cell ->
+        poke64(cell, map)
+        val at = cell + 8 + 8 * key.size
+        val ok = wasm("qz_map_entry_at", p(sandbox), cell, index.toInt(), cell + 8, at) != 0
+        if (ok) {
+            for (i in key.indices) {
+                key[i] = peek64(cell + 8 + 8 * i)
+            }
+            for (i in value.indices) {
+                value[i] = peek64(at + 8 * i)
+            }
         }
         ok
     }

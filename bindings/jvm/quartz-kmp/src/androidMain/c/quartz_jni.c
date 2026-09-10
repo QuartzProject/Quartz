@@ -580,11 +580,30 @@ JNIEXPORT jlong QZ_JNI(qzSandboxList)(JNIEnv* env, jclass cls, jlong sandbox, ji
     return qz_sandbox_list(ptr(sandbox), (uint32_t)type).i;
 }
 
-JNIEXPORT jboolean QZ_JNI(qzListPush)(JNIEnv* env, jclass cls, jlong sandbox, jlong list, jlong element) {
-    (void)env;
+// A copy of a long[] as slots, in `stack` when it fits; free it with release().
+static qz_slot* slotsOf(JNIEnv* env, jlongArray array, qz_slot* stack, size_t room) {
+    jsize n = (*env)->GetArrayLength(env, array);
+    qz_slot* out = (size_t)n <= room ? stack : malloc(((size_t)n + 1) * sizeof(qz_slot));
+    if (out != NULL) {
+        (*env)->GetLongArrayRegion(env, array, 0, n, (jlong*)out);
+    }
+    return out;
+}
+
+static void release(qz_slot* slots, qz_slot* stack) {
+    if (slots != stack) {
+        free(slots);
+    }
+}
+
+JNIEXPORT jboolean QZ_JNI(qzListPush)(JNIEnv* env, jclass cls, jlong sandbox, jlong list, jlongArray element,
+                                      jint slots) {
     (void)cls;
-    qz_slot e = slot(element);
-    return qz_list_push(ptr(sandbox), slot(list), &e, 1);
+    qz_slot stack[8];
+    qz_slot* e = slotsOf(env, element, stack, 8);
+    bool ok = e != NULL && qz_list_push(ptr(sandbox), slot(list), e, (size_t)slots);
+    release(e, stack);
+    return ok;
 }
 
 JNIEXPORT jlong QZ_JNI(qzListLength)(JNIEnv* env, jclass cls, jlong list) {
@@ -607,5 +626,121 @@ JNIEXPORT jboolean QZ_JNI(qzListGet)(JNIEnv* env, jclass cls, jlong list, jlong 
     if (cell != e) {
         free(cell);
     }
+    return ok;
+}
+
+JNIEXPORT jint QZ_JNI(qzTypeFieldCount)(JNIEnv* env, jclass cls, jlong program, jint type) {
+    (void)env;
+    (void)cls;
+    return (jint)qz_type_field_count(ptr(program), (uint32_t)type);
+}
+
+JNIEXPORT jlong QZ_JNI(qzTypeField)(JNIEnv* env, jclass cls, jlong program, jint type, jint index) {
+    (void)env;
+    (void)cls;
+    uint32_t offset = 0;
+    uint32_t id = qz_type_field(ptr(program), (uint32_t)type, (uint32_t)index, &offset);
+    return ((jlong)id << 32) | offset;
+}
+
+JNIEXPORT jstring QZ_JNI(qzTypeFieldName)(JNIEnv* env, jclass cls, jlong program, jint type, jint index) {
+    (void)cls;
+    const char* name = qz_type_field_name(ptr(program), (uint32_t)type, (uint32_t)index);
+    return string(env, name, strlen(name));
+}
+
+JNIEXPORT jint QZ_JNI(qzTypeVariantCount)(JNIEnv* env, jclass cls, jlong program, jint type) {
+    (void)env;
+    (void)cls;
+    return (jint)qz_type_variant_count(ptr(program), (uint32_t)type);
+}
+
+JNIEXPORT jstring QZ_JNI(qzTypeVariantName)(JNIEnv* env, jclass cls, jlong program, jint type, jint variant) {
+    (void)cls;
+    const char* name = qz_type_variant_name(ptr(program), (uint32_t)type, (uint32_t)variant);
+    return string(env, name, strlen(name));
+}
+
+JNIEXPORT jint QZ_JNI(qzTypeVariantPayloadCount)(JNIEnv* env, jclass cls, jlong program, jint type, jint variant) {
+    (void)env;
+    (void)cls;
+    return (jint)qz_type_variant_payload_count(ptr(program), (uint32_t)type, (uint32_t)variant);
+}
+
+JNIEXPORT jlong QZ_JNI(qzTypeVariantPayload)(JNIEnv* env, jclass cls, jlong program, jint type, jint variant,
+                                             jint index) {
+    (void)env;
+    (void)cls;
+    uint32_t offset = 0;
+    uint32_t id = qz_type_variant_payload(ptr(program), (uint32_t)type, (uint32_t)variant, (uint32_t)index, &offset);
+    return ((jlong)id << 32) | offset;
+}
+
+JNIEXPORT jboolean QZ_JNI(qzTypeNullableIsPointer)(JNIEnv* env, jclass cls, jlong program, jint type) {
+    (void)env;
+    (void)cls;
+    return qz_type_nullable_is_pointer(ptr(program), (uint32_t)type);
+}
+
+JNIEXPORT jint QZ_JNI(qzTypeKey)(JNIEnv* env, jclass cls, jlong program, jint type) {
+    (void)env;
+    (void)cls;
+    return (jint)qz_type_key(ptr(program), (uint32_t)type);
+}
+
+JNIEXPORT jint QZ_JNI(qzResumeWide)(JNIEnv* env, jclass cls, jlong sandbox, jint task, jlongArray value, jint slots,
+                                    jlongArray outcome) {
+    (void)cls;
+    qz_slot stack[8];
+    qz_slot* v = slotsOf(env, value, stack, 8);
+    if (v == NULL) {
+        return QZ_ERROR;
+    }
+    qz_task_outcome o = {0};
+    qz_status status = qz_sandbox_resume_wide(ptr(sandbox), (uint32_t)task, v, (size_t)slots, &o);
+    release(v, stack);
+    storeOutcome(env, outcome, &o);
+    return (jint)status;
+}
+
+JNIEXPORT jlong QZ_JNI(qzSandboxMap)(JNIEnv* env, jclass cls, jlong sandbox, jint type) {
+    (void)env;
+    (void)cls;
+    return qz_sandbox_map(ptr(sandbox), (uint32_t)type).i;
+}
+
+JNIEXPORT jboolean QZ_JNI(qzMapSet)(JNIEnv* env, jclass cls, jlong sandbox, jlong map, jlongArray key,
+                                    jlongArray value) {
+    (void)cls;
+    qz_slot keyStack[8];
+    qz_slot valueStack[8];
+    qz_slot* k = slotsOf(env, key, keyStack, 8);
+    qz_slot* v = slotsOf(env, value, valueStack, 8);
+    bool ok = k != NULL && v != NULL && qz_map_set(ptr(sandbox), slot(map), k, v);
+    release(k, keyStack);
+    release(v, valueStack);
+    return ok;
+}
+
+JNIEXPORT jlong QZ_JNI(qzMapLength)(JNIEnv* env, jclass cls, jlong map) {
+    (void)env;
+    (void)cls;
+    return (jlong)qz_map_length(slot(map));
+}
+
+JNIEXPORT jboolean QZ_JNI(qzMapEntry)(JNIEnv* env, jclass cls, jlong sandbox, jlong map, jlong index, jlongArray key,
+                                      jlongArray value) {
+    (void)cls;
+    qz_slot keyStack[8];
+    qz_slot valueStack[8];
+    qz_slot* k = slotsOf(env, key, keyStack, 8);
+    qz_slot* v = slotsOf(env, value, valueStack, 8);
+    bool ok = k != NULL && v != NULL && qz_map_entry(ptr(sandbox), slot(map), (size_t)index, k, v);
+    if (ok) {
+        (*env)->SetLongArrayRegion(env, key, 0, (*env)->GetArrayLength(env, key), (const jlong*)k);
+        (*env)->SetLongArrayRegion(env, value, 0, (*env)->GetArrayLength(env, value), (const jlong*)v);
+    }
+    release(k, keyStack);
+    release(v, valueStack);
     return ok;
 }

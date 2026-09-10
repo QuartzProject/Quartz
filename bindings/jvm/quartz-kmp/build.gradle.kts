@@ -9,6 +9,7 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 
 plugins {
     kotlin("multiplatform")
+    kotlin("plugin.serialization")
 }
 
 // The native targets link libquartz statically, built here from a Quartz checkout given as -Pquartz.source.
@@ -215,6 +216,9 @@ kotlin {
     }
 
     sourceSets {
+        commonMain.dependencies {
+            api("org.jetbrains.kotlinx:kotlinx-serialization-core:1.11.0")
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")

@@ -85,11 +85,37 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
         }
     }
 
-    /** The type with id [id], its element resolved. */
+    /** The type with id [id], its element, key, fields and variants resolved; recursive types terminate. */
     fun type(id: Int): Type = types[id] ?: run {
-        val packed = typeOf(qzTypeKind(address, id))
-        val element = qzTypeElem(address, id)
-        Type(packed.kind, packed.slots, id, if (element == 0) null else type(element)).also { types[id] = it }
+        val p = address
+        val packed = typeOf(qzTypeKind(p, id))
+        val t = Type(packed.kind, packed.slots, id)
+        types[id] = t
+        val elementId = qzTypeElem(p, id)
+        val element = if (elementId == 0) null else type(elementId)
+        var key: Type? = null
+        var fields = emptyList<Type.Field>()
+        var cases = emptyList<Type.Case>()
+        var pointer = false
+        when (t.kind) {
+            Kind.MAP -> key = qzTypeKey(p, id).takeIf { it != 0 }?.let(::type)
+            Kind.STRUCT, Kind.TUPLE -> fields = List(qzTypeFieldCount(p, id)) { i ->
+                val f = qzTypeField(p, id, i)
+                val name = if (t.kind == Kind.STRUCT) qzTypeFieldName(p, id, i) else ""
+                Type.Field(name, type((f ushr 32).toInt()), f.toInt())
+            }
+            Kind.ENUM -> cases = List(qzTypeVariantCount(p, id)) { v ->
+                val payload = List(qzTypeVariantPayloadCount(p, id, v)) { i ->
+                    val f = qzTypeVariantPayload(p, id, v, i)
+                    Type.Field("", type((f ushr 32).toInt()), f.toInt())
+                }
+                Type.Case(qzTypeVariantName(p, id, v), v, payload)
+            }
+            Kind.NULLABLE -> pointer = qzTypeNullableIsPointer(p, id)
+            else -> {}
+        }
+        t.complete(element, key, fields, cases, pointer)
+        t
     }
 
     override fun binary(): ByteArray? = qzProgramBinary(address)
@@ -125,5 +151,18 @@ internal class CExport(
     val index: Int,
     override val signature: Signature,
 ) : Export {
+    /** First argument slot of each parameter, and how many slots a call passes. */
+    val offsets: IntArray = IntArray(signature.arity).also { o ->
+        var at = 0
+        signature.params.forEachIndexed { i, t ->
+            o[i] = at
+            at += t.slots
+        }
+    }
+    val argSlots: Int = signature.params.sumOf { it.slots }
+
+    /** Every parameter is one slot that is not laid out field by field. */
+    val simple: Boolean = signature.params.all { it.slots == 1 && !it.isComposite }
+
     override fun toString(): String = "Export[$name $signature]"
 }

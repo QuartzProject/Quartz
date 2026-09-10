@@ -29,7 +29,7 @@ public interface Export {
     public val signature: Signature
 }
 
-/** A host import: returns a boxed scalar, String, ByteArray, or anything for void; what it throws becomes a trap. */
+/** A host import: returns what [Sandbox.call] accepts for its result type; what it throws becomes a trap. */
 public fun interface HostFunction {
     public fun call(call: HostCall): Any?
 }
@@ -48,26 +48,32 @@ public interface HostCall {
     public fun string(index: Int): String
     public fun bytes(index: Int): ByteArray
 
-    /** Argument [index] boxed by its kind. */
+    /** Argument [index] boxed by its type, as [Value.get] does. */
     public fun arg(index: Int): Any?
 
     /** A list argument with its elements boxed by the element type. */
     public fun list(index: Int): List<Any?>
 
+    /** A map argument in insertion order. */
+    public fun map(index: Int): Map<Any?, Any?>
+
     /** Charges fuel for native work; false when the budget is gone. */
     public fun charge(units: Long): Boolean
 }
 
-/** One result slot of a known type; a str or list result is readable until the next call into its sandbox. */
+/** A result of a known type; what points into the sandbox (str, lists, maps) is readable until its next call. */
 public interface Value {
     public val type: Type
     public val kind: Kind get() = type.kind
 
-    /** The raw 64 bits of the slot. */
+    /** The raw 64 bits of the first slot. */
     public val bits: Long
 
     /** False once a later call may have freed what a str or list result points to. */
     public val isCurrent: Boolean
+
+    /** True for void and an empty nullable. */
+    public val isNull: Boolean get() = kind == Kind.VOID || (kind == Kind.NULLABLE && bits == 0L)
 
     public fun asLong(): Long
     public fun asInt(): Int = asLong().toInt()
@@ -78,7 +84,11 @@ public interface Value {
     public fun asString(): String
     public fun asBytes(): ByteArray
 
-    /** The value boxed by its type: Long, Double, Float, Boolean, Int (char), String, ByteArray, List, LongArray. */
+    /**
+     * The value boxed by its type: Long (integers and handles), Double, Float, Boolean, Int (char), String,
+     * ByteArray, List (lists and tuples), Map (in insertion order), [Struct], [Variant], [Result], or null for void
+     * and an empty nullable.
+     */
     public fun get(): Any?
 
     public fun listLength(): Int
@@ -86,8 +96,34 @@ public interface Value {
     /** A list result with its elements boxed by the element type, nested lists included. */
     public fun asList(): List<Any?>
 
-    /** Every raw slot, as many as `type.slots`: how a struct or tuple result comes back for now. */
+    public fun asStruct(): Struct = checkKind(Kind.STRUCT).get() as Struct
+
+    /** An enum result; a `Result` reads as variant `Ok` or `Err` too. */
+    public fun asVariant(): Variant = when (val v = checkKind(Kind.ENUM).get()) {
+        is Result.Ok<*> -> Variant("Ok", listOf(v.value))
+        is Result.Err<*> -> Variant("Err", listOf(v.error))
+        else -> v as Variant
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    public fun asResult(): Result<Any?, Any?> {
+        check(type.isResult) { "the value is $type, asResult does not apply" }
+        return get() as Result<Any?, Any?>
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    public fun asTuple(): List<Any?> = checkKind(Kind.TUPLE).get() as List<Any?>
+
+    @Suppress("UNCHECKED_CAST")
+    public fun asMap(): Map<Any?, Any?> = checkKind(Kind.MAP).get() as Map<Any?, Any?>
+
+    /** Every raw slot, as many as `type.slots`. */
     public fun slots(): LongArray
+}
+
+private fun Value.checkKind(kind: Kind): Value {
+    check(this.kind == kind) { "the value is $type, not a ${kind.name.lowercase()}" }
+    return this
 }
 
 /** An isolated instance of a program with its own memory, fuel and state, used by one thread at a time. */
@@ -101,6 +137,11 @@ public interface Sandbox : AutoCloseable {
     /** Checks every import is bound, creates the states and runs their initializers. */
     public fun start()
 
+    /**
+     * Calls an exported function. Arguments are boxed scalars, String, ByteArray, List or Array, Map (maps, or a
+     * struct by field name), [Struct], Pair or Triple (tuples), [Variant], an enum constant, [Result], null for an
+     * empty nullable, a [Value] of this sandbox, or a `@Serializable` value passed through [quartzValue].
+     */
     public fun call(function: Export, vararg args: Any?): Value
     public fun call(name: String, vararg args: Any?): Value = call(program.export(name), *args)
 

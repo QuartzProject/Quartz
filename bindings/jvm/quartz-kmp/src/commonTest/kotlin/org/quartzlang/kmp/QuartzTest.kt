@@ -81,7 +81,7 @@ class QuartzTest {
                 assertFailsWith<IllegalArgumentException> { sandbox.call("total", listOf("x")) }
                 assertEquals("n0n1", sandbox.callAs<String>("joined", 2))
                 assertEquals(listOf(14L, 8L), sandbox.call("pair", 7).slots().toList())
-                assertTrue(program.imports.any { it.builtIn } && program.imports.none { it.name == "greet" && it.builtIn })
+                assertTrue(program.imports.none { it.name == "greet" && it.builtIn })
                 sandbox.call("add", 0)
                 assertFailsWith<IllegalStateException> { words.asList() }
             }

@@ -40,7 +40,15 @@ internal class CValue(
         return owner.readString(bits, generation)
     }
 
-    override fun get(): Any? = wide?.copyOf() ?: Slots.box(type, bits, owner.readers(generation))
+    override fun get(): Any? {
+        if (wide == null && type.slots > 1) {
+            throw UnsupportedOperationException(
+                "only the first slot of this $type came back: the C interface returns one slot for a task's result",
+            )
+        }
+        val readers = owner.readers(generation)
+        return if (wide != null) Slots.decode(type, wide, 0, readers) else Slots.box(type, bits, readers)
+    }
 
     override fun listLength(): Int {
         check(kind == Kind.LIST) { "the value is $type, not a list" }
@@ -118,10 +126,17 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
     override fun arg(index: Int): Any? {
         kindAt(index)
         val type = signature.params[index]
-        if (type.slots != 1) {
-            throw UnsupportedOperationException("a $type argument cannot be read yet")
+        if (type.slots == 1 && !type.isComposite) {
+            return Slots.box(type, raw(index), sandbox.readers(-1))
         }
-        return Slots.box(type, raw(index), sandbox.readers(-1))
+        val at = signature.offset(index)
+        val slots = LongArray(maxOf(1, type.slots)) { if (it < type.slots) qzSlot(args, at + it) else 0L }
+        return Slots.decode(type, slots, 0, sandbox.readers(-1))
+    }
+
+    override fun map(index: Int): Map<Any?, Any?> {
+        check(kindAt(index) == Kind.MAP) { "argument $index is ${kindAt(index)}, not a map" }
+        return sandbox.readers(-1).map(signature.params[index], raw(index))
     }
 
     override fun list(index: Int): List<Any?> {
@@ -139,7 +154,15 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
         if (type.kind == Kind.VOID) {
             return
         }
-        qzSetSlot(result, 0, Slots.encode(type, value, makers))
+        if (type.slots == 1 && !type.isComposite) {
+            qzSetSlot(result, 0, Slots.encode(type, value, makers))
+            return
+        }
+        val slots = LongArray(maxOf(1, type.slots))
+        Slots.encode(type, value, slots, 0, makers)
+        for (i in 0 until type.slots) {
+            qzSetSlot(result, i, slots[i])
+        }
     }
 
     private val makers = object : Slots.Makers {
@@ -151,7 +174,9 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
 
         override fun list(type: Type, elements: List<*>): Long = sandbox.newList(type, elements, this)
 
-        override fun passBack(type: Type, value: Value): Long =
+        override fun map(type: Type, entries: Map<*, *>): Long = sandbox.newMap(type, entries, this)
+
+        override fun passBack(type: Type, value: Value, out: LongArray, at: Int) =
             throw IllegalArgumentException("a Value cannot be returned from a host function")
     }
 

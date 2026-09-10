@@ -130,8 +130,36 @@ internal actual external fun qzWaitType(sandbox: Long, task: Int): Int
 
 internal actual external fun qzSandboxList(sandbox: Long, type: Int): Long
 
-internal actual external fun qzListPush(sandbox: Long, list: Long, element: Long): Boolean
+internal actual external fun qzListPush(sandbox: Long, list: Long, element: LongArray, slots: Int): Boolean
 
 internal actual external fun qzListLength(list: Long): Long
 
 internal actual external fun qzListGet(list: Long, index: Long, out: LongArray, slots: Int): Boolean
+
+internal actual external fun qzTypeFieldCount(program: Long, type: Int): Int
+
+internal actual external fun qzTypeField(program: Long, type: Int, index: Int): Long
+
+internal actual external fun qzTypeFieldName(program: Long, type: Int, index: Int): String
+
+internal actual external fun qzTypeVariantCount(program: Long, type: Int): Int
+
+internal actual external fun qzTypeVariantName(program: Long, type: Int, variant: Int): String
+
+internal actual external fun qzTypeVariantPayloadCount(program: Long, type: Int, variant: Int): Int
+
+internal actual external fun qzTypeVariantPayload(program: Long, type: Int, variant: Int, index: Int): Long
+
+internal actual external fun qzTypeNullableIsPointer(program: Long, type: Int): Boolean
+
+internal actual external fun qzTypeKey(program: Long, type: Int): Int
+
+internal actual external fun qzResumeWide(sandbox: Long, task: Int, value: LongArray, slots: Int, outcome: LongArray): Int
+
+internal actual external fun qzSandboxMap(sandbox: Long, type: Int): Long
+
+internal actual external fun qzMapSet(sandbox: Long, map: Long, key: LongArray, value: LongArray): Boolean
+
+internal actual external fun qzMapLength(map: Long): Long
+
+internal actual external fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongArray, value: LongArray): Boolean

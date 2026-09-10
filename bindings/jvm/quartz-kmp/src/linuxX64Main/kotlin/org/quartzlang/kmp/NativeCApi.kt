@@ -73,6 +73,7 @@ import org.quartzlang.kmp.cinterop.qz_sandbox_live_tasks
 import org.quartzlang.kmp.cinterop.qz_sandbox_memory_used
 import org.quartzlang.kmp.cinterop.qz_sandbox_new
 import org.quartzlang.kmp.cinterop.qz_sandbox_reload
+import org.quartzlang.kmp.cinterop.qz_sandbox_resume_wide
 import org.quartzlang.kmp.cinterop.qz_sandbox_set_fuel
 import org.quartzlang.kmp.cinterop.qz_sandbox_spawn
 import org.quartzlang.kmp.cinterop.qz_sandbox_start
@@ -82,13 +83,26 @@ import org.quartzlang.kmp.cinterop.qz_slot
 import org.quartzlang.kmp.cinterop.qz_source
 import org.quartzlang.kmp.cinterop.qz_task_outcome
 import org.quartzlang.kmp.cinterop.qz_type_elem
+import org.quartzlang.kmp.cinterop.qz_type_field
+import org.quartzlang.kmp.cinterop.qz_type_field_count
+import org.quartzlang.kmp.cinterop.qz_type_field_name
+import org.quartzlang.kmp.cinterop.qz_type_key
 import org.quartzlang.kmp.cinterop.qz_type_kind
+import org.quartzlang.kmp.cinterop.qz_type_nullable_is_pointer
+import org.quartzlang.kmp.cinterop.qz_type_variant_count
+import org.quartzlang.kmp.cinterop.qz_type_variant_name
+import org.quartzlang.kmp.cinterop.qz_type_variant_payload
+import org.quartzlang.kmp.cinterop.qz_type_variant_payload_count
 import org.quartzlang.kmp.cinterop.qzk_call_str
 import org.quartzlang.kmp.cinterop.qzk_list_get
 import org.quartzlang.kmp.cinterop.qzk_list_length
 import org.quartzlang.kmp.cinterop.qzk_list_push
+import org.quartzlang.kmp.cinterop.qzk_map_entry
+import org.quartzlang.kmp.cinterop.qzk_map_length
+import org.quartzlang.kmp.cinterop.qzk_map_set
 import org.quartzlang.kmp.cinterop.qzk_resume
 import org.quartzlang.kmp.cinterop.qzk_sandbox_list
+import org.quartzlang.kmp.cinterop.qzk_sandbox_map
 import org.quartzlang.kmp.cinterop.qzk_sandbox_str
 import org.quartzlang.kmp.cinterop.qzk_str
 
@@ -368,11 +382,75 @@ internal actual fun qzWaitType(sandbox: Long, task: Int): Int =
 internal actual fun qzSandboxList(sandbox: Long, type: Int): Long =
     qzk_sandbox_list(sandbox(sandbox), type.toUInt()).toLong()
 
-internal actual fun qzListPush(sandbox: Long, list: Long, element: Long): Boolean =
-    qzk_list_push(sandbox(sandbox), list.toULong(), element.toULong())
+internal actual fun qzListPush(sandbox: Long, list: Long, element: LongArray, slots: Int): Boolean =
+    element.usePinned {
+        qzk_list_push(sandbox(sandbox), list.toULong(), it.addressOf(0).reinterpret(), slots.toULong())
+    }
 
 internal actual fun qzListLength(list: Long): Long = qzk_list_length(list.toULong()).toLong()
 
 internal actual fun qzListGet(list: Long, index: Long, out: LongArray, slots: Int): Boolean = out.usePinned {
     qzk_list_get(list.toULong(), index.toULong(), it.addressOf(0).reinterpret(), slots.toULong())
 }
+
+internal actual fun qzTypeFieldCount(program: Long, type: Int): Int =
+    qz_type_field_count(program(program), type.toUInt()).toInt()
+
+internal actual fun qzTypeField(program: Long, type: Int, index: Int): Long = memScoped {
+    val offset = alloc<UIntVar>()
+    pack(qz_type_field(program(program), type.toUInt(), index.toUInt(), offset.ptr), offset.value)
+}
+
+internal actual fun qzTypeFieldName(program: Long, type: Int, index: Int): String =
+    qz_type_field_name(program(program), type.toUInt(), index.toUInt())?.toKString() ?: ""
+
+internal actual fun qzTypeVariantCount(program: Long, type: Int): Int =
+    qz_type_variant_count(program(program), type.toUInt()).toInt()
+
+internal actual fun qzTypeVariantName(program: Long, type: Int, variant: Int): String =
+    qz_type_variant_name(program(program), type.toUInt(), variant.toUInt())?.toKString() ?: ""
+
+internal actual fun qzTypeVariantPayloadCount(program: Long, type: Int, variant: Int): Int =
+    qz_type_variant_payload_count(program(program), type.toUInt(), variant.toUInt()).toInt()
+
+internal actual fun qzTypeVariantPayload(program: Long, type: Int, variant: Int, index: Int): Long = memScoped {
+    val offset = alloc<UIntVar>()
+    pack(qz_type_variant_payload(program(program), type.toUInt(), variant.toUInt(), index.toUInt(), offset.ptr),
+        offset.value)
+}
+
+internal actual fun qzTypeNullableIsPointer(program: Long, type: Int): Boolean =
+    qz_type_nullable_is_pointer(program(program), type.toUInt())
+
+internal actual fun qzTypeKey(program: Long, type: Int): Int = qz_type_key(program(program), type.toUInt()).toInt()
+
+internal actual fun qzResumeWide(sandbox: Long, task: Int, value: LongArray, slots: Int, outcome: LongArray): Int =
+    memScoped {
+        val o = alloc<qz_task_outcome>()
+        val status = value.usePinned { pinned ->
+            qz_sandbox_resume_wide(sandbox(sandbox), task.toUInt(), pinned.addressOf(0).reinterpret(),
+                slots.toULong(), o.ptr)
+        }
+        store(o, outcome)
+        status.toInt()
+    }
+
+internal actual fun qzSandboxMap(sandbox: Long, type: Int): Long =
+    qzk_sandbox_map(sandbox(sandbox), type.toUInt()).toLong()
+
+internal actual fun qzMapSet(sandbox: Long, map: Long, key: LongArray, value: LongArray): Boolean =
+    key.usePinned { k ->
+        value.usePinned { v ->
+            qzk_map_set(sandbox(sandbox), map.toULong(), k.addressOf(0).reinterpret(), v.addressOf(0).reinterpret())
+        }
+    }
+
+internal actual fun qzMapLength(map: Long): Long = qzk_map_length(map.toULong()).toLong()
+
+internal actual fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongArray, value: LongArray): Boolean =
+    key.usePinned { k ->
+        value.usePinned { v ->
+            qzk_map_entry(sandbox(sandbox), map.toULong(), index.toULong(), k.addressOf(0).reinterpret(),
+                v.addressOf(0).reinterpret())
+        }
+    }

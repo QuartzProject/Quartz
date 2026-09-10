@@ -139,9 +139,43 @@ internal expect fun qzWaitType(sandbox: Long, task: Int): Int
 
 internal expect fun qzSandboxList(sandbox: Long, type: Int): Long
 
-internal expect fun qzListPush(sandbox: Long, list: Long, element: Long): Boolean
+/** Appends an element given as its `slots` slots. */
+internal expect fun qzListPush(sandbox: Long, list: Long, element: LongArray, slots: Int): Boolean
 
 internal expect fun qzListLength(list: Long): Long
 
 /** Element [index] of a list, its `slots` slots in `out`; false out of range or with the wrong slot count. */
 internal expect fun qzListGet(list: Long, index: Long, out: LongArray, slots: Int): Boolean
+
+internal expect fun qzTypeFieldCount(program: Long, type: Int): Int
+
+/** Type id of field or element [index] in the high half and its slot offset in the low half. */
+internal expect fun qzTypeField(program: Long, type: Int, index: Int): Long
+
+internal expect fun qzTypeFieldName(program: Long, type: Int, index: Int): String
+
+internal expect fun qzTypeVariantCount(program: Long, type: Int): Int
+
+internal expect fun qzTypeVariantName(program: Long, type: Int, variant: Int): String
+
+internal expect fun qzTypeVariantPayloadCount(program: Long, type: Int, variant: Int): Int
+
+/** Type id of payload value [index] in the high half and its slot offset in the low half. */
+internal expect fun qzTypeVariantPayload(program: Long, type: Int, variant: Int, index: Int): Long
+
+internal expect fun qzTypeNullableIsPointer(program: Long, type: Int): Boolean
+
+internal expect fun qzTypeKey(program: Long, type: Int): Int
+
+/** Resumes a task with a value of `slots` slots. */
+internal expect fun qzResumeWide(sandbox: Long, task: Int, value: LongArray, slots: Int, outcome: LongArray): Int
+
+internal expect fun qzSandboxMap(sandbox: Long, type: Int): Long
+
+/** Inserts or replaces an entry; [key] and [value] hold as many slots as the map's types take. */
+internal expect fun qzMapSet(sandbox: Long, map: Long, key: LongArray, value: LongArray): Boolean
+
+internal expect fun qzMapLength(map: Long): Long
+
+/** Entry [index] in insertion order, copied into [key] and [value]; false out of range. */
+internal expect fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongArray, value: LongArray): Boolean

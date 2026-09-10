@@ -8,7 +8,10 @@ public fun compileQuartz(vararg sources: Pair<String, String>, options: CompileO
 public inline fun <R> Program.withSandbox(limits: Limits = Limits.DEFAULT, block: (Sandbox) -> R): R =
     Quartz.sandbox(this, limits).use(block)
 
-/** Reads the value as [T]: Long, Int, Double, Float, Boolean, String, ByteArray or Unit. */
+/**
+ * Reads the value as [T]: Long, Int, Double, Float, Boolean, String, ByteArray, Unit, [Struct], [Variant] or Any
+ * (as [Value.get] gives it), or any `@Serializable` type through [decode].
+ */
 public inline fun <reified T> Value.read(): T = when (T::class) {
     Long::class -> asLong()
     Int::class -> asInt()
@@ -18,7 +21,8 @@ public inline fun <reified T> Value.read(): T = when (T::class) {
     String::class -> asString()
     ByteArray::class -> asBytes()
     Unit::class -> Unit
-    else -> throw IllegalArgumentException("a Quartz result cannot be read as ${T::class}")
+    Any::class, Struct::class, Variant::class -> get()
+    else -> decode<T>()
 } as T
 
 /** Calls [function] and reads its result as [T], copying a string out before anything else can free it. */

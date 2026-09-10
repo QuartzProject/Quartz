@@ -1,59 +1,104 @@
 package org.quartzlang.kmp
 
-/** Converts between Kotlin values and one qz_slot by the kind the program declares. */
+/** Converts between Kotlin values and the slots of a Quartz value by the type the program declares. */
 internal object Slots {
-    /** Makes str and list slots in whatever arena is current, and checks values passed back. */
+    /** Makes str, list and map slots in whatever arena is current, and checks values passed back. */
     interface Makers {
         fun string(utf8: ByteArray): Long
 
         fun list(type: Type, elements: List<*>): Long
 
-        fun passBack(type: Type, value: Value): Long
+        fun map(type: Type, entries: Map<*, *>): Long
+
+        /** The slots of a result of this sandbox passed back as [type], written at [out] from [at]. */
+        fun passBack(type: Type, value: Value, out: LongArray, at: Int)
     }
 
-    /** Reads what str and list slots point to. */
+    /** Reads what str, list and map slots point to. */
     interface Readers {
         fun string(bits: Long): ByteArray
 
         fun list(type: Type, bits: Long): List<Any?>
+
+        fun map(type: Type, bits: Long): Map<Any?, Any?>
     }
 
-    /** A slot the program reads as [type]; throws IllegalArgumentException when [value] does not fit. */
+    /** One slot of a one-slot type; throws IllegalArgumentException when [value] does not fit. */
     fun encode(type: Type, value: Any?, makers: Makers): Long {
-        val kind = type.kind
-        require(type.slots == 1) { "a $type value cannot cross the C interface yet" }
-        if (value == null) {
-            require(type.isNullableReference) { "null cannot be passed as $type" }
-            return 0
+        if (type.kind == Kind.I64 && value is Long) {
+            return value
         }
+        if (!type.isComposite && value !is Value) {
+            return scalar(type, value, makers)
+        }
+        val out = LongArray(maxOf(1, type.slots))
+        encode(type, value, out, 0, makers)
+        return out[0]
+    }
+
+    /** Writes [value] as [type] into `out[at until at + type.slots]`. */
+    fun encode(type: Type, value: Any?, out: LongArray, at: Int, makers: Makers) {
         if (value is Value) {
-            return makers.passBack(type, value)
+            makers.passBack(type, value, out, at)
+            return
         }
-        if (kind.isInteger) {
-            return integer(kind, value)
-        }
-        return when (kind) {
-            Kind.BOOL -> if (value is Boolean) (if (value) 1L else 0L) else throw mismatch(type, value)
-            Kind.F64 -> floating(type, value).toRawBits()
-            Kind.F32 -> floating(type, value).toFloat().toRawBits().toLong() and 0xFFFF_FFFFL
-            Kind.CHAR -> codePoint(type, value)
-            Kind.STR -> if (value is String) makers.string(value.encodeToByteArray()) else throw mismatch(type, value)
-            Kind.BYTES -> if (value is ByteArray) makers.string(value) else throw mismatch(type, value)
-            Kind.LIST -> if (value is List<*>) makers.list(type, value) else throw mismatch(type, value)
+        when (type.kind) {
+            Kind.VOID -> {}
+            Kind.STRUCT -> fill(type.fields, structValues(type, value), out, at, makers)
+            Kind.TUPLE -> fill(type.fields, tupleValues(type, value), out, at, makers)
+            Kind.ENUM -> {
+                val v = variantOf(type, value)
+                val c = type.findCase(v.name) ?: throw IllegalArgumentException(
+                    "no variant ${v.name} in $type; it has ${type.cases.map { it.name }}",
+                )
+                require(c.payload.size == v.values.size) {
+                    "variant ${c.name} takes ${c.payload.size} values, got ${v.values.size}"
+                }
+                out.fill(0L, at, at + type.slots)
+                out[at] = c.index.toLong()
+                fill(c.payload, v.values, out, at, makers)
+            }
             Kind.NULLABLE -> {
-                require(type.isNullableReference) { "a $type value cannot cross the C interface yet" }
-                encode(type.element!!, value, makers)
+                out.fill(0L, at, at + type.slots)
+                if (value != null) {
+                    if (type.isPointerNullable) {
+                        encode(type.element!!, value, out, at, makers)
+                    } else {
+                        out[at] = 1
+                        encode(type.element!!, value, out, at + 1, makers)
+                    }
+                }
             }
-            Kind.HANDLE -> when (value) {
-                is Long -> value
-                is Int -> value.toLong()
-                else -> throw mismatch(type, value)
-            }
-            else -> throw IllegalArgumentException("a $type value cannot cross the C interface yet")
+            else -> out[at] = scalar(type, value, makers)
         }
     }
 
-    /** The slot boxed as its type says: Long, Float, Double, Boolean, Int (char), String, ByteArray, List or null. */
+    /** Reads a value of [type] from `slots[at..]`; see [Value.get] for what each type gives. */
+    fun decode(type: Type, slots: LongArray, at: Int, readers: Readers): Any? = when (type.kind) {
+        Kind.VOID -> null
+        Kind.STRUCT -> Struct(type.fields.map { it.name }, read(type.fields, slots, at, readers))
+        Kind.TUPLE -> read(type.fields, slots, at, readers)
+        Kind.ENUM -> {
+            val index = slots[at]
+            if (index < 0 || index >= type.cases.size) {
+                throw QuartzException("enum value with an unknown variant $index")
+            }
+            val c = type.cases[index.toInt()]
+            val values = read(c.payload, slots, at, readers)
+            when {
+                !type.isResult -> Variant(c.name, values)
+                c.index == 0 -> Result.Ok(values[0])
+                else -> Result.Err(values[0])
+            }
+        }
+        Kind.NULLABLE -> when {
+            slots[at] == 0L -> null
+            else -> decode(type.element!!, slots, if (type.isPointerNullable) at else at + 1, readers)
+        }
+        else -> box(type, slots[at], readers)
+    }
+
+    /** A one-slot value as the Kotlin value it maps to. */
     fun box(type: Type, bits: Long, readers: Readers): Any? {
         val kind = type.kind
         if (kind.isInteger || kind == Kind.HANDLE) {
@@ -68,14 +113,19 @@ internal object Slots {
             Kind.STR -> readers.string(bits).decodeToString()
             Kind.BYTES -> readers.string(bits)
             Kind.LIST -> readers.list(type, bits)
-            Kind.NULLABLE -> {
-                if (!type.isNullableReference) {
-                    throw UnsupportedOperationException("a $type value cannot be read through the C interface yet")
-                }
-                if (bits == 0L) null else box(type.element!!, bits, readers)
-            }
-            else -> throw UnsupportedOperationException("a $kind value cannot be read through the C interface yet")
+            Kind.MAP -> readers.map(type, bits)
+            Kind.STRUCT, Kind.TUPLE, Kind.ENUM, Kind.NULLABLE -> decode(type, longArrayOf(bits), 0, readers)
+            else -> throw UnsupportedOperationException("a $kind value cannot be read through the C interface")
         }
+    }
+
+    /** True when the type, or anything inside it, points into the sandbox's memory. */
+    fun holdsReferences(type: Type): Boolean = when (type.kind) {
+        Kind.STR, Kind.BYTES, Kind.LIST, Kind.MAP, Kind.FUNCTION -> true
+        Kind.NULLABLE -> type.element?.let(::holdsReferences) ?: true
+        Kind.STRUCT, Kind.TUPLE -> type.fields.any { holdsReferences(it.type) }
+        Kind.ENUM -> type.cases.any { c -> c.payload.any { holdsReferences(it.type) } }
+        else -> false
     }
 
     /** An integer slot as a Long: signed kinds sign-extended from their width, unsigned ones zero-extended. */
@@ -99,6 +149,112 @@ internal object Slots {
     fun double(kind: Kind, bits: Long): Double =
         if (kind == Kind.F32) Float.fromBits(bits.toInt()).toDouble() else Double.fromBits(bits)
 
+    fun checkedInteger(kind: Kind, n: Long): Long {
+        val width = kind.bits
+        val fits = width == 64 || if (kind.isSigned) {
+            n >= -(1L shl (width - 1)) && n < 1L shl (width - 1)
+        } else {
+            n >= 0 && n < 1L shl width
+        }
+        require(fits) { "$n does not fit in ${kind.name.lowercase()}" }
+        return n
+    }
+
+    private fun fill(fields: List<Type.Field>, values: List<Any?>, out: LongArray, at: Int, makers: Makers) {
+        for (i in values.indices) {
+            val f = fields[i]
+            encode(f.type, values[i], out, at + f.offset, makers)
+        }
+    }
+
+    private fun read(fields: List<Type.Field>, slots: LongArray, at: Int, readers: Readers): List<Any?> =
+        fields.map { decode(it.type, slots, at + it.offset, readers) }
+
+    private fun scalar(type: Type, value: Any?, makers: Makers): Long {
+        val kind = type.kind
+        requireNotNull(value) { "null cannot be passed as $type" }
+        if (kind.isInteger) {
+            return integer(kind, value)
+        }
+        return when (kind) {
+            Kind.BOOL -> if (value is Boolean) (if (value) 1L else 0L) else throw mismatch(type, value)
+            Kind.F64 -> floating(type, value).toRawBits()
+            Kind.F32 -> floating(type, value).toFloat().toRawBits().toLong() and 0xFFFF_FFFFL
+            Kind.CHAR -> codePoint(type, value)
+            Kind.STR -> if (value is String) makers.string(value.encodeToByteArray()) else throw mismatch(type, value)
+            Kind.BYTES -> if (value is ByteArray) makers.string(value) else throw mismatch(type, value)
+            Kind.LIST -> when (value) {
+                is List<*> -> makers.list(type, value)
+                is Array<*> -> makers.list(type, value.asList())
+                else -> throw mismatch(type, value)
+            }
+            Kind.MAP -> if (value is Map<*, *>) makers.map(type, value) else throw mismatch(type, value)
+            Kind.HANDLE -> when (value) {
+                is Long -> value
+                is Int -> value.toLong()
+                else -> throw mismatch(type, value)
+            }
+            else -> throw IllegalArgumentException("a $type value cannot cross the C interface")
+        }
+    }
+
+    private fun structValues(type: Type, value: Any?): List<Any?> {
+        val names = type.fields.map { it.name }
+        return when (value) {
+            is Struct -> names.map { name ->
+                val i = value.names.indexOf(name).takeIf { it >= 0 }
+                    ?: value.names.indexOfFirst { normalize(it) == normalize(name) }
+                require(i >= 0) { "the struct passed lacks field $name" }
+                value.values[i]
+            }
+            is Map<*, *> -> {
+                for (k in value.keys) {
+                    require(k is String && k in names) { "the struct has no field $k; it has $names" }
+                }
+                type.fields.map { f ->
+                    require(f.name in value || f.type.kind == Kind.NULLABLE) {
+                        "the map passed as a struct lacks field ${f.name}"
+                    }
+                    value[f.name]
+                }
+            }
+            null -> throw IllegalArgumentException("null cannot be passed as $type")
+            else -> throw notGeneric(type, value)
+        }
+    }
+
+    private fun tupleValues(type: Type, value: Any?): List<Any?> {
+        val values = when (value) {
+            is List<*> -> value
+            is Array<*> -> value.asList()
+            is Pair<*, *> -> value.toList()
+            is Triple<*, *, *> -> value.toList()
+            is Struct -> value.values
+            null -> throw IllegalArgumentException("null cannot be passed as $type")
+            else -> throw notGeneric(type, value)
+        }
+        require(values.size == type.fields.size) {
+            "a tuple of ${type.fields.size} cannot take ${values.size} values"
+        }
+        return values
+    }
+
+    private fun variantOf(type: Type, value: Any?): Variant = when {
+        value is Variant -> value
+        value is Result.Ok<*> -> Variant("Ok", listOf(value.value))
+        value is Result.Err<*> -> Variant("Err", listOf(value.error))
+        type.isResult -> Variant("Ok", listOf(value))
+        value is String -> Variant(value)
+        value is Enum<*> -> Variant(value.name)
+        value == null -> throw IllegalArgumentException("null cannot be passed as $type")
+        else -> throw notGeneric(type, value)
+    }
+
+    private fun notGeneric(type: Type, value: Any) = IllegalArgumentException(
+        "a ${value::class.simpleName} cannot be passed as $type: pass a Struct, Map, List, Variant or Result, " +
+            "or a @Serializable value through quartzValue()",
+    )
+
     private fun mismatch(type: Type, value: Any) =
         IllegalArgumentException("a ${value::class.simpleName} cannot be passed as $type")
 
@@ -112,17 +268,6 @@ internal object Slots {
             else -> throw IllegalArgumentException("a ${value::class.simpleName} cannot be passed as $kind")
         }
         return checkedInteger(kind, n)
-    }
-
-    fun checkedInteger(kind: Kind, n: Long): Long {
-        val width = kind.bits
-        val fits = width == 64 || if (kind.isSigned) {
-            n >= -(1L shl (width - 1)) && n < 1L shl (width - 1)
-        } else {
-            n >= 0 && n < 1L shl width
-        }
-        require(fits) { "$n does not fit in ${kind.name.lowercase()}" }
-        return n
     }
 
     private fun floating(type: Type, value: Any): Double = when (value) {

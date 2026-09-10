@@ -31,12 +31,32 @@ static inline uint64_t qzk_sandbox_list(qz_sandbox* sandbox, uint32_t type) {
     return qz_sandbox_list(sandbox, type).u;
 }
 
-static inline bool qzk_list_push(qz_sandbox* sandbox, uint64_t list, uint64_t element) {
+static inline bool qzk_list_push(qz_sandbox* sandbox, uint64_t list, const uint64_t* element, size_t slots) {
     qz_slot l;
-    qz_slot e;
     l.u = list;
-    e.u = element;
-    return qz_list_push(sandbox, l, &e, 1);
+    return qz_list_push(sandbox, l, (const qz_slot*)element, slots);
+}
+
+static inline uint64_t qzk_sandbox_map(qz_sandbox* sandbox, uint32_t type) {
+    return qz_sandbox_map(sandbox, type).u;
+}
+
+static inline bool qzk_map_set(qz_sandbox* sandbox, uint64_t map, const uint64_t* key, const uint64_t* value) {
+    qz_slot m;
+    m.u = map;
+    return qz_map_set(sandbox, m, (const qz_slot*)key, (const qz_slot*)value);
+}
+
+static inline size_t qzk_map_length(uint64_t map) {
+    qz_slot m;
+    m.u = map;
+    return qz_map_length(m);
+}
+
+static inline bool qzk_map_entry(qz_sandbox* sandbox, uint64_t map, size_t index, uint64_t* key, uint64_t* value) {
+    qz_slot m;
+    m.u = map;
+    return qz_map_entry(sandbox, m, index, (qz_slot*)key, (qz_slot*)value);
 }
 
 static inline size_t qzk_list_length(uint64_t list) {
