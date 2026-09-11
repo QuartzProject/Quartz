@@ -130,6 +130,7 @@ final class Shape {
     /** For each component, the index of the struct field with its name. */
     int[] readPlan(Type struct) {
         return readPlans.computeIfAbsent(struct, s -> {
+            checkName(s);
             int[] plan = new int[names.length];
             for (int j = 0; j < names.length; ++j) {
                 plan[j] = fieldIndex(s, names[j]);
@@ -145,6 +146,9 @@ final class Shape {
     /** For each struct field, the getter that reads it from an instance of this class. */
     MethodHandle[] writePlan(Type struct) {
         return writePlans.computeIfAbsent(struct, s -> {
+            if (form == Form.PRODUCT) {
+                checkName(s);
+            }
             List<Type.Field> fields = s.fields();
             MethodHandle[] plan = new MethodHandle[fields.size()];
             for (int i = 0; i < plan.length; ++i) {
@@ -157,6 +161,12 @@ final class Shape {
             }
             return plan;
         });
+    }
+
+    private void checkName(Type struct) {
+        if (!Names.sameType(struct.name(), type.getSimpleName())) {
+            throw new IllegalArgumentException(type.getSimpleName() + " does not map to the struct " + struct.name());
+        }
     }
 
     Object construct(Object[] args) throws Throwable {

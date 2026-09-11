@@ -32,6 +32,7 @@ public final class Type {
     private List<Field> fields = List.of();
     private List<Case> cases = List.of();
     private boolean pointerNullable;
+    private String name = "";
 
     public Type(Kind kind, int slots) {
         this(kind, slots, 0, null);
@@ -52,6 +53,15 @@ public final class Type {
         this.fields = List.copyOf(fields);
         this.cases = List.copyOf(cases);
         this.pointerNullable = pointerNullable;
+    }
+
+    void named(String typeName) {
+        name = typeName == null ? "" : typeName;
+    }
+
+    /** How the source names a struct or enum ({@code Point}, {@code Box<int>}); empty when unknown. */
+    public String name() {
+        return name;
     }
 
     public Kind kind() {

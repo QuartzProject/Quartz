@@ -1,5 +1,6 @@
 package org.quartzlang.jvm;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -32,6 +33,7 @@ class ValuesTest {
             @awaitable(Pos)
             struct AskPos {}
             fn askPos() -> AskPos
+            fn echo(data: Bytes) -> Bytes
             """;
     static final String PLUGIN = """
             struct Point {
@@ -121,6 +123,9 @@ class ValuesTest {
                 }
                 return n
             }
+            fn bounce(data: Bytes) -> Bytes {
+                return echo(data)
+            }
             suspend fn walk() -> int {
                 let p = wait askPos()
                 return p.x * 100 + p.y
@@ -130,6 +135,8 @@ class ValuesTest {
     record Point(String label, long x, long y) {}
 
     record Pos(long x, long y) {}
+
+    record Pt(String label, long x, long y) {}
 
     record Request(String url, int timeout) {}
 
@@ -164,6 +171,7 @@ class ValuesTest {
                 return out;
             });
             sandbox.bind("askPos", call -> 1L);
+            sandbox.bind("echo", call -> call.bytesArg(0));
             sandbox.start();
 
             Struct moved = sandbox.call("shift", Map.of("x", 1L, "y", 2L, "label", "a"), 10).asStruct();
@@ -171,6 +179,9 @@ class ValuesTest {
             assertEquals(11L, moved.get("x"));
             assertEquals(new Point("b!", 3, 4), sandbox.call("shift", new Point("b", 1, 4), 2).to(Point.class));
             assertThrows(IllegalArgumentException.class, () -> sandbox.call("shift", Map.of("x", 1L), 1));
+            assertThrows(IllegalArgumentException.class, () -> sandbox.call("shift", new Pt("c", 1, 1), 1));
+            byte[] binary = {(byte) 0xff, 0, (byte) 0xc3, (byte) 0x28};
+            assertArrayEquals(binary, sandbox.call("bounce", binary).asBytes());
 
             assertEquals(List.of("s", 7L), sandbox.call("swap", List.of(7L, "s")).asTuple());
             assertEquals(Color.DEEP_BLUE, sandbox.call("next", Color.GREEN).to(Color.class));

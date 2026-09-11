@@ -198,6 +198,9 @@ public final class Program implements AutoCloseable {
                     key = keyId == 0 ? null : resolve(keyId, resolving);
                 }
                 case STRUCT, TUPLE -> {
+                    if (kind == Kind.STRUCT) {
+                        t.named(Native.takeString((MemorySegment) Native.TYPE_NAME.invokeExact(p, id), false));
+                    }
                     int count = (int) Native.TYPE_FIELD_COUNT.invokeExact(p, id);
                     for (int i = 0; i < count; ++i) {
                         int fieldId = (int) Native.TYPE_FIELD.invokeExact(p, id, i, cell);
@@ -209,6 +212,7 @@ public final class Program implements AutoCloseable {
                     }
                 }
                 case ENUM -> {
+                    t.named(Native.takeString((MemorySegment) Native.TYPE_NAME.invokeExact(p, id), false));
                     int count = (int) Native.TYPE_VARIANT_COUNT.invokeExact(p, id);
                     for (int v = 0; v < count; ++v) {
                         String name = Native.takeString(
@@ -242,14 +246,29 @@ public final class Program implements AutoCloseable {
         }
     }
 
-    /** The import called {@code name}, or the only one whose name without its package is {@code name}. */
+    /**
+     * The import called {@code name} with its package, or without it when only one import has that name.
+     *
+     * @throws IllegalArgumentException when several imports share {@code name} without a package
+     */
     public Optional<Import> findImport(String name) {
-        Optional<Import> exact = imports().stream().filter(i -> i.name().equals(name)).findFirst();
-        if (exact.isPresent()) {
-            return exact;
+        List<Import> all = imports();
+        handle.retain();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment index = arena.allocate(JAVA_INT);
+            int status = (int) Native.FIND_IMPORT.invokeExact(handle.address(),
+                    arena.allocateFrom(name, StandardCharsets.UTF_8), index);
+            if (status == Native.LOOKUP_AMBIGUOUS) {
+                throw new IllegalArgumentException("several imports are named " + name + "; give its package");
+            }
+            int i = index.get(JAVA_INT, 0);
+            return status == Native.LOOKUP_FOUND && i >= 0 && i < all.size() ? Optional.of(all.get(i))
+                    : Optional.empty();
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            handle.release();
         }
-        List<Import> shortForm = imports().stream().filter(i -> i.name().endsWith("." + name)).toList();
-        return shortForm.size() == 1 ? Optional.of(shortForm.get(0)) : Optional.empty();
     }
 
     /** The .qzi other packages compile against, for a program built with a package.toml. */

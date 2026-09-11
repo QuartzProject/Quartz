@@ -192,6 +192,15 @@ public final class HostCall {
         }
 
         @Override
+        public long bytes(byte[] data) throws Throwable {
+            long slot = (long) Native.CALL_BYTES.invokeExact(call, MemorySegment.ofArray(data), (long) data.length);
+            if (slot == 0) {
+                throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning Bytes");
+            }
+            return slot;
+        }
+
+        @Override
         public long list(Type type, List<?> elements) throws Throwable {
             return sandbox.newList(type, elements, this);
         }

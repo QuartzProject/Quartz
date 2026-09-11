@@ -17,7 +17,9 @@ import java.lang.invoke.MethodHandle;
 /** quartz.h as method handles; a qz_slot or an opaque pointer travels as a long, as every 64-bit ABI passes it. */
 final class Native {
     static final int ABI_VERSION = 1;
-    static final int API_LEVEL_NEEDED = 3;
+    static final int API_LEVEL_NEEDED = 4;
+    static final int LOOKUP_FOUND = 0;
+    static final int LOOKUP_AMBIGUOUS = 2;
     static final int OK = 0;
     static final int ERROR = 1;
     static final int TRAP = 2;
@@ -107,6 +109,10 @@ final class Native {
     static final MethodHandle MAP_SET;
     static final MethodHandle MAP_LENGTH;
     static final MethodHandle MAP_ENTRY;
+    static final MethodHandle FIND_IMPORT;
+    static final MethodHandle TYPE_NAME;
+    static final MethodHandle SANDBOX_BYTES;
+    static final MethodHandle CALL_BYTES;
 
     static {
         if (ADDRESS.byteSize() != 8) {
@@ -202,6 +208,12 @@ final class Native {
         MAP_LENGTH = fn("qz_map_length", FunctionDescriptor.of(SIZE_T, JAVA_LONG), CRITICAL);
         MAP_ENTRY = fn("qz_map_entry",
                 FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, SIZE_T, ADDRESS, ADDRESS), CRITICAL);
+        FIND_IMPORT = fn("qz_program_find_import", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS),
+                CRITICAL);
+        TYPE_NAME = fn("qz_type_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+        SANDBOX_BYTES = fn("qz_sandbox_bytes", FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS, SIZE_T),
+                CRITICAL_HEAP);
+        CALL_BYTES = fn("qz_call_bytes", FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS, SIZE_T), CRITICAL_HEAP);
         int abi = abiVersion();
         if (abi != ABI_VERSION) {
             throw new UnsatisfiedLinkError("libquartz has ABI " + abi + ", quartz-jvm needs " + ABI_VERSION);

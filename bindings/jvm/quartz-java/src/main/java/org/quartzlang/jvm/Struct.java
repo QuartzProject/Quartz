@@ -20,6 +20,11 @@ public final class Struct {
 
     /** A struct to pass, with these fields in this order; a struct parameter takes it by name, a tuple by position. */
     public static Struct of(Map<String, ?> fields) {
+        return of("", fields);
+    }
+
+    /** A struct to pass named like the Quartz struct it is meant for, which is then checked. */
+    public static Struct of(String name, Map<String, ?> fields) {
         List<Type.Field> layout = new ArrayList<>(fields.size());
         Object[] values = new Object[fields.size()];
         int i = 0;
@@ -29,6 +34,7 @@ public final class Struct {
         }
         Type type = new Type(Kind.STRUCT, values.length);
         type.complete(null, null, layout, List.of(), false);
+        type.named(name);
         return new Struct(type, values);
     }
 

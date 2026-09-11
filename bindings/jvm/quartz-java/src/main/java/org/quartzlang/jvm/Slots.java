@@ -13,6 +13,8 @@ final class Slots {
     interface Makers {
         long string(byte[] utf8) throws Throwable;
 
+        long bytes(byte[] data) throws Throwable;
+
         long list(Type type, List<?> elements) throws Throwable;
 
         long map(Type type, Map<?, ?> entries) throws Throwable;
@@ -211,7 +213,7 @@ final class Slots {
                 if (!(value instanceof byte[] b)) {
                     throw mismatch(type, value);
                 }
-                yield makers.string(b);
+                yield makers.bytes(b);
             }
             case HANDLE -> {
                 if (!(value instanceof Long || value instanceof Integer)) {
@@ -245,6 +247,10 @@ final class Slots {
         List<Type.Field> fields = type.fields();
         Object[] out = new Object[fields.size()];
         if (value instanceof Struct s) {
+            if (!Names.sameType(type.name(), s.type().name())) {
+                throw new IllegalArgumentException("a struct " + s.type().name() + " cannot be passed as "
+                        + type.name());
+            }
             for (int i = 0; i < out.length; ++i) {
                 int index = s.indexOf(fields.get(i).name());
                 if (index < 0) {

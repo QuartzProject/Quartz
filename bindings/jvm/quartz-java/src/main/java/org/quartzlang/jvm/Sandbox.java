@@ -78,12 +78,13 @@ public final class Sandbox implements AutoCloseable {
         Objects.requireNonNull(function, "function");
         Import declared = program.findImport(importName).orElseThrow(
                 () -> new IllegalArgumentException("the program imports nothing named " + importName));
-        HostDispatch.Binding binding = new HostDispatch.Binding(this, function, importName, declared.signature());
+        String name = declared.name();
+        HostDispatch.Binding binding = new HostDispatch.Binding(this, function, name, declared.signature());
         Confinement c = begin();
         try (Arena arena = Arena.ofConfined()) {
             int index = HostDispatch.register(binding);
             boolean bound = (boolean) Native.SANDBOX_BIND_DIRECT.invokeExact(address,
-                    arena.allocateFrom(importName, StandardCharsets.UTF_8), HostDispatch.STUB,
+                    arena.allocateFrom(name, StandardCharsets.UTF_8), HostDispatch.STUB,
                     MemorySegment.ofAddress(index));
             if (!bound) {
                 HostDispatch.unregister(index);
@@ -542,6 +543,16 @@ public final class Sandbox implements AutoCloseable {
         @Override
         public long string(byte[] utf8) throws Throwable {
             return newString(utf8);
+        }
+
+        @Override
+        public long bytes(byte[] data) throws Throwable {
+            long slot = (long) Native.SANDBOX_BYTES.invokeExact(address, MemorySegment.ofArray(data),
+                    (long) data.length);
+            if (slot == 0) {
+                throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory passing Bytes");
+            }
+            return slot;
         }
 
         @Override
