@@ -30,6 +30,15 @@ val quartzCapi = providers.gradleProperty("quartz.wasm").orNull?.let { dir ->
     File(pkg, "package.json").writeText(
         """{ "name": "quartz-capi", "version": "0.1.0", "main": "quartz-capi.js", "license": "MIT" }""" + "\n",
     )
+    // Yarn keeps an installed local package of the same version, so a rebuilt quartz-capi is copied over it.
+    for (platform in listOf("js", "wasm")) {
+        val installed = rootProject.layout.buildDirectory.dir("$platform/node_modules/quartz-capi").get().asFile
+        if (installed.isDirectory) {
+            for (name in listOf("quartz-capi.js", "quartz-capi.wasm")) {
+                File(pkg, name).copyTo(File(installed, name), overwrite = true)
+            }
+        }
+    }
     pkg
 }
 
