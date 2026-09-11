@@ -483,3 +483,27 @@ internal actual fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongA
         }
         ok
     }
+
+internal actual fun qzSandboxBytes(sandbox: Long, data: ByteArray): Long = withBuffer(8) { out ->
+    val bytes = bytesIn(data)
+    wasm("qz_sandbox_bytes_into", p(sandbox), bytes, data.size, out)
+    free(bytes)
+    peek64(out)
+}
+
+internal actual fun qzCallBytes(call: Long, data: ByteArray): Long = withBuffer(8) { out ->
+    val bytes = bytesIn(data)
+    wasm("qz_call_bytes_into", p(call), bytes, data.size, out)
+    free(bytes)
+    peek64(out)
+}
+
+internal actual fun qzProgramFindImport(program: Long, name: String): Long = withText(name) { text, _ ->
+    withBuffer(4) { index ->
+        pokeI32(index, 0)
+        val status = wasm("qz_program_find_import", p(program), text, index)
+        (status.toLong() shl 32) or (peekI32(index).toLong() and 0xFFFF_FFFFL)
+    }
+}
+
+internal actual fun qzTypeName(program: Long, type: Int): String = stringAt(wasm("qz_type_name", p(program), type))

@@ -744,3 +744,41 @@ JNIEXPORT jboolean QZ_JNI(qzMapEntry)(JNIEnv* env, jclass cls, jlong sandbox, jl
     release(v, valueStack);
     return ok;
 }
+
+JNIEXPORT jlong QZ_JNI(qzSandboxBytes)(JNIEnv* env, jclass cls, jlong sandbox, jbyteArray bytes) {
+    (void)cls;
+    jsize length = 0;
+    char* data = copyBytes(env, bytes, &length);
+    jlong out = data != NULL ? qz_sandbox_bytes(ptr(sandbox), (const uint8_t*)data, (size_t)length).i : 0;
+    free(data);
+    return out;
+}
+
+JNIEXPORT jlong QZ_JNI(qzCallBytes)(JNIEnv* env, jclass cls, jlong call, jbyteArray bytes) {
+    (void)cls;
+    jsize length = 0;
+    char* data = copyBytes(env, bytes, &length);
+    jlong out = data != NULL ? qz_call_bytes(ptr(call), (const uint8_t*)data, (size_t)length).i : 0;
+    free(data);
+    return out;
+}
+
+JNIEXPORT jlong QZ_JNI(qzProgramFindImport)(JNIEnv* env, jclass cls, jlong program, jstring name) {
+    (void)cls;
+    size_t length = 0;
+    char* text = utf8(env, name, &length);
+    if (text == NULL) {
+        return (jlong)QZ_LOOKUP_NOT_FOUND << 32;
+    }
+    uint32_t index = 0;
+    qz_lookup status = qz_program_find_import(ptr(program), text, &index);
+    free(text);
+    return ((jlong)status << 32) | index;
+}
+
+JNIEXPORT jstring QZ_JNI(qzTypeName)(JNIEnv* env, jclass cls, jlong program, jint type) {
+    (void)cls;
+    const char* name = qz_type_name(ptr(program), (uint32_t)type);
+    name = name != NULL ? name : "";
+    return string(env, name, strlen(name));
+}

@@ -166,6 +166,12 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
     }
 
     private val makers = object : Slots.Makers {
+        override fun bytes(data: ByteArray): Long = qzCallBytes(call, data).also {
+            if (it == 0L) {
+                throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning Bytes")
+            }
+        }
+
         override fun string(utf8: ByteArray): Long = qzCallStr(call, utf8).also {
             if (it == 0L) {
                 throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning a string")

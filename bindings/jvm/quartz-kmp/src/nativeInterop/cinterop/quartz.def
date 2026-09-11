@@ -21,6 +21,14 @@ static inline uint64_t qzk_call_str(qz_call* call, const char* utf8, size_t leng
     return qz_call_str(call, utf8, length).u;
 }
 
+static inline uint64_t qzk_sandbox_bytes(qz_sandbox* sandbox, const uint8_t* data, size_t length) {
+    return qz_sandbox_bytes(sandbox, data, length).u;
+}
+
+static inline uint64_t qzk_call_bytes(qz_call* call, const uint8_t* data, size_t length) {
+    return qz_call_bytes(call, data, length).u;
+}
+
 static inline qz_status qzk_resume(qz_sandbox* sandbox, uint32_t task, uint64_t bits, qz_task_outcome* outcome) {
     qz_slot s;
     s.u = bits;

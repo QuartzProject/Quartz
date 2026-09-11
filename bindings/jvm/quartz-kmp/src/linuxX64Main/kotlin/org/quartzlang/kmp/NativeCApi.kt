@@ -82,17 +82,20 @@ import org.quartzlang.kmp.cinterop.qz_sandbox_wait_type
 import org.quartzlang.kmp.cinterop.qz_slot
 import org.quartzlang.kmp.cinterop.qz_source
 import org.quartzlang.kmp.cinterop.qz_task_outcome
+import org.quartzlang.kmp.cinterop.qz_program_find_import
 import org.quartzlang.kmp.cinterop.qz_type_elem
 import org.quartzlang.kmp.cinterop.qz_type_field
 import org.quartzlang.kmp.cinterop.qz_type_field_count
 import org.quartzlang.kmp.cinterop.qz_type_field_name
 import org.quartzlang.kmp.cinterop.qz_type_key
 import org.quartzlang.kmp.cinterop.qz_type_kind
+import org.quartzlang.kmp.cinterop.qz_type_name
 import org.quartzlang.kmp.cinterop.qz_type_nullable_is_pointer
 import org.quartzlang.kmp.cinterop.qz_type_variant_count
 import org.quartzlang.kmp.cinterop.qz_type_variant_name
 import org.quartzlang.kmp.cinterop.qz_type_variant_payload
 import org.quartzlang.kmp.cinterop.qz_type_variant_payload_count
+import org.quartzlang.kmp.cinterop.qzk_call_bytes
 import org.quartzlang.kmp.cinterop.qzk_call_str
 import org.quartzlang.kmp.cinterop.qzk_list_get
 import org.quartzlang.kmp.cinterop.qzk_list_length
@@ -101,6 +104,7 @@ import org.quartzlang.kmp.cinterop.qzk_map_entry
 import org.quartzlang.kmp.cinterop.qzk_map_length
 import org.quartzlang.kmp.cinterop.qzk_map_set
 import org.quartzlang.kmp.cinterop.qzk_resume
+import org.quartzlang.kmp.cinterop.qzk_sandbox_bytes
 import org.quartzlang.kmp.cinterop.qzk_sandbox_list
 import org.quartzlang.kmp.cinterop.qzk_sandbox_map
 import org.quartzlang.kmp.cinterop.qzk_sandbox_str
@@ -454,3 +458,23 @@ internal actual fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongA
                 v.addressOf(0).reinterpret())
         }
     }
+
+internal actual fun qzSandboxBytes(sandbox: Long, data: ByteArray): Long = if (data.isEmpty()) {
+    memScoped { qzk_sandbox_bytes(sandbox(sandbox), alloc<UByteVar>().ptr, 0u).toLong() }
+} else {
+    data.usePinned { qzk_sandbox_bytes(sandbox(sandbox), it.addressOf(0).reinterpret(), data.size.toULong()).toLong() }
+}
+
+internal actual fun qzCallBytes(call: Long, data: ByteArray): Long = if (data.isEmpty()) {
+    memScoped { qzk_call_bytes(qzCallOf(call), alloc<UByteVar>().ptr, 0u).toLong() }
+} else {
+    data.usePinned { qzk_call_bytes(qzCallOf(call), it.addressOf(0).reinterpret(), data.size.toULong()).toLong() }
+}
+
+internal actual fun qzProgramFindImport(program: Long, name: String): Long = memScoped {
+    val index = alloc<UIntVar>()
+    pack(qz_program_find_import(program(program), name, index.ptr), index.value)
+}
+
+internal actual fun qzTypeName(program: Long, type: Int): String =
+    qz_type_name(program(program), type.toUInt())?.toKString() ?: ""

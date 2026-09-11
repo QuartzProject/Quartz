@@ -35,8 +35,8 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
     override fun bind(importName: String, function: HostFunction) = begin {
         val declared = current.findImport(importName)
             ?: throw IllegalArgumentException("the program imports nothing named $importName")
-        val binding = CBinding(this, function, importName, declared.signature)
-        val token = qzBind(address, importName, binding)
+        val binding = CBinding(this, function, declared.name, declared.signature)
+        val token = qzBind(address, declared.name, binding)
         if (token == 0L) {
             throw IllegalArgumentException("the program imports nothing named $importName")
         }
@@ -322,6 +322,12 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
 
     private val makers = object : Slots.Makers {
         override fun string(utf8: ByteArray): Long = newString(utf8)
+
+        override fun bytes(data: ByteArray): Long = qzSandboxBytes(address, data).also {
+            if (it == 0L) {
+                throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory passing Bytes")
+            }
+        }
 
         override fun list(type: Type, elements: List<*>): Long = newList(type, elements, this)
 

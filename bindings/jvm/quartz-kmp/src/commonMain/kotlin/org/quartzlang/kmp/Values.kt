@@ -2,8 +2,15 @@ package org.quartzlang.kmp
 
 import kotlinx.serialization.Serializable
 
-/** A Quartz struct copied out of a sandbox, or built to pass one: its fields by name, in declaration order. */
-public class Struct(public val names: List<String>, public val values: List<Any?>) {
+/**
+ * A Quartz struct copied out of a sandbox, or built to pass one: its fields by name, in declaration order. A non-empty
+ * [typeName] is checked against the struct it is passed as.
+ */
+public class Struct(
+    public val names: List<String>,
+    public val values: List<Any?>,
+    public val typeName: String = "",
+) {
     init {
         require(names.size == values.size) { "${names.size} field names for ${values.size} values" }
     }

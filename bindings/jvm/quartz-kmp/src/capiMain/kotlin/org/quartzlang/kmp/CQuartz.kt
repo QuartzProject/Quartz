@@ -114,11 +114,23 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
             Kind.NULLABLE -> pointer = qzTypeNullableIsPointer(p, id)
             else -> {}
         }
+        if (t.kind == Kind.STRUCT || t.kind == Kind.ENUM) {
+            t.name = qzTypeName(p, id)
+        }
         t.complete(element, key, fields, cases, pointer)
         t
     }
 
     override fun binary(): ByteArray? = qzProgramBinary(address)
+
+    override fun findImport(name: String): Import? {
+        val found = qzProgramFindImport(address, name)
+        return when ((found ushr 32).toInt()) {
+            LOOKUP_FOUND -> imports.getOrNull(found.toInt())
+            LOOKUP_AMBIGUOUS -> throw IllegalArgumentException("several imports are named $name; give its package")
+            else -> null
+        }
+    }
 
     override fun find(name: String): Export? = exports.getOrPut(name) {
         val p = address

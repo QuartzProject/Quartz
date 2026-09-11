@@ -154,7 +154,13 @@ internal actual external fun qzTypeNullableIsPointer(program: Long, type: Int): 
 
 internal actual external fun qzTypeKey(program: Long, type: Int): Int
 
-internal actual external fun qzResumeWide(sandbox: Long, task: Int, value: LongArray, slots: Int, outcome: LongArray): Int
+internal actual external fun qzResumeWide(
+    sandbox: Long,
+    task: Int,
+    value: LongArray,
+    slots: Int,
+    outcome: LongArray,
+): Int
 
 internal actual external fun qzSandboxMap(sandbox: Long, type: Int): Long
 
@@ -162,4 +168,18 @@ internal actual external fun qzMapSet(sandbox: Long, map: Long, key: LongArray, 
 
 internal actual external fun qzMapLength(map: Long): Long
 
-internal actual external fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongArray, value: LongArray): Boolean
+internal actual external fun qzMapEntry(
+    sandbox: Long,
+    map: Long,
+    index: Long,
+    key: LongArray,
+    value: LongArray,
+): Boolean
+
+internal actual external fun qzSandboxBytes(sandbox: Long, data: ByteArray): Long
+
+internal actual external fun qzCallBytes(call: Long, data: ByteArray): Long
+
+internal actual external fun qzProgramFindImport(program: Long, name: String): Long
+
+internal actual external fun qzTypeName(program: Long, type: Int): String

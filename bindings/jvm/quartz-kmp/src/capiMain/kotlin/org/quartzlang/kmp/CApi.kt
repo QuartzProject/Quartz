@@ -4,6 +4,8 @@ package org.quartzlang.kmp
 
 internal const val QZ_OK = 0
 internal const val QZ_TRAP = 2
+internal const val LOOKUP_FOUND = 0
+internal const val LOOKUP_AMBIGUOUS = 2
 
 /** A type's kind in the high half and its slot count in the low half. */
 internal fun typeOf(packed: Long): Type = Type(Kind.of((packed ushr 32).toInt()), packed.toInt())
@@ -179,3 +181,14 @@ internal expect fun qzMapLength(map: Long): Long
 
 /** Entry [index] in insertion order, copied into [key] and [value]; false out of range. */
 internal expect fun qzMapEntry(sandbox: Long, map: Long, index: Long, key: LongArray, value: LongArray): Boolean
+
+/** Any bytes as a `Bytes` argument; [qzSandboxStr] takes only valid UTF-8. */
+internal expect fun qzSandboxBytes(sandbox: Long, data: ByteArray): Long
+
+/** Any bytes as a `Bytes` result of a host function. */
+internal expect fun qzCallBytes(call: Long, data: ByteArray): Long
+
+/** `qz_program_find_import`: the lookup status in the high half and the import index in the low half. */
+internal expect fun qzProgramFindImport(program: Long, name: String): Long
+
+internal expect fun qzTypeName(program: Long, type: Int): String

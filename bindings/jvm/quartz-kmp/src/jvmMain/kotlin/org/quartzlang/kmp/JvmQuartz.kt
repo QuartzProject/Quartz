@@ -59,6 +59,7 @@ private fun typeOf(t: org.quartzlang.jvm.Type, seen: IdentityHashMap<org.quartzl
     val out = Type(kindOf(t.kind()), t.slots(), t.id())
     seen[t] = out
     fun field(f: org.quartzlang.jvm.Type.Field) = Type.Field(f.name(), typeOf(f.type(), seen), f.offset())
+    out.name = t.name()
     out.complete(
         t.element()?.let { typeOf(it, seen) },
         t.key()?.let { typeOf(it, seen) },
@@ -71,7 +72,7 @@ private fun typeOf(t: org.quartzlang.jvm.Type, seen: IdentityHashMap<org.quartzl
 
 /** A value of the Java bindings as the common API gives it. */
 internal fun fromJava(value: Any?): Any? = when (value) {
-    is JStruct -> Struct(value.names(), (0 until value.size()).map { fromJava(value.get(it)) })
+    is JStruct -> Struct(value.names(), (0 until value.size()).map { fromJava(value.get(it)) }, value.type().name())
     is JVariant -> Variant(value.name(), value.values().map(::fromJava))
     is JResult.Ok<*, *> -> Result.Ok(fromJava(value.value()))
     is JResult.Err<*, *> -> Result.Err(fromJava(value.error()))
@@ -85,7 +86,7 @@ internal fun toJava(value: Any?): Any? = when (value) {
     null, is Boolean, is Number, is Char, is String, is ByteArray, is Enum<*> -> value
     is JvmValue -> value.java
     is Unit -> null
-    is Struct -> JStruct.of(value.names.zip(value.values.map(::toJava)).toMap(LinkedHashMap()))
+    is Struct -> JStruct.of(value.typeName, value.names.zip(value.values.map(::toJava)).toMap(LinkedHashMap()))
     is Variant -> JVariant(value.name, value.values.map(::toJava))
     is Result.Ok<*> -> JResult.ok<Any?, Any?>(toJava(value.value))
     is Result.Err<*> -> JResult.err<Any?, Any?>(toJava(value.error))
@@ -118,6 +119,10 @@ internal class JvmProgram(val java: JProgram) : Program {
     }
 
     override fun packageInterface(manifest: String?): String = translated { java.packageInterface(manifest) }
+
+    override fun findImport(name: String): Import? = translated {
+        java.findImport(name).orElse(null)?.let { Import(it.name(), signatureOf(it.signature()), it.builtIn()) }
+    }
 
     override fun close(): Unit = java.close()
 }

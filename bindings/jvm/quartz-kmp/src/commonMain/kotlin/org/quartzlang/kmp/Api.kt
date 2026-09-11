@@ -16,8 +16,12 @@ public interface Program : AutoCloseable {
     public fun export(name: String): Export = find(name) ?: throw NoSuchElementException("no function named $name")
 
     /** By full name (`org.example.host.Player.name`) or, when only one import ends with it, without the package. */
-    public fun findImport(name: String): Import? =
-        imports.firstOrNull { it.name == name } ?: imports.filter { it.name.endsWith(".$name") }.singleOrNull()
+    /**
+     * The import called [name] with its package, or without it when only one import has that name.
+     *
+     * @throws IllegalArgumentException when several imports share [name] without a package
+     */
+    public fun findImport(name: String): Import?
 
     /** The .qzi other packages compile against; [manifest] is package.toml text, or null for the compiled one. */
     public fun packageInterface(manifest: String? = null): String

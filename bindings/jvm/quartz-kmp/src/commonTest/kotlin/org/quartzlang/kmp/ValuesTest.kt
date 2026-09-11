@@ -13,6 +13,9 @@ class ValuesTest {
     data class Point(val label: String, val x: Long, val y: Long)
 
     @Serializable
+    data class Pt(val label: String, val x: Long, val y: Long)
+
+    @Serializable
     data class Request(val url: String, val timeout: Int)
 
     @Serializable
@@ -54,6 +57,7 @@ class ValuesTest {
         @awaitable(Pos)
         struct AskPos {}
         fn askPos() -> AskPos
+        fn echo(data: Bytes) -> Bytes
     """.trimIndent() + "\n"
 
     private val plugin = """
@@ -144,6 +148,9 @@ class ValuesTest {
             }
             return n
         }
+        fn bounce(data: Bytes) -> Bytes {
+            return echo(data)
+        }
         suspend fn walk() -> int {
             let p = wait askPos()
             return p.x * 100 + p.y
@@ -164,6 +171,7 @@ class ValuesTest {
                     call.map(0).entries.associate { (k, v) -> Struct("x" to v, "y" to 1L) to k }
                 }
                 sandbox.bind("askPos") { 1L }
+                sandbox.bind("echo") { call -> call.bytes(0) }
                 sandbox.start()
 
                 val moved = sandbox.call("shift", mapOf("x" to 1L, "y" to 2L, "label" to "a"), 10).asStruct()
@@ -172,6 +180,9 @@ class ValuesTest {
                 assertEquals(Point("b!", 3, 4), sandbox.callAs<Point>("shift", quartzValue(Point("b", 1, 4)), 2))
                 assertFailsWith<IllegalArgumentException> { sandbox.call("shift", mapOf("x" to 1L), 1) }
                 assertFailsWith<IllegalArgumentException> { sandbox.call("shift", Point("c", 1, 1), 1) }
+                assertFailsWith<IllegalArgumentException> { sandbox.call("shift", quartzValue(Pt("c", 1, 1)), 1) }
+                val binary = byteArrayOf(-1, 0, -61, 40)
+                assertTrue(binary.contentEquals(sandbox.call("bounce", binary).asBytes()))
 
                 assertEquals(listOf("s", 7L), sandbox.call("swap", 7L to "s").asTuple())
                 assertEquals(Color.DEEP_BLUE, sandbox.callAs<Color>("next", Color.GREEN))

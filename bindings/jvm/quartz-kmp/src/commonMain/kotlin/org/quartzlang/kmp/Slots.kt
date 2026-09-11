@@ -6,6 +6,8 @@ internal object Slots {
     interface Makers {
         fun string(utf8: ByteArray): Long
 
+        fun bytes(data: ByteArray): Long
+
         fun list(type: Type, elements: List<*>): Long
 
         fun map(type: Type, entries: Map<*, *>): Long
@@ -76,7 +78,7 @@ internal object Slots {
     /** Reads a value of [type] from `slots[at..]`; see [Value.get] for what each type gives. */
     fun decode(type: Type, slots: LongArray, at: Int, readers: Readers): Any? = when (type.kind) {
         Kind.VOID -> null
-        Kind.STRUCT -> Struct(type.fields.map { it.name }, read(type.fields, slots, at, readers))
+        Kind.STRUCT -> Struct(type.fields.map { it.name }, read(type.fields, slots, at, readers), type.name)
         Kind.TUPLE -> read(type.fields, slots, at, readers)
         Kind.ENUM -> {
             val index = slots[at]
@@ -182,7 +184,7 @@ internal object Slots {
             Kind.F32 -> floating(type, value).toFloat().toRawBits().toLong() and 0xFFFF_FFFFL
             Kind.CHAR -> codePoint(type, value)
             Kind.STR -> if (value is String) makers.string(value.encodeToByteArray()) else throw mismatch(type, value)
-            Kind.BYTES -> if (value is ByteArray) makers.string(value) else throw mismatch(type, value)
+            Kind.BYTES -> if (value is ByteArray) makers.bytes(value) else throw mismatch(type, value)
             Kind.LIST -> when (value) {
                 is List<*> -> makers.list(type, value)
                 is Array<*> -> makers.list(type, value.asList())
@@ -201,11 +203,16 @@ internal object Slots {
     private fun structValues(type: Type, value: Any?): List<Any?> {
         val names = type.fields.map { it.name }
         return when (value) {
-            is Struct -> names.map { name ->
-                val i = value.names.indexOf(name).takeIf { it >= 0 }
-                    ?: value.names.indexOfFirst { normalize(it) == normalize(name) }
-                require(i >= 0) { "the struct passed lacks field $name" }
-                value.values[i]
+            is Struct -> {
+                require(sameType(type.name, value.typeName)) {
+                    "a struct ${value.typeName} cannot be passed as ${type.name}"
+                }
+                names.map { name ->
+                    val i = value.names.indexOf(name).takeIf { it >= 0 }
+                        ?: value.names.indexOfFirst { normalize(it) == normalize(name) }
+                    require(i >= 0) { "the struct passed lacks field $name" }
+                    value.values[i]
+                }
             }
             is Map<*, *> -> {
                 for (k in value.keys) {

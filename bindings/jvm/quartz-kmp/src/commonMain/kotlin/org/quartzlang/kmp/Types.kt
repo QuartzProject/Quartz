@@ -59,6 +59,10 @@ public class Type(public val kind: Kind, public val slots: Int = 1, public val i
 
     private var pointer: Boolean = kind == Kind.NULLABLE && slots == 1
 
+    /** How the source names a struct or enum (`Point`, `Box<int>`); empty when unknown. */
+    public var name: String = ""
+        internal set
+
     /** Filled in once the type is cached, so recursive types resolve. */
     internal fun complete(element: Type?, key: Type?, fields: List<Field>, cases: List<Case>, pointer: Boolean) {
         this.element = element
@@ -104,6 +108,13 @@ public class Type(public val kind: Kind, public val slots: Int = 1, public val i
 
 /** `IN_PROGRESS`, `InProgress` and `in_progress` all become `inprogress`. */
 internal fun normalize(name: String): String = name.replace("_", "").lowercase()
+
+/** True when two type names fit, generic arguments aside; an unknown (empty) name fits anything. */
+internal fun sameType(a: String, b: String): Boolean {
+    val x = a.substringBefore('<')
+    val y = b.substringBefore('<')
+    return x.isEmpty() || y.isEmpty() || x == y || normalize(x) == normalize(y)
+}
 
 /** What a caller passes (`state` parameters left out) and what comes back. */
 public data class Signature(val params: List<Type>, val result: Type) {

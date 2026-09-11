@@ -154,7 +154,11 @@ internal class TreeEncoder(val sink: (Any?) -> Unit) : Encoder {
                         else -> Variant(name, listOf(payload))
                     }
                 }
-                else -> Struct(List(descriptor.elementsCount) { descriptor.getElementName(it) }, values)
+                else -> Struct(
+                    List(descriptor.elementsCount) { descriptor.getElementName(it) },
+                    values,
+                    simpleName(descriptor.serialName),
+                )
             },
         )
     }
@@ -287,12 +291,19 @@ internal class TreeDecoder(val value: Any?) : Decoder {
 
     private fun product(descriptor: SerialDescriptor): List<Pair<Int, Any?>> {
         val values: List<Any?> = when (value) {
-            is Struct -> return List(descriptor.elementsCount) { i ->
-                val name = descriptor.getElementName(i)
-                val at = value.names.indexOf(name).takeIf { it >= 0 }
-                    ?: value.names.indexOfFirst { normalize(it) == normalize(name) }
-                if (at < 0) null else i to value.values[at]
-            }.filterNotNull()
+            is Struct -> {
+                if (!sameType(value.typeName, simpleName(descriptor.serialName))) {
+                    throw SerializationException(
+                        "${descriptor.serialName} does not map to the struct ${value.typeName}",
+                    )
+                }
+                return List(descriptor.elementsCount) { i ->
+                    val name = descriptor.getElementName(i)
+                    val at = value.names.indexOf(name).takeIf { it >= 0 }
+                        ?: value.names.indexOfFirst { normalize(it) == normalize(name) }
+                    if (at < 0) null else i to value.values[at]
+                }.filterNotNull()
+            }
             is List<*> -> value
             is Variant -> value.values
             is Result.Ok<*> -> listOf(value.value)
