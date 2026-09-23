@@ -21,7 +21,7 @@ struct Manifest {
     std::string name;    // the package, e.g. `net.blueva.hub`
     std::string version; // semver `major.minor.patch`
     PackageKind kind = PackageKind::Library;
-    std::string registry;  // where `quartz fetch` resolves dependencies: a path, `file://` or `https://` URL
+    std::string registry;  // where a package tool such as qiln resolves dependencies
     std::uint32_t api = 0; // lowest host API version it needs
     std::vector<std::pair<std::string, std::string>> dependencies; // package -> version range
     std::vector<std::string> capabilities;

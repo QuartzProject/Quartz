@@ -1,7 +1,6 @@
 #include "Commands.hpp"
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
-#include "Registry.hpp"
 #include "dap/Session.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
@@ -46,6 +45,8 @@ bool hostLog(quartz::vm::HostCall& call, void*) {
     return true;
 }
 
+constexpr const char* kQilnDocs = "https://quartzlang.org/docs/qiln.html";
+
 int usage() {
     std::fprintf(stderr,
                  "usage: quartz check|ir|run|dis|test <file.qz|file.qzi|package dir>... | <file.qzb> [--entry name]\n"
@@ -57,16 +58,13 @@ int usage() {
                  "       quartz build <file.qz|file.qzi|package dir>... -o <out.qzb> [--sign <seed file>] "
                  "[--strip-lines] [--host-only]\n"
                  "       quartz interface <package.qzb>\n"
-                 "       quartz add <name>[@range] [package dir] [--registry url]\n"
-                 "       quartz fetch [package dir] [--registry url] [--update] [--allow-key-change]\n"
-                 "       quartz publish [package dir] --registry <dir> --sign <seed file>\n"
-                 "       quartz owner <prefix> <public key hex> --registry <dir>\n"
                  "       quartz keygen <seed file>\n"
-                 "       quartz new <package name, like org.example.hello>\n"
                  "       quartz doc <file.qz|file.qzi|package dir>... [-o out.md]\n"
                  "       quartz repl\n"
                  "       quartz debug --dap\n"
-                 "       quartz fmt [--check] <file|dir>... | quartz fmt -\n");
+                 "       quartz fmt [--check] <file|dir>... | quartz fmt -\n"
+                 "packages with dependencies build with qiln: %s\n",
+                 kQilnDocs);
     return 2;
 }
 
@@ -152,17 +150,11 @@ void bindHost(quartz::vm::Sandbox& sb) {
 }
 
 int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry,
-               const std::vector<quartz::cli::Plugin>& plugins, quartz::vm::Profiler* profiler) {
-    quartz::cli::PluginHost host;
-    auto started = host.start(plugins, bindHost);
+               quartz::vm::Profiler* profiler) {
     quartz::vm::Sandbox sb(program);
     bindHost(sb);
     if (profiler != nullptr) {
         profiler->attach(sb);
-    }
-    if (auto l = started ? host.link(sb) : started; !l) {
-        std::fprintf(stderr, "%s\n", l.error().c_str());
-        return 3;
     }
     if (auto s = sb.start(); !s) {
         std::fprintf(stderr, "%s\n", s.error().describe().c_str());
@@ -219,8 +211,6 @@ struct Args {
     std::string manifest;
     std::string filter;
     std::filesystem::path packageDir;
-    quartz::cli::DependencyOptions deps;
-    std::vector<quartz::cli::Plugin> plugins;
 };
 
 std::optional<quartz::RuleSetting> parseRule(std::string_view text) {
@@ -242,24 +232,24 @@ std::optional<quartz::RuleSetting> parseRule(std::string_view text) {
     return out;
 }
 
-// Library sources and plugin interfaces from quartz.lock, fetched and verified first.
-bool addDependencies(Args& a) {
-    auto text = readFile(a.packageDir / "package.toml");
-    if (!text) {
+// Resolving packages belongs to qiln; a package folder here is compiled on its own.
+bool withoutDependencies(const Args& a) {
+    std::filesystem::path manifest = a.packageDir / "package.toml";
+    if (!std::filesystem::is_regular_file(manifest)) {
         return true;
     }
-    auto m = quartz::parseManifest(*text);
+    auto text = readFile(manifest);
+    auto m = text ? quartz::parseManifest(*text) : std::unexpected(std::string("cannot read package.toml"));
     if (!m) {
-        std::fprintf(stderr, "%s\n", m.error().c_str());
+        std::fprintf(stderr, "%s: %s\n", manifest.string().c_str(), m.error().c_str());
         return false;
     }
-    auto deps = quartz::cli::prepareDependencies(a.packageDir, *m, a.deps);
-    if (!deps) {
-        std::fprintf(stderr, "%s\n", deps.error().c_str());
+    if (!m->dependencies.empty()) {
+        std::fprintf(stderr,
+                     "%s declares dependencies; the quartz tool does not resolve packages. Build it with qiln: %s\n",
+                     manifest.string().c_str(), kQilnDocs);
         return false;
     }
-    a.inputs.insert(a.inputs.end(), deps->inputs.begin(), deps->inputs.end());
-    a.plugins.insert(a.plugins.end(), deps->plugins.begin(), deps->plugins.end());
     return true;
 }
 
@@ -307,10 +297,10 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             a.trusted.push_back(*key);
         } else if (arg == "--filter" && hasValue) {
             a.filter = argv[++i];
-        } else if (arg == "--registry" && hasValue) {
-            a.deps.registry = argv[++i];
-        } else if (arg == "--allow-key-change") {
-            a.deps.allowKeyChange = true;
+        } else if (arg == "--registry" || arg == "--allow-key-change" || arg == "--update") {
+            std::fprintf(stderr, "%s was removed with dependency resolution, which qiln does now: %s\n", argv[i],
+                         kQilnDocs);
+            return std::nullopt;
         } else if (arg == "--require-signature") {
             a.requireSignature = true;
         } else if (arg == "--strip-lines") {
@@ -361,7 +351,7 @@ std::optional<Args> parseArgs(int argc, char** argv) {
         std::fprintf(stderr, "--source-name names the source that follows it\n");
         return std::nullopt;
     }
-    if (!a.packageDir.empty() && !addDependencies(a)) {
+    if (!a.packageDir.empty() && !withoutDependencies(a)) {
         return std::nullopt;
     }
     return a;
@@ -406,7 +396,7 @@ int build(Args& a) {
     return writeFile(a.output, out.binary) ? 0 : 2;
 }
 
-// `quartz debug --dap`: the program the client launches, compiled with line probes and linked to its plugins.
+// `quartz debug --dap`: the program the client launches, compiled with line probes.
 std::expected<quartz::dap::DebugTarget, std::string> loadForDebug(const std::string& path) {
     std::string tool = "quartz";
     std::string cmd = "debug";
@@ -436,18 +426,27 @@ std::expected<quartz::dap::DebugTarget, std::string> loadForDebug(const std::str
         out.program = compiled.program;
         out.diagnostics = std::move(compiled.diagnostics);
     }
-    if (!a->plugins.empty()) {
-        out.link = [plugins = a->plugins](quartz::vm::Sandbox& client,
-                                          const std::function<void(quartz::vm::Sandbox&)>& bind)
-            -> std::expected<std::shared_ptr<void>, std::string> {
-            auto host = std::make_shared<quartz::cli::PluginHost>();
-            if (auto l = host->start(plugins, bind).and_then([&] { return host->link(client); }); !l) {
-                return std::unexpected(l.error());
-            }
-            return std::shared_ptr<void>(host);
-        };
-    }
     return out;
+}
+
+// The package commands the quartz tool had before qiln took dependencies and repositories over.
+const char* movedToQiln(std::string_view cmd) {
+    if (cmd == "add") {
+        return "dependencies are declared in build.qz and resolved by qiln";
+    }
+    if (cmd == "fetch") {
+        return "use 'qiln deps' to resolve and download dependencies";
+    }
+    if (cmd == "publish") {
+        return "use 'qiln publish' to publish to a repository";
+    }
+    if (cmd == "owner") {
+        return "namespace ownership is checked by the repository host";
+    }
+    if (cmd == "new") {
+        return "use 'qiln init' to create a project";
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -460,17 +459,9 @@ int main(int argc, char** argv) {
         return usage();
     }
     std::string_view cmd = argv[1];
-    if (cmd == "add") {
-        return quartz::cli::addCommand(argc, argv);
-    }
-    if (cmd == "fetch") {
-        return quartz::cli::fetchCommand(argc, argv);
-    }
-    if (cmd == "publish") {
-        return quartz::cli::publishCommand(argc, argv);
-    }
-    if (cmd == "owner") {
-        return quartz::cli::ownerCommand(argc, argv);
+    if (const char* moved = movedToQiln(cmd)) {
+        std::fprintf(stderr, "quartz %s was removed: %s. See %s\n", argv[1], moved, kQilnDocs);
+        return 2;
     }
     if (argc < 3) {
         return usage();
@@ -483,9 +474,6 @@ int main(int argc, char** argv) {
     }
     if (cmd == "keygen") {
         return keygen(argv[2]);
-    }
-    if (cmd == "new") {
-        return newProject(argv[2]);
     }
     auto args = parseArgs(argc, argv);
     if (!args) {
@@ -544,7 +532,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (cmd == "test") {
-        return runTests(program, args->filter, args->plugins);
+        return runTests(program, args->filter);
     }
     if (cmd == "interface") {
         auto m = quartz::parseManifest(program->module->manifest);
@@ -574,10 +562,10 @@ int main(int argc, char** argv) {
         return usage();
     }
     if (!args->profile) {
-        return runProgram(program, args->entry, args->plugins, nullptr);
+        return runProgram(program, args->entry, nullptr);
     }
     quartz::vm::Profiler profiler;
-    int code = runProgram(program, args->entry, args->plugins, &profiler);
+    int code = runProgram(program, args->entry, &profiler);
     std::fputs(profiler.report(*program).c_str(), stderr);
     if (!args->profileOut.empty()) {
         std::string json = profiler.speedscope(*program);
