@@ -238,6 +238,9 @@ QZ_API void qz_sandbox_str_into(qz_sandbox* sandbox, const char* utf8, size_t le
 /* Waits that produce a struct, tuple, enum or nullable take several slots: resume with all of them. */
 QZ_API qz_status qz_sandbox_resume_wide(qz_sandbox* sandbox, uint32_t task, const qz_slot* value, size_t slots,
                                         qz_task_outcome* outcome);
+/* Every slot of the result of a task the last spawn or resume finished (QZ_TASK_DONE), as wide as its type; valid
+ * until the next call on this sandbox. QZ_ERROR when that call did not finish `task` or `slots` is not the width. */
+QZ_API qz_status qz_sandbox_task_result(qz_sandbox* sandbox, uint32_t task, qz_slot* out, size_t slots);
 
 /* Maps iterate in insertion order. Keys and values are given and read as their slots (qz_type_kind counts them). */
 QZ_API uint32_t qz_type_key(const qz_program* program, uint32_t type);

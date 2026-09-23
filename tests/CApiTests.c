@@ -65,10 +65,10 @@ static const char kMapPlugin[] = "fn sum(m: Map<str, int>) -> int {\n"
                                  "    m.remove(\"k4\")\n"
                                  "    return m\n"
                                  "}\n"
-                                 "suspend fn task() -> int {\n"
+                                 "suspend fn task() -> (int, Pt) {\n"
                                  "    let p = wait askPt()\n"
                                  "    let m = wait askMap()\n"
-                                 "    return p.x * 100 + p.y + sum(m)\n"
+                                 "    return (p.x * 100 + p.y + sum(m), p)\n"
                                  "}\n";
 
 static bool handle(qz_call* call, const qz_slot* args, qz_slot* result, void* user) {
@@ -145,7 +145,12 @@ static void maps(void) {
     qz_slot k = qz_sandbox_str(sb, "xyz", 3);
     qz_slot one = {.i = 1};
     CHECK(qz_map_set_at(sb, &m, &k, &one));
+    qz_slot result[3] = {{0}};
+    CHECK(qz_sandbox_task_result(sb, t.task, result, 3) == QZ_ERROR);
     CHECK(qz_sandbox_resume_wide(sb, t.task, &m, 1, &t) == QZ_OK && t.kind == QZ_TASK_DONE && t.value.i == 405);
+    CHECK(qz_sandbox_task_result(sb, t.task, result, 2) == QZ_ERROR);
+    CHECK(qz_sandbox_task_result(sb, t.task, result, 3) == QZ_OK && result[0].i == 405 && result[1].i == 4 &&
+          result[2].i == 2);
     qz_sandbox_free(sb);
     qz_program_free(program);
 }

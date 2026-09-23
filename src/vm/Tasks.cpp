@@ -278,6 +278,7 @@ std::expected<TaskOutcome, Trap> Sandbox::runTask(std::uint32_t id, const Compil
     if (st == Status::Trapped) {
         return std::unexpected(trap_);
     }
+    finishTask(id, program_->functions[task.root].resultSlots);
     out.kind = TaskOutcome::Kind::Done;
     out.value = stack_[0];
     return out;
@@ -289,8 +290,10 @@ std::expected<TaskOutcome, Trap> Sandbox::spawn(std::uint32_t function, std::spa
         if (!r) {
             return std::unexpected(r.error());
         }
+        finishTask(0, program_->functions[function].resultSlots);
         return TaskOutcome{TaskOutcome::Kind::Done, 0, *r};
     }
+    finishedTask_ = kNoTask;
     if (!started_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "sandbox not started", {}, 0});
     }
@@ -443,6 +446,7 @@ std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, const 
         trap_.line = ctx.trapLine;
         return std::unexpected(trap_);
     }
+    finishTask(id, fn.resultSlots);
     out.kind = TaskOutcome::Kind::Done;
     out.value = stack_[0];
     return out;
@@ -458,6 +462,7 @@ namespace {
 
 
 std::expected<TaskOutcome, Trap> Sandbox::resume(std::uint32_t id, std::span<const Slot> value) {
+    finishedTask_ = kNoTask;
     if (id >= tasks_.size() || !tasks_[id].live) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "no such task", {}, 0});
     }
@@ -585,6 +590,15 @@ void Sandbox::cancel(std::uint32_t id) {
         tasks_[id].saved.clear();
         tasks_[id].native = nullptr;
     }
+}
+
+void Sandbox::finishTask(std::uint32_t id, std::uint32_t slots) {
+    finishedTask_ = id;
+    finishedSlots_ = slots;
+}
+
+std::span<const Slot> Sandbox::taskResult(std::uint32_t task) const {
+    return task == finishedTask_ ? stack_.first(finishedSlots_) : std::span<const Slot>{};
 }
 
 bool Sandbox::taskNative(std::uint32_t task) const {

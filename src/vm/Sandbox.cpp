@@ -262,6 +262,7 @@ std::expected<void, Trap> Sandbox::start() {
 }
 
 std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const Slot> args) {
+    finishedTask_ = kNoTask;
     if (inCall_) {
         return std::unexpected(Trap{ir::TrapCode::HostError, "re-entrant call into a running sandbox", {}, 0});
     }

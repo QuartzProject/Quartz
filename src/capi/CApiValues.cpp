@@ -41,6 +41,27 @@ qz_status qz_sandbox_resume_wide(qz_sandbox* sandbox, uint32_t task, const qz_sl
     });
 }
 
+qz_status qz_sandbox_task_result(qz_sandbox* sandbox, uint32_t task, qz_slot* out, size_t slots) {
+    if (sandbox == nullptr) {
+        return QZ_ERROR;
+    }
+    return guarded(sandbox, [&] {
+        if (!sandbox->sandbox->taskFinished(task)) {
+            sandbox->error = "the last spawn or resume did not finish this task";
+            return QZ_ERROR;
+        }
+        std::span<const Slot> result = sandbox->sandbox->taskResult(task);
+        if (slots != result.size() || (slots != 0 && out == nullptr)) {
+            sandbox->error = "wrong number of result slots";
+            return QZ_ERROR;
+        }
+        for (std::size_t i = 0; i < slots; ++i) {
+            out[i] = toC(result[i]);
+        }
+        return QZ_OK;
+    });
+}
+
 uint32_t qz_type_key(const qz_program* program, uint32_t type) {
     const quartz::ir::TypeTable& types = program->program->module->types;
     return type != 0 && type < types.size() && types.kind(type) == quartz::ir::TypeKind::Map ? types.info(type).key : 0;

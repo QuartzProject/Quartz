@@ -174,14 +174,14 @@ fn viaHost() -> int {
     m["b"] = 2
     return scale(m).get("b") ?? 0
 }
-suspend fn gather() -> str {
+suspend fn gather() -> (str, Pt, Map<str, [int]>) {
     let p = wait askPt()
     let m = wait askMap()
     var out = "{p.x},{p.y}"
     for k, v in m {
         out += " {k}:{v.len()}"
     }
-    return out
+    return (out, p, m)
 }
 `;
 const wideProgram = quartz.compile({ "host.qzi": wideHost, "w.qz": wide });
@@ -200,7 +200,8 @@ const asking = values.spawn("gather");
 const next = values.resume(asking.task, { x: 3, y: 4 });
 assert.equal(next.kind, "wait");
 assert.deepEqual(values.resume(asking.task, new Map([["k", [1, 2]], ["j", []]])),
-    { kind: "done", task: asking.task, value: "3,4 k:2 j:0" });
+    { kind: "done", task: asking.task,
+        value: ["3,4 k:2 j:0", { x: 3n, y: 4n }, new Map([["k", [1n, 2n]], ["j", []]])] });
 values.close();
 wideProgram.close();
 console.log("quartz-api.js: all checks passed");

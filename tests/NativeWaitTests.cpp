@@ -25,9 +25,11 @@ constexpr std::string_view kProgram = R"(fn show(m: Map<Pt, [str]>) -> str {
     return out
 }
 
-suspend fn main() -> int {
+suspend fn main() -> (int, str, Shape?) {
     var n = 0
     var total = 0
+    var last = ""
+    var lastShape: Shape? = null
     while n < 3 {
         let info = wait askInfo(n)
         var tags = ""
@@ -42,9 +44,11 @@ suspend fn main() -> int {
         let shape = wait askShape(n)
         print("{info.name} {info.shape} {tags} {info.pos} {info.pair.0}/{info.pair.1} {show(spots)} {shape}")
         total += info.tags.len() + spots.len()
+        last = info.name
+        lastShape = shape
         n += 1
     }
-    return total
+    return (total, last, lastShape)
 }
 )";
 
@@ -203,7 +207,14 @@ std::string runWide(const std::shared_ptr<const quartz::vm::Program>& p, TierMod
         }
         t = sb.resume(t->task, value);
     }
-    log += t ? std::format("result {}\n", t->value.i) : t.error().describe();
+    if (t) {
+        std::span<const Slot> r = sb.taskResult(t->task);
+        REQUIRE(r.size() == 6);
+        auto* last = static_cast<const quartz::vm::Str*>(r[1].p);
+        log += std::format("result {} {} {} {}\n", r[0].i, last->view(), r[2].u, r[2].u != 0 ? r[3].u : 9);
+    } else {
+        log += t.error().describe();
+    }
     if (mode == TierMode::Native) {
         REQUIRE(p->tier->entry(f) != nullptr);
     }
@@ -224,7 +235,7 @@ TEST_CASE("waits producing structs, maps, enums and nullables resume the same in
     };
     auto p = build();
     std::string interp = runWide(p, TierMode::Interpreter, 100'000'000);
-    CHECK(interp.ends_with("result 18\n"));
+    CHECK(interp.ends_with("result 18 s89 1 2\n"));
     CHECK(runWide(build(), TierMode::Auto, 100'000'000) == interp);
     for (std::int64_t fuel : {100'000'000, 40, 97, 1'000}) {
         CAPTURE(fuel);

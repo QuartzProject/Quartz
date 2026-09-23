@@ -102,7 +102,7 @@ export interface CompileMessage {
 export interface TaskOutcome {
     kind: "done" | "wait" | "at_enter" | "at_leave" | "yield";
     task: number;
-    /** done: the result (its raw slot when it is wider than one); otherwise the awaited handle. */
+    /** done: the result, decoded like a call's; otherwise the awaited handle. */
     value: QuartzValue;
 }
 

@@ -670,11 +670,23 @@ class Sandbox {
         if (kind === "done") {
             const type = this.#tasks.get(task);
             this.#tasks.delete(task);
-            value = type === undefined || type.slots > 1 ? bits : this.#values.decodeAt(type, q.scratch + 24);
+            value = type === undefined ? bits : type.slots > 1 ? this.#wideResult(task, type)
+                : this.#values.decodeAt(type, q.scratch + 24);
         } else {
             value = bits;
         }
         return { kind, task, value };
+    }
+
+    #wideResult(task, type) {
+        const m = this.#q.module;
+        const cell = m._malloc(8 * type.slots);
+        try {
+            this.#check(m._qz_sandbox_task_result(this.address, task, cell, type.slots));
+            return this.#values.decodeAt(type, cell);
+        } finally {
+            m._free(cell);
+        }
     }
 
     #withText(text, use) {

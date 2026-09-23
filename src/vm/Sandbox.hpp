@@ -57,7 +57,7 @@ struct TaskOutcome {
     enum class Kind : std::uint8_t { Done, Wait, AtEnter, AtLeave, Yield };
     Kind kind = Kind::Done;
     std::uint32_t task = 0;
-    Slot value{}; // Done: the result; Wait/AtEnter/AtLeave: the awaited handle
+    Slot value{}; // Done: the result's first slot (taskResult has all); Wait/AtEnter/AtLeave: the awaited handle
 };
 
 /// What a host function sees: its arguments, a slot for the result and helpers to build values.
@@ -152,6 +152,12 @@ public:
     [[nodiscard]] std::int64_t fuelPerCall() const { return limits_.fuelPerCall; }
     /// The slots of the last call's result, for results wider than one slot (structs, tuples, Result).
     [[nodiscard]] std::span<const Slot> resultSlots(std::size_t count) const { return stack_.first(count); }
+
+    /// Every slot of `task`'s result if the last spawn or resume finished it, valid until the next call; else empty.
+    [[nodiscard]] std::span<const Slot> taskResult(std::uint32_t task) const;
+
+    /// True when the last spawn or resume finished `task`, so `taskResult(task)` holds its result.
+    [[nodiscard]] bool taskFinished(std::uint32_t task) const { return finishedTask_ == task; }
     /// Fuel left after the last call.
     [[nodiscard]] std::int64_t fuelLeft() const { return fuel_; }
 
@@ -368,6 +374,10 @@ private:
     const Slot* probeR_ = nullptr;
     const CompiledFunction* probeRootFn_ = nullptr; // the bottom frame of the run probedExecute started
     Slot* probeRootR_ = nullptr;
+    std::uint32_t finishedTask_ = kNoTask; // finished by the last spawn or resume; its result is at stack_[0]
+    std::uint32_t finishedSlots_ = 0;
+    static constexpr std::uint32_t kNoTask = 0xFFFFFFFF;
+    void finishTask(std::uint32_t id, std::uint32_t slots);
 
     friend struct HostCall;
     friend class Interpreter;
