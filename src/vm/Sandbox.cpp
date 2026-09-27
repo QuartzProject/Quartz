@@ -80,7 +80,8 @@ bool Sandbox::enter(std::uint32_t function, Slot* base) {
     return run(function, base);
 }
 
-bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
+// Compiled code has no -fsanitize=function prologue, and reading where it would be can fault on a page boundary.
+[[clang::no_sanitize("function")]] bool Sandbox::runNative(NativeEntry entry, std::uint32_t function, Slot* base) {
     const Slot* stackEnd = stack_.data() + stack_.size();
     if (base + program_->functions[function].frameSlots > stackEnd) {
         return fail(ir::TrapCode::StackOverflow);

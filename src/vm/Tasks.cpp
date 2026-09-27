@@ -381,7 +381,9 @@ NativeEntry Sandbox::taskEntry(std::uint32_t function) {
     return e;
 }
 
-std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id, const Slot* resumeValue) {
+// Not checked by -fsanitize=function, like Sandbox::runNative: compiled code has no type prologue.
+[[clang::no_sanitize("function")]] std::expected<TaskOutcome, Trap> Sandbox::runNativeTask(std::uint32_t id,
+                                                                                           const Slot* resumeValue) {
     Task& task = tasks_[id];
     const CompiledFunction& fn = program_->functions[task.root];
     const Slot* stackEnd = stack_.data() + stack_.size();
