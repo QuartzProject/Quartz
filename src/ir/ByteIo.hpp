@@ -19,7 +19,8 @@ enum class Section : std::uint8_t {
     Annotations,
     Lines,
     Manifest,
-    Names
+    Names,
+    Docs
 };
 
 enum class TypeTag : std::uint8_t {

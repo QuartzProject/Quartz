@@ -256,6 +256,14 @@ struct Annotation {
     std::uint32_t filter = ~0U; // `@on(..., where = expr)`: exported function taking the first parameter
 };
 
+/// What generated interfaces repeat of a declaration: its `///` text and the defaults written as literals.
+struct DeclDocs {
+    std::uint32_t index = 0;           // the function, or the type id
+    std::string doc;                   // `///` lines without the markers, joined by newlines
+    std::vector<std::string> members;  // per field or variant: its `///` text; empty when none has one
+    std::vector<std::string> defaults; // per parameter or field: a literal default's source text, or empty
+};
+
 struct Module {
     TypeTable types;
     std::vector<Annotation> annotations;
@@ -265,6 +273,8 @@ struct Module {
     std::vector<TypeId> states;         // state types; one instance each per sandbox
     std::vector<std::uint32_t> stateInit; // per state: function index that fills its defaults, or ~0
     std::string manifest;                 // `package.toml` text of the package it was built from, if any
+    std::vector<DeclDocs> functionDocs;   // exported functions with a doc or a default, by index
+    std::vector<DeclDocs> typeDocs;       // structs and enums with a doc or a default, by type id
 };
 
 std::string print(const Module& m);

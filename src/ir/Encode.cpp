@@ -214,6 +214,22 @@ void writeNames(Writer& w, const Module& m) {
     w.bytes(body.out);
 }
 
+void writeDocs(Writer& w, const std::vector<DeclDocs>& all) {
+    auto strings = [&](const std::vector<std::string>& list) {
+        w.u32(static_cast<std::uint32_t>(list.size()));
+        for (const std::string& s : list) {
+            w.str(s);
+        }
+    };
+    w.u32(static_cast<std::uint32_t>(all.size()));
+    for (const DeclDocs& d : all) {
+        w.u32(d.index);
+        w.str(d.doc);
+        strings(d.members);
+        strings(d.defaults);
+    }
+}
+
 void section(Writer& out, Section id, const Writer& body) {
     out.u8(static_cast<std::uint8_t>(id));
     out.u64(body.out.size());
@@ -322,6 +338,12 @@ std::vector<std::uint8_t> encodePayload(const Module& m, WriteOptions options) {
     w.out.clear();
     writeNames(w, m);
     section(out, Section::Names, w);
+    if (!m.functionDocs.empty() || !m.typeDocs.empty()) {
+        w.out.clear();
+        writeDocs(w, m.functionDocs);
+        writeDocs(w, m.typeDocs);
+        section(out, Section::Docs, w);
+    }
     return std::move(out.out);
 }
 

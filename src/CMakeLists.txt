@@ -20,6 +20,7 @@ if(NOT EMSCRIPTEN)
     target_link_libraries(quartz_vm PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
 endif()
 quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp driver/Bind.cpp DEPS quartz_vm)
+target_sources(quartz PRIVATE driver/Docs.cpp driver/Interface.cpp)
 # Duplicate the dispatch jump into every handler; without it clang shares one indirect jump (D29).
 set_source_files_properties(vm/Interp.cpp PROPERTIES COMPILE_OPTIONS "-mllvm;-tail-dup-indirect-size=200;-mllvm;-tail-dup-size=200")
 # The C interface (include/quartz/quartz.h), static; QUARTZ_SHARED also builds libquartz exporting only qz_*.

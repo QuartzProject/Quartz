@@ -179,23 +179,31 @@ TEST_CASE("packages call each other through generated interfaces and load in dep
 state Bank {
     money: Map<str, int>
 }
+/// What `who` holds; strangers start with 100.
 fn balance(bank: Bank, who: str) -> int {
     return bank.money.get(who) ?? 100
 }
-fn pay(bank: Bank, who: str, amount: int) -> str {
+fn pay(bank: Bank, who: str, amount: int = -30) -> str {
     bank.money[who] = balance(bank, who) + amount
     return "{who}={bank.money[who]}"
 }
 )"}};
     auto manifest = quartz::parseManifest("name = \"org.example.economy\"\nversion = \"1.4.2\"\nexports = [\"balance\", \"pay\"]\n");
     REQUIRE(manifest.has_value());
-    quartz::CompileOutput ecoOut = quartz::compile(eco);
+    quartz::CompileOptions withBinary;
+    withBinary.emitBinary = true;
+    quartz::CompileOutput ecoOut = quartz::compile(eco, withBinary);
     REQUIRE_MESSAGE(ecoOut.program, ecoOut.diagnostics);
     auto iface = quartz::interfaceOf(*ecoOut.program, *manifest);
     REQUIRE_MESSAGE(iface.has_value(), (iface ? "" : iface.error()));
+    CHECK(*iface == "package org.example.economy\n\n/// What `who` holds; strangers start with 100.\n"
+                    "fn balance(who: str) -> int\n\nfn pay(who: str, amount: int = -30) -> str\n");
+    auto loaded = quartz::load(ecoOut.binary);
+    REQUIRE(loaded.has_value());
+    CHECK(quartz::interfaceOf(**loaded, *manifest) == iface);
     quartz::SourceInput shop[] = {{"economy.qzi", *iface}, {"shop.qz", R"(import org.example.economy.*
 fn buy(who: str) -> str {
-    let receipt = pay(who, 0 - 30)
+    let receipt = pay(who)
     return "{receipt} left {balance(who)}"
 }
 )"}};

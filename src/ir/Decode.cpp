@@ -160,6 +160,58 @@ public:
         }
     }
 
+    // Docs only feed generated interfaces, which check them again; here they must just point at what exists.
+    void docs(Reader& r) {
+        auto read = [&](std::vector<DeclDocs>& out, bool types) {
+            std::uint32_t n = r.count(kMaxElements, 4);
+            for (std::uint32_t i = 0; i < n && !r.failed(); ++i) {
+                DeclDocs d;
+                d.index = r.u32();
+                d.doc = r.str();
+                std::uint32_t members = r.count(kMaxElements);
+                for (std::uint32_t k = 0; k < members && !r.failed(); ++k) {
+                    d.members.push_back(r.str());
+                }
+                std::uint32_t defaults = r.count(kMaxElements);
+                for (std::uint32_t k = 0; k < defaults && !r.failed(); ++k) {
+                    d.defaults.push_back(r.str());
+                }
+                if (r.failed()) {
+                    return;
+                }
+                if (!out.empty() && d.index <= out.back().index) {
+                    r.fail("docs out of order");
+                    return;
+                }
+                std::size_t memberCount = 0;
+                std::size_t defaultCount = 0;
+                if (types) {
+                    if (d.index < kFirstUserType || d.index >= m_.types.size() ||
+                        (m_.types.kind(d.index) != TypeKind::Struct && m_.types.kind(d.index) != TypeKind::Enum)) {
+                        r.fail("docs for a type that is not a struct or enum");
+                        return;
+                    }
+                    const TypeInfo& info = m_.types.info(d.index);
+                    memberCount = info.kind == TypeKind::Struct ? info.fields.size() : info.variants.size();
+                    defaultCount = info.kind == TypeKind::Struct ? info.fields.size() : 0;
+                } else {
+                    if (d.index >= m_.functions.size()) {
+                        r.fail("docs for a function that does not exist");
+                        return;
+                    }
+                    defaultCount = m_.functions[d.index].paramCount;
+                }
+                if ((members != 0 && members != memberCount) || (defaults != 0 && defaults != defaultCount)) {
+                    r.fail("docs do not match the declaration");
+                    return;
+                }
+                out.push_back(std::move(d));
+            }
+        };
+        read(m_.functionDocs, false);
+        read(m_.typeDocs, true);
+    }
+
     void manifest(Reader& r) {
         m_.manifest = r.str();
         if (m_.manifest.size() > 65536) {
@@ -503,7 +555,7 @@ std::expected<std::unique_ptr<Module>, std::string> decodePayload(std::span<cons
         if (top.failed()) {
             break;
         }
-        if (id <= last || id > static_cast<std::uint8_t>(Section::Names)) {
+        if (id <= last || id > static_cast<std::uint8_t>(Section::Docs)) {
             top.fail("unknown or out of order section");
             break;
         }
@@ -542,6 +594,9 @@ std::expected<std::unique_ptr<Module>, std::string> decodePayload(std::span<cons
             break;
         case Section::Names:
             d.names(r);
+            break;
+        case Section::Docs:
+            d.docs(r);
             break;
         }
         if (!r.failed() && !r.atEnd()) {

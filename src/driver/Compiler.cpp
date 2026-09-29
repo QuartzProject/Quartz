@@ -1,3 +1,4 @@
+#include "driver/Docs.hpp"
 #include "ir/Lower.hpp"
 #include "ir/Optimize.hpp"
 #include "ir/Prune.hpp"
@@ -123,6 +124,7 @@ CompileOutput compile(std::span<const SourceInput> inputs, CompileOptions option
     if (options.optimize && !options.probes.lines) {
         ir::optimize(*mod);
     }
+    collectDocs(*prog, sources, *mod);
     if (options.printIr) {
         out.irText = ir::print(*mod);
     }
