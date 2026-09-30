@@ -323,6 +323,59 @@ TEST_CASE("native traps and fuel match the interpreter's code, message, function
     }
 }
 
+TEST_CASE("a trap keeps the state writes made before it, the same in both tiers") {
+    auto p = withStd("keep.qz", R"(state Acc {
+    n: int
+    total: float
+    xs: [int]
+    names: Map<str, int>
+}
+fn hot(a: Acc) -> int {
+    for i in 0..1000000 {
+        a.n += i % 3
+    }
+    return a.n
+}
+fn spin(a: Acc, stop: int) -> int {
+    var i = 0
+    while true {
+        a.n += 1
+        a.total += 0.5
+        a.xs.push(i)
+        a.names["k{i % 3}"] = i
+        if i == stop {
+            return 10 / (stop - i)
+        }
+        i += 1
+    }
+    return 0
+}
+)");
+    auto run = [&](TierMode mode) {
+        quartz::vm::Limits limits;
+        limits.tier = mode;
+        limits.fuelPerCall = 50'000;
+        quartz::vm::Sandbox sb(p, limits);
+        sb.bind("print", logText, nullptr);
+        sb.bind("int.ticks", hostTicks);
+        REQUIRE(sb.start().has_value());
+        std::string log;
+        Slot stop[2];
+        for (std::int64_t at : {-1, -2, 40, 7}) {
+            stop[0].i = at;
+            auto r = at == -2 ? sb.call(p->findFunction("hot"), {}) : sb.call(p->findFunction("spin"), {stop, 1});
+            REQUIRE_FALSE(r.has_value());
+            auto state = sb.exportState();
+            REQUIRE(state.has_value());
+            log += r.error().describe() + "\n" + *state + "\n";
+        }
+        return log;
+    };
+    std::string interp = run(TierMode::Interpreter);
+    CHECK(interp.find("\"n\":0") == std::string::npos);
+    CHECK(run(TierMode::Native) == interp);
+}
+
 TEST_CASE("fuel charged by host functions inside a counted loop matches the interpreter") {
     std::string text = "import org.quartzlang.data.*\n"
                        "fn main() -> int {\n"

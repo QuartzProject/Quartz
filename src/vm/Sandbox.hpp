@@ -110,6 +110,7 @@ public:
     /// Checks every import is bound, creates the states and runs their initializers.
     std::expected<void, Trap> start();
     /// Calls an exported function; `state` parameters are supplied by the sandbox and skipped in `args`.
+    /// A trap does not undo the state writes made before it; to undo them, keep exportState and importState it back.
     std::expected<Slot, Trap> call(std::uint32_t function, std::span<const Slot> args);
     /// Starts a task; it runs until it finishes, waits or spends its fuel slice (then it yields, spec 9.2).
     std::expected<TaskOutcome, Trap> spawn(std::uint32_t function, std::span<const Slot> args);

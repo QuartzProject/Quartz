@@ -41,7 +41,8 @@ typedef union qz_slot {
 typedef enum qz_status {
     QZ_OK = 0,
     QZ_ERROR = 1, /* misuse or a bad argument; qz_sandbox_error() or the returned message says why */
-    QZ_TRAP = 2   /* the program trapped (fuel, memory, panic, division by zero...); the sandbox stays usable */
+    QZ_TRAP = 2   /* the program trapped (fuel, memory, panic, division by zero...); the sandbox stays usable and
+                     keeps the state writes made before the trap (qz_sandbox_export_state first to undo them) */
 } qz_status;
 
 typedef struct qz_source {
