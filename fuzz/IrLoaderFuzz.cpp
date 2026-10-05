@@ -1,5 +1,6 @@
 #include "ir/Serialize.hpp"
 #include "ir/Validator.hpp"
+#include "quartz/Package.hpp"
 #include "vm/Bytecode.hpp"
 #include "vm/Sandbox.hpp"
 
@@ -27,6 +28,14 @@ bool runnable(const ir::Module& m) {
 
 void exercise(std::shared_ptr<const vm::Program> program) {
     const ir::Module& m = *program->module;
+    Manifest manifest;
+    manifest.name = "org.fuzz.module";
+    for (const ir::Function& f : m.functions) {
+        if (f.exported && !f.isSuspend) {
+            manifest.exports.push_back(f.name);
+        }
+    }
+    (void)interfaceOf(*program, manifest);
     if (!runnable(m)) {
         return;
     }
