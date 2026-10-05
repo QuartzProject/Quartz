@@ -528,9 +528,23 @@ Str* Sandbox::join(const List* l, const Str* sep) {
     return s;
 }
 
+// The copy goes first: one that runs out of memory must leave the old value, not one already queued for release.
 bool Sandbox::storeState(TypeId type, const Slot* src, Slot* dst) {
+    const std::uint32_t n = program_->layouts->slots(type);
+    Slot small[8] = {};
+    std::vector<Slot> large;
+    Slot* copy = small;
+    if (n > std::size(small)) {
+        large.resize(n);
+        copy = large.data();
+    }
+    if (!copyIntoState(type, src, copy)) {
+        releaseState(type, copy);
+        return false;
+    }
     releaseState(type, dst);
-    return copyIntoState(type, src, dst);
+    std::memcpy(dst, copy, n * sizeof(Slot));
+    return true;
 }
 
 bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {

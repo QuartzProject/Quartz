@@ -734,3 +734,30 @@ fn run() -> str {
     REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
     CHECK(static_cast<const quartz::vm::Str*>(r->p)->view() == "b2,a1 two none");
 }
+
+TEST_CASE("a state store that runs out of memory keeps the old value") {
+    auto program = build(R"(state S {
+    s: str
+    xs: [str]
+}
+fn set(st: S, n: int) {
+    st.s = "x".repeat(n)
+    st.xs = ["y".repeat(n)]
+}
+fn size(st: S) -> int {
+    return st.s.len() + st.xs[0].len()
+}
+)");
+    quartz::vm::Limits limits;
+    limits.memoryBytes = 1u << 20;
+    quartz::vm::Sandbox sb(program, limits);
+    REQUIRE(sb.start().has_value());
+    quartz::vm::Slot n{};
+    n.i = 1000;
+    REQUIRE(sb.call(program->findFunction("set"), {&n, 1}).has_value());
+    n.i = 600'000;
+    auto r = sb.call(program->findFunction("set"), {&n, 1});
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().code == quartz::ir::TrapCode::OutOfMemory);
+    CHECK(callInt(sb, "size") == 2000);
+}
