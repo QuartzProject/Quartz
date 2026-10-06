@@ -153,13 +153,15 @@ Reg Lowerer::lowerBinary(BinaryExpr* e) {
     bool shift = e->op == BinaryOp::Shl || e->op == BinaryOp::Shr;
     Reg l = lowerExpr(e->lhs, compare ? operand : kError);
     Reg r = lowerExpr(e->rhs, compare ? operand : kError);
-    if (compare && T(e->lhs->type) != kNull && T(e->rhs->type) != kNull &&
+    bool lhsNull = T(e->lhs->type) == kNull || e->lhs->kind == ExprKind::NullLit;
+    bool withNull = lhsNull || T(e->rhs->type) == kNull || e->rhs->kind == ExprKind::NullLit;
+    if (compare && !withNull &&
         !((e->op == BinaryOp::Eq || e->op == BinaryOp::Ne) ? vmEquatable(operand) : vmOrdered(operand))) {
         return lowerTraitCompare(e->op, l, r, operand);
     }
-    if (compare && (T(e->lhs->type) == kNull || T(e->rhs->type) == kNull) && !vmEquatable(operand)) {
+    if (compare && withNull && !vmEquatable(operand)) {
         Reg isNull = newReg(kBool);
-        emit(Op::IsNull, isNull, T(e->lhs->type) == kNull ? r : l);
+        emit(Op::IsNull, isNull, lhsNull ? r : l);
         if (e->op == BinaryOp::Eq) {
             return isNull;
         }

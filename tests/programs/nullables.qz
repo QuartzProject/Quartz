@@ -1,0 +1,15 @@
+// expect: true false true false
+struct P {
+    x: int
+}
+
+fn present(a: [int]?) -> bool {
+    return a != null
+}
+
+fn main() -> int {
+    let none: P? = null
+    let some: P? = P(1)
+    print("{none == null} {null != none} {some != null} {present(null)}")
+    return 0
+}

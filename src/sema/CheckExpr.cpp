@@ -400,7 +400,9 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
                 return ir::kBool;
             }
         }
-        bool withNull = (lt == ir::kNull || rt == ir::kNull) && types_->kind(t) == ir::TypeKind::Nullable;
+        bool nullLit = lt == ir::kNull || rt == ir::kNull || e->lhs->kind == ExprKind::NullLit ||
+                       e->rhs->kind == ExprKind::NullLit;
+        bool withNull = eq && nullLit && types_->kind(t) == ir::TypeKind::Nullable;
         TraitInfo* need = langTrait(eq ? LangTrait::Eq : LangTrait::Ord);
         if (!withNull && !implements(t, need)) {
             diags_.error(e->span, std::format("operator '{}' is not defined for '{}'; it needs {}", binaryOpText(op),
