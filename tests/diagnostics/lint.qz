@@ -10,6 +10,7 @@
 // warning: this match arm is unreachable: the arms above match every value it matches [unreachable-pattern]
 // warning: unused parameter 'y' [unused-parameter]
 // warning: unused variable 'v' [unused-variable]
+// warning: '{4}' interpolates a number literal; write '\{' for a brace, or use a raw string (r"...") [literal-interpolation]
 
 import org.quartzlang.text.*
 import org.quartzlang.encoding.{parseUuid, uuidV5, NIL_UUID}
@@ -52,6 +53,6 @@ fn run(a: int, b: int, _c: int) -> int {
         v => 1
         5 => 2
     }
-    print("{uuidV5(NIL_UUID, "n")} {f(1)} {k}")
+    print("{uuidV5(NIL_UUID, "n")} {f(1)} {k} \\d{4} {r"\d{4}"}")
     return a
 }

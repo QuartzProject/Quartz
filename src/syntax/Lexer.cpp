@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <charconv>
 #include <format>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -229,6 +230,11 @@ private:
     Token next() {
         std::size_t begin = pos_;
         char c = src_[pos_];
+        if (c == 'r' && (peek(1) == '"' || peek(1) == '#')) {
+            if (std::optional<Token> raw = rawString(begin)) {
+                return *raw;
+            }
+        }
         if (isIdentStart(c)) {
             while (pos_ < src_.size() && isIdentChar(src_[pos_])) {
                 ++pos_;
@@ -433,6 +439,34 @@ private:
             text += c;
             ++pos_;
         }
+    }
+
+    // `r"..."` and `r#"..."#`: the bytes up to the quote followed by as many `#` as opened, newlines included.
+    std::optional<Token> rawString(std::size_t begin) {
+        std::size_t hashes = 0;
+        while (peek(1 + hashes) == '#') {
+            ++hashes;
+        }
+        if (peek(1 + hashes) != '"') {
+            return std::nullopt;
+        }
+        pos_ += 2 + hashes;
+        std::size_t start = pos_;
+        while (pos_ < src_.size()) {
+            if (src_[pos_] == '"' && pos_ + 1 + hashes <= src_.size() &&
+                src_.substr(pos_ + 1, hashes).find_first_not_of('#') == std::string_view::npos) {
+                Token t = make(Tok::String, begin);
+                t.text = src_.substr(start, pos_ - start);
+                pos_ += 1 + hashes;
+                t.span.end = static_cast<std::uint32_t>(pos_);
+                return t;
+            }
+            ++pos_;
+        }
+        error(static_cast<std::uint32_t>(begin), static_cast<std::uint32_t>(pos_), "unterminated raw string");
+        Token t = make(Tok::String, begin);
+        t.text = src_.substr(start, pos_ - start);
+        return t;
     }
 
     Token charLiteral(std::size_t begin) {

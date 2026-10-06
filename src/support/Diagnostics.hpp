@@ -26,6 +26,7 @@ inline constexpr std::string_view kDeprecated = "deprecated";
 inline constexpr std::string_view kUnknownAttribute = "unknown-attribute";
 inline constexpr std::string_view kUnscopedWaitLoop = "unscoped-wait-loop";
 inline constexpr std::string_view kUnknownRule = "unknown-rule";
+inline constexpr std::string_view kLiteralInterpolation = "literal-interpolation";
 } // namespace rule
 
 /// Every warning rule id, in a stable order.

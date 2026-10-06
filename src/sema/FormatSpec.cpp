@@ -20,6 +20,17 @@ std::uint32_t takeChar(std::string_view s, std::size_t& i) {
 
 bool alignChar(std::uint32_t c) { return c == '<' || c == '>' || c == '^'; }
 
+// Text ending in a regex atom (`\d`, `]`, `)`, `.`): a `{4}` after it was meant as a quantifier, not the number 4.
+bool quantifies(std::string_view before) {
+    if (before.empty()) {
+        return false;
+    }
+    char last = before.back();
+    bool escaped = before.size() >= 2 && before[before.size() - 2] == '\\' &&
+                   ((last >= 'a' && last <= 'z') || (last >= 'A' && last <= 'Z'));
+    return escaped || last == ']' || last == ')' || last == '.';
+}
+
 } // namespace
 
 // `[[fill]align][+][0][width][.precision][x|X|b|o]`, packed as ir::Intrinsic::StrFormat documents.
@@ -95,6 +106,14 @@ TypeId Checker::checkInterp(InterpExpr* e) {
     std::vector<std::uint64_t> formats(e->exprs.size(), 0);
     for (std::size_t k = 0; k < e->exprs.size(); ++k) {
         Expr* part = e->exprs[k];
+        bool spec = k < e->specs.size() && !e->specs[k].empty();
+        if (part->kind == ExprKind::IntLit && !spec && k < e->texts.size() && quantifies(e->texts[k]) &&
+            lintable(currentFile_)) {
+            diags_.warning(part->span, rule::kLiteralInterpolation,
+                           std::format("'{{{}}}' interpolates a number literal; write '\\{{' for a brace, or use a raw "
+                                       "string (r\"...\")",
+                                       static_cast<IntLitExpr*>(part)->value));
+        }
         TypeId t = checkValue(part, ir::kError);
         if (t == ir::kError) {
             continue;

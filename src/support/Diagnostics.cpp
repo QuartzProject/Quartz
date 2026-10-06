@@ -7,10 +7,10 @@ namespace quartz {
 
 std::span<const std::string_view> warningRules() {
     static constexpr std::string_view kRules[] = {
-        rule::kUnusedVariable,  rule::kUnusedParameter, rule::kUnusedAssignment, rule::kUnusedImport,
-        rule::kUnusedPrivate,   rule::kDiscardedResult, rule::kShadowedVariable, rule::kUnreachablePattern,
-        rule::kUnreachableCode, rule::kDeprecated,      rule::kUnknownAttribute, rule::kUnscopedWaitLoop,
-        rule::kUnknownRule,
+        rule::kUnusedVariable,  rule::kUnusedParameter,      rule::kUnusedAssignment, rule::kUnusedImport,
+        rule::kUnusedPrivate,   rule::kDiscardedResult,      rule::kShadowedVariable, rule::kUnreachablePattern,
+        rule::kUnreachableCode, rule::kDeprecated,           rule::kUnknownAttribute, rule::kUnscopedWaitLoop,
+        rule::kUnknownRule,     rule::kLiteralInterpolation,
     };
     return kRules;
 }

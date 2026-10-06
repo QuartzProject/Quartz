@@ -3,6 +3,7 @@
 // expect: [ff] [FF] [101] [10] [-ff] [##2a###]
 // expect: [   hi] [hi---] [ééééé] [  true] [    P(x=1)] [2] [4] [0.10000000000000000555]
 // expect: [ffffffffffffffff] [-80] [-0.0] [1000000000000000000000.0]
+// expect: \d{4} {x} say "hi" 3
 @derive(Show)
 struct P {
     x: int
@@ -19,5 +20,7 @@ fn main() -> int {
     let big: u64 = 18446744073709551615
     let small: i8 = -128
     print("[{big:x}] [{small:x}] [{-0.0:.1}] [{1e21:.1}]")
+    print(r"\d{4} {x}" + r#" say "hi" "# + "{r"a
+b".len()}")
     return 0
 }
