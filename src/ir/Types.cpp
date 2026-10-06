@@ -389,33 +389,26 @@ bool TypeTable::hostBuildable(TypeId id) const {
                          [](TypeKind k) { return k == TypeKind::Fn || k == TypeKind::State || k == TypeKind::Param; });
 }
 
-bool TypeTable::hasRefs(TypeId id) const {
+bool TypeTable::hasRefs(TypeId id) const { return hasRefsAt(id, 0); }
+
+// Only a recursive enum payload, which lowering boxes in a list (D171), nests deeper than the validator allows.
+bool TypeTable::hasRefsAt(TypeId id, std::uint32_t depth) const {
     const TypeInfo& t = types_[id];
+    if (depth > kMaxTypeNesting) {
+        return true;
+    }
     switch (t.kind) {
-    case TypeKind::Nullable: return hasRefs(t.elem);
+    case TypeKind::Nullable:
+        return hasRefsAt(t.elem, depth + 1);
     case TypeKind::Tuple:
-        for (TypeId e : t.elems) {
-            if (hasRefs(e)) {
-                return true;
-            }
-        }
-        return false;
+        return std::any_of(t.elems.begin(), t.elems.end(), [&](TypeId e) { return hasRefsAt(e, depth + 1); });
     case TypeKind::Struct:
-        for (const Field& f : t.fields) {
-            if (hasRefs(f.type)) {
-                return true;
-            }
-        }
-        return false;
+        return std::any_of(t.fields.begin(), t.fields.end(),
+                           [&](const Field& f) { return hasRefsAt(f.type, depth + 1); });
     case TypeKind::Enum:
-        for (const VariantInfo& v : t.variants) {
-            for (TypeId p : v.payload) {
-                if (hasRefs(p)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return std::any_of(t.variants.begin(), t.variants.end(), [&](const VariantInfo& v) {
+            return std::any_of(v.payload.begin(), v.payload.end(), [&](TypeId p) { return hasRefsAt(p, depth + 1); });
+        });
     default: return isRefKind(id);
     }
 }

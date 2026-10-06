@@ -121,7 +121,7 @@ void Lowerer::decodeEnum(Reg v, TypeId t) {
         if (types.size() == 1) {
             parts.push_back(decoded(decodeCall(payload, types[0]), types[0], [&](Reg e) { return atKey(e, name); }));
             Reg out = newReg(t);
-            emitArgs(Op::EnumMake, out, k, parts);
+            enumMake(out, t, k, parts);
             returnResult(out, true);
             return;
         }
@@ -141,7 +141,7 @@ void Lowerer::decodeEnum(Reg v, TypeId t) {
                                     [&](Reg e) { return atKey(atIndex(e, constInt(j, kI64)), name); }));
         }
         Reg out = newReg(t);
-        emitArgs(Op::EnumMake, out, k, parts);
+        enumMake(out, t, k, parts);
         returnResult(out, true);
         close();
         close();

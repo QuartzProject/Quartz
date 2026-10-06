@@ -49,7 +49,11 @@ Reg Lowerer::lowerConst(const sema::ConstValue& v, TypeId t) {
             parts.push_back(lowerConst(v.parts[i], pt));
         }
         Reg r = newReg(t);
-        emitArgs(v.kind == Kind::Variant ? Op::EnumMake : Op::Make, r, v.variant, parts);
+        if (v.kind == Kind::Variant) {
+            enumMake(r, t, v.variant, std::move(parts));
+        } else {
+            emitArgs(Op::Make, r, v.variant, parts);
+        }
         return r;
     }
     }
@@ -154,6 +158,38 @@ void Lowerer::lowerForArray(ForStmt* s, TypeId t) {
     brIf(more, loop);
     close();
     close();
+}
+
+bool Lowerer::boxedPayload(TypeId e, std::uint32_t v, std::uint32_t i) {
+    auto it = boxed_.find(e);
+    if (it == boxed_.end()) {
+        it = boxed_.emplace(e, types_->recursivePayloads(e)).first;
+    }
+    return v < it->second.size() && i < it->second[v].size() && it->second[v][i];
+}
+
+void Lowerer::enumMake(Reg dst, TypeId e, std::uint32_t v, std::vector<Reg> args) {
+    for (std::uint32_t i = 0; i < args.size(); ++i) {
+        if (boxedPayload(e, v, i)) {
+            Reg box = newReg(types_->list(types_->info(e).variants[v].payload[i]));
+            emitArgs(Op::Intrinsic, box, static_cast<std::uint32_t>(Intrinsic::ListFilled),
+                     {constInt(1, kI64), args[i]});
+            args[i] = box;
+        }
+    }
+    emitArgs(Op::EnumMake, dst, v, args);
+}
+
+void Lowerer::enumField(Reg dst, Reg value, TypeId e, std::uint32_t v, std::uint32_t i) {
+    if (!boxedPayload(e, v, i)) {
+        Inst& in = emit(Op::EnumField, dst, value, kNoReg, v);
+        in.b = i;
+        return;
+    }
+    Reg box = newReg(types_->list(types_->info(e).variants[v].payload[i]));
+    Inst& in = emit(Op::EnumField, box, value, kNoReg, v);
+    in.b = i;
+    emitArgs(Op::Intrinsic, dst, static_cast<std::uint32_t>(Intrinsic::ListGet), {box, constInt(0, kI64)});
 }
 
 } // namespace quartz::ir

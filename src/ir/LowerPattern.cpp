@@ -62,8 +62,7 @@ void Lowerer::matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fai
                 continue;
             }
             Reg field = newReg(payload[i]);
-            Inst& in = emit(Op::EnumField, field, subject, kNoReg, p->variantIndex);
-            in.b = i;
+            enumField(field, subject, type, p->variantIndex, i);
             matchPattern(p->sub[i], field, payload[i], fail);
         }
         return;

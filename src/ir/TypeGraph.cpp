@@ -7,12 +7,7 @@ namespace quartz::ir {
 
 namespace {
 
-constexpr std::uint32_t kMaxTypeDepth = 64;
 constexpr std::uint64_t kMaxValueSlots = 0xFFFF;
-
-bool isNominal(TypeKind k) {
-    return k == TypeKind::Struct || k == TypeKind::State || k == TypeKind::Enum || k == TypeKind::Handle;
-}
 
 bool pointerLike(TypeKind k) {
     switch (k) {
@@ -49,8 +44,8 @@ private:
             why_ = "refers to an unknown type";
             return false;
         }
-        if (viaRef && isNominal(t_.kind(c))) {
-            return true;
+        if (viaRef) {
+            return true; // one slot whatever it points to; `run` checks the target as a root of its own
         }
         if (!visit(c, depth + 1)) {
             return false;
@@ -67,7 +62,7 @@ private:
             why_ = "contains itself by value";
             return false;
         }
-        if (depth > kMaxTypeDepth) {
+        if (depth > kMaxTypeNesting) {
             why_ = "nested too deeply";
             return false;
         }

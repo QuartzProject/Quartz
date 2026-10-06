@@ -369,6 +369,35 @@ TEST_CASE("the validator rejects fixed-size array accesses that do not match the
            "malformed type");
 }
 
+TEST_CASE("a recursive enum is valid only with its recursive payload boxed in a list") {
+    quartz::SourceInput src[] = {{"r.qz", R"(enum Expr {
+    Num(int)
+    Neg(Expr)
+}
+fn run(n: int) -> int {
+    return match Expr.Neg(Expr.Num(n)) {
+        Neg(Num(v)) => v
+        _ => 0
+    }
+}
+)"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto mod = quartz::ir::deserialize(out.binary);
+    REQUIRE(mod.has_value());
+    quartz::ir::Module& m = **mod;
+    quartz::ir::TypeId expr = quartz::ir::kError;
+    for (quartz::ir::TypeId t = quartz::ir::kFirstUserType; t < m.types.size(); ++t) {
+        expr = m.types.info(t).name == "Expr" ? t : expr;
+    }
+    REQUIRE(expr != quartz::ir::kError);
+    REQUIRE(m.types.kind(m.types.info(expr).variants[1].payload[0]) == quartz::ir::TypeKind::List);
+    m.types.mutableInfo(expr).variants[1].payload[0] = m.types.nullable(expr);
+    auto v = quartz::ir::validate(m);
+    REQUIRE_FALSE(v.has_value());
+    CHECK_MESSAGE(v.error().describe(m).find("contains itself by value") != std::string::npos, v.error().describe(m));
+}
+
 TEST_CASE("the validator rejects map iteration, text decoding and formatting with mismatched types") {
     quartz::SourceInput src[] = {{"i.qz", R"(fn run(m: Map<str, int>, t: str) -> int {
     var n = 0

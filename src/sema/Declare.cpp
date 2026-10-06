@@ -290,30 +290,18 @@ void Checker::completeTypes() {
             }
         }
     }
-    // A struct that contains itself by value has no finite size.
+    // A struct that contains itself by value has no finite size; an enum on the way is boxed instead (D171).
     for (auto& entryPtr : typeEntries_) {
         TypeEntry& entry = *entryPtr;
-        Symbol name = entry.decl != nullptr ? entry.decl->name : Symbol{};
         if (entry.decl == nullptr || types_->kind(entry.type) != ir::TypeKind::Struct) {
             continue;
         }
-        std::vector<TypeId> stack{entry.type};
-        std::vector<TypeId> seen;
-        while (!stack.empty()) {
-            TypeId t = stack.back();
-            stack.pop_back();
-            for (const ir::Field& f : types_->info(t).fields) {
-                if (f.type == entry.type) {
-                    diags_.error(entry.decl->span, std::format("struct '{}' contains itself", str(name)));
-                    stack.clear();
-                    break;
-                }
-                if (types_->kind(f.type) == ir::TypeKind::Struct &&
-                    std::find(seen.begin(), seen.end(), f.type) == seen.end()) {
-                    seen.push_back(f.type);
-                    stack.push_back(f.type);
-                }
-            }
+        if (std::optional<std::size_t> field = types_->inlineCycle(entry.type)) {
+            std::string self(str(entry.decl->name));
+            diags_.error(entry.decl->span,
+                         std::format("struct '{}' contains itself by value through field '{}'; hold it in a list "
+                                     "('[{}]') or a map, or make the recursive type an enum",
+                                     self, types_->info(entry.type).fields[*field].name, self));
         }
     }
 }

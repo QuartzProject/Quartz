@@ -491,10 +491,7 @@ void Lowerer::lowerDerived(sema::FnInfo* fn, Function& out) {
         Reg is = newReg(kBool);
         emit(Op::Eq, is, ta, constInt(v, kI64));
         open(Op::If, is);
-        auto get = [&](Reg dst, Reg from, std::uint32_t i) {
-            Inst& in = emit(Op::EnumField, dst, from, kNoReg, v);
-            in.b = i;
-        };
+        auto get = [&](Reg dst, Reg from, std::uint32_t i) { enumField(dst, from, t, v, i); };
         if (b == kNoReg) {
             std::vector<Reg> parts{constStr(var.payload.empty() ? var.name : var.name + "(")};
             showFields(parts, var.payload, nullptr, get);

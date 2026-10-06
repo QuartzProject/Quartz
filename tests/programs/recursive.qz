@@ -1,0 +1,85 @@
+// expect: -4 Add(Num(1), Neg(Add(Num(2), Num(3)))) true 1
+// expect: 6 3 true
+// expect: 2 Cons(1, Cons(2, Nil)) Cons(1, Cons(2, Nil)) true
+import org.quartzlang.data.*
+import org.quartzlang.math.max
+
+@derive(Eq, Ord, Show, Decode, Encode)
+enum Expr {
+    Num(int)
+    Add(Expr, Expr)
+    Neg(Expr)
+}
+
+enum Tree<T> {
+    Leaf(T)
+    Node(Tree<T>, Tree<T>)
+}
+
+struct Pair<T> {
+    a: T
+    b: T
+}
+
+enum Nested {
+    Value(int)
+    Both(Pair<Nested>)
+    Maybe(Nested?)
+}
+
+@derive(Eq, Show)
+enum Chain {
+    Nil
+    Cons(int, Chain)
+}
+
+state Hub {
+    saved: [Chain]
+}
+
+fn eval(e: Expr) -> int {
+    return match e {
+        Num(n) => n
+        Add(a, b) => eval(a) + eval(b)
+        Neg(x) => -eval(x)
+    }
+}
+
+fn sum<T>(t: Tree<T>, f: fn(T) -> int) -> int {
+    return match t {
+        Leaf(v) => f(v)
+        Node(a, b) => sum(a, f) + sum(b, f)
+    }
+}
+
+fn depth(n: Nested) -> int {
+    return match n {
+        Value(_) => 1
+        Both(Pair(a, b)) => 1 + max(depth(a), depth(b))
+        Maybe(null) => 1
+        Maybe(inner) => 1 + depth(inner ?? Nested.Value(0))
+    }
+}
+
+fn size(l: Chain) -> int {
+    return match l {
+        Nil => 0
+        Cons(_, rest) => 1 + size(rest)
+    }
+}
+
+fn main(hub: Hub) -> int {
+    let e = Expr.Add(Expr.Num(1), Expr.Neg(Expr.Add(Expr.Num(2), Expr.Num(3))))
+    let back = decodeJson::<Expr>(encodeJson(e)).unwrap()
+    print("{eval(e)} {e} {back == e} {e.cmp(Expr.Add(Expr.Num(1), Expr.Num(0)))}")
+    let t = Tree.Node(Tree.Leaf("a"), Tree.Node(Tree.Leaf("bc"), Tree.Leaf("def")))
+    let n = Nested.Maybe(Nested.Both(Pair(Nested.Value(1), Nested.Maybe(null))))
+    print("{sum(t, (s) => s.len())} {depth(n)} {n is Maybe(Both(Pair(Value(1), _)))}")
+    var kept = Chain.Nil
+    scope {
+        kept = Chain.Cons(1, Chain.Cons(2, Chain.Nil))
+    }
+    hub.saved.push(kept)
+    print("{size(kept)} {hub.saved[0]} {kept} {hub.saved[0] == kept}")
+    return 0
+}

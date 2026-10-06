@@ -408,11 +408,11 @@ Reg Lowerer::lowerCallCore(CallExpr* e) {
         return dst;
     }
     case CallKind::Variant: {
-        const VariantInfo& v = types_->info(rt).variants[e->variant];
+        const VariantInfo v = types_->info(rt).variants[e->variant];
         for (std::size_t i = 0; i < e->ordered.size(); ++i) {
             args.push_back(lowerExpr(e->ordered[i], v.payload[i]));
         }
-        emitArgs(Op::EnumMake, dst, e->variant, args);
+        enumMake(dst, rt, e->variant, std::move(args));
         return dst;
     }
     case CallKind::Builtin: {
@@ -691,6 +691,7 @@ std::unique_ptr<Module> Lowerer::run() {
     for (auto& [idx, f] : extra_) {
         mod_->functions.push_back(std::move(f));
     }
+    types_->boxRecursivePayloads();
     return std::move(mod_);
 }
 

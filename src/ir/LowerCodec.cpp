@@ -104,8 +104,7 @@ Reg Lowerer::valueTagIs(Reg tag, std::uint32_t k) {
 
 Reg Lowerer::valuePayload(Reg value, std::uint32_t k, TypeId t, std::uint32_t index) {
     Reg r = newReg(t);
-    Inst& in = emit(Op::EnumField, r, value, kNoReg, k);
-    in.b = index;
+    enumField(r, value, fn_->regs[value], k, index);
     return r;
 }
 

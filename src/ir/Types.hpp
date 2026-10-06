@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -62,6 +63,8 @@ inline constexpr TypeId kNever = 17;
 inline constexpr TypeId kFirstUserType = 18;
 /// Longest fixed-size array `[T; N]`; its elements live inline, so this bounds registers and copies.
 inline constexpr std::uint32_t kMaxArrayLength = 4096;
+/// Deepest nesting of value types the validator accepts (TypeGraph).
+inline constexpr std::uint32_t kMaxTypeNesting = 64;
 
 struct Field {
     std::string name;
@@ -146,9 +149,16 @@ public:
     [[nodiscard]] bool containsFn(TypeId id) const;
     /// True when the host can build a value of this type: no state, function or type parameter anywhere in it.
     [[nodiscard]] bool hostBuildable(TypeId id) const;
+    /// Per variant and payload: whether it holds its own enum (or another instance of it) by value.
+    [[nodiscard]] std::vector<std::vector<bool>> recursivePayloads(TypeId e) const;
+    /// Stores each recursive enum payload in a list of one so every value has a finite size (D171).
+    void boxRecursivePayloads();
+    /// The field through which a struct holds itself by value with no enum between, if any.
+    [[nodiscard]] std::optional<std::size_t> inlineCycle(TypeId id) const;
 
 private:
     TypeId intern(TypeInfo info, const std::string& key);
+    [[nodiscard]] bool hasRefsAt(TypeId id, std::uint32_t depth) const;
 
     std::vector<TypeInfo> types_;
     std::map<std::string, TypeId> structural_;
