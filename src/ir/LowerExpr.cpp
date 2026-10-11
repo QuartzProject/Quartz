@@ -621,6 +621,9 @@ Reg Lowerer::lowerInner(Expr* e) {
         emit(Op::Convert, r, v);
         return r;
     }
+    case ExprKind::Jump:
+        lowerStmt(static_cast<JumpExpr*>(e)->stmt);
+        return kNoReg;
     case ExprKind::Wait: {
         auto* w = static_cast<WaitExpr*>(e);
         Reg v = lowerExpr(w->value);

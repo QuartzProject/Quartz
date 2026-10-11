@@ -221,4 +221,66 @@ Reg Lowerer::lowerMapList(CallExpr* e, Reg dst) {
     return dst;
 }
 
+namespace {
+
+bool hasIs(const Expr* e) {
+    if (e->kind == ExprKind::Is) {
+        return true;
+    }
+    if (e->kind == ExprKind::Binary && static_cast<const BinaryExpr*>(e)->op == BinaryOp::And) {
+        return hasIs(static_cast<const BinaryExpr*>(e)->lhs) || hasIs(static_cast<const BinaryExpr*>(e)->rhs);
+    }
+    return false;
+}
+
+} // namespace
+
+void Lowerer::lowerWhile(WhileStmt* s) {
+    if (s->bindLocal != nullptr || hasIs(s->cond)) {
+        // Bindings live in the body, so the test stays at the top: block $exit { loop $top { test; body; br $top } }
+        std::size_t exit = depth_;
+        open(Op::Block);
+        std::size_t loop = depth_;
+        open(Op::Loop);
+        std::size_t mark = openLocals_.size();
+        if (s->bindLocal != nullptr) {
+            Reg bound = lowerExpr(s->cond);
+            Reg isNull = newReg(kBool);
+            emit(Op::IsNull, isNull, bound);
+            brIf(isNull, exit);
+            s->bindLocal->reg = newReg(T(s->bindLocal->type));
+            emit(Op::Unwrap, s->bindLocal->reg, bound);
+            nameLocal(s->bindLocal);
+        } else {
+            branchIfFalse(s->cond, exit);
+        }
+        std::size_t cont = depth_;
+        open(Op::Block);
+        loops_.push_back({exit, cont, scopes_.size()});
+        lowerBlockStmts(s->body);
+        loops_.pop_back();
+        close();
+        closeLocals(mark);
+        br(loop);
+        close();
+        close();
+        return;
+    }
+    // Rotated: block $exit { if !cond br $exit; loop $top { block $cont { body } if cond br $top } }
+    std::size_t exit = depth_;
+    open(Op::Block);
+    branchIfFalse(s->cond, exit);
+    std::size_t loop = depth_;
+    open(Op::Loop);
+    std::size_t cont = depth_;
+    open(Op::Block);
+    loops_.push_back({exit, cont, scopes_.size()});
+    lowerBlockStmts(s->body);
+    loops_.pop_back();
+    close();
+    branchIfTrue(s->cond, loop);
+    close();
+    close();
+}
+
 } // namespace quartz::ir

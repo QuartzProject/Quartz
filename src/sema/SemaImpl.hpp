@@ -145,8 +145,20 @@ public:
     [[nodiscard]] std::vector<std::string> missingCases(const std::vector<const Pattern*>& arms, TypeId subject) const;
     TypeId checkIs(IsExpr* e);
     void allowIsBindings(Expr* cond);
+
+    // Or-patterns: later alternatives bind the names of the first, with the same types.
+    struct OrFrame {
+        std::map<std::uint32_t, Local*> names;
+        std::set<std::uint32_t> seen;
+    };
+
+    std::vector<OrFrame> orFrames_;
+    void checkOrPattern(Pattern* p, TypeId subject);
+    void bindOrName(Pattern* p, TypeId subject);
+    [[nodiscard]] static std::vector<PatternRow> expandOr(const std::vector<PatternRow>& rows);
     void checkLetPattern(LetStmt* s);
     std::set<const Expr*> isBindOk_;
+    std::set<const Expr*> jumpOk_; // `return`, `break` or `continue` on the right of `??`
     bool patternMutable_ = false;
 
     // FormatSpec.cpp

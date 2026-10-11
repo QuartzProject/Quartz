@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <map>
+#include <set>
 #include <tuple>
 #include <unordered_map>
 
@@ -43,6 +44,8 @@ public:
 
     // LowerPattern.cpp
     void matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fail);
+    void matchOr(Pattern* p, Reg subject, TypeId type, std::size_t fail);
+    std::set<const sema::Local*> orBound_; // bound by an enclosing `|` pattern: registers already chosen
     Reg lowerIs(IsExpr* e);
     void lowerLetPattern(LetStmt* s);
     Reg zeroValue(TypeId t, Span span);

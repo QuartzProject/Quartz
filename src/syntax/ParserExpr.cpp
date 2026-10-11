@@ -165,6 +165,10 @@ Expr* Parser::parseUnary() {
     case Tok::Minus: op = UnaryOp::Neg; break;
     case Tok::Bang: op = UnaryOp::Not; break;
     case Tok::Tilde: op = UnaryOp::BitNot; break;
+    case Tok::KwReturn:
+    case Tok::KwBreak:
+    case Tok::KwContinue:
+        return parseJump();
     case Tok::KwWait: {
         advance();
         auto* w = node<WaitExpr>(begin);
@@ -182,6 +186,31 @@ Expr* Parser::parseUnary() {
     u->op = op;
     u->operand = operand;
     return u;
+}
+
+Expr* Parser::parseJump() {
+    Span begin = cur().span;
+    Tok kw = advance().kind;
+    auto* j = node<JumpExpr>(begin);
+    j->kind = ExprKind::Jump;
+    if (kw == Tok::KwReturn) {
+        auto* r = node<ReturnStmt>(begin);
+        r->kind = StmtKind::Return;
+        bool ends = at(Tok::RBrace) || at(Tok::RParen) || at(Tok::RBracket) || at(Tok::Comma) || at(Tok::Semi) ||
+                    at(Tok::Eof) || (cur().newlineBefore && newlineSensitive());
+        if (!ends) {
+            r->value = parseExpr();
+        }
+        r->span = begin.to(prevSpan());
+        j->stmt = r;
+        j->value = r->value;
+    } else {
+        auto* s = node<Stmt>(begin);
+        s->kind = kw == Tok::KwBreak ? StmtKind::Break : StmtKind::Continue;
+        j->stmt = s;
+    }
+    j->span = begin.to(prevSpan());
+    return j;
 }
 
 std::span<Arg> Parser::parseArgs() {
@@ -408,77 +437,6 @@ Expr* Parser::parseIf() {
     }
     e->span = begin.to(prevSpan());
     return e;
-}
-
-Pattern* Parser::parsePattern() {
-    DepthGuard guard(*this);
-    Span begin = cur().span;
-    auto* p = arena_.make<Pattern>();
-    p->span = begin;
-    if (tooDeep()) {
-        p->kind = PatternKind::Wildcard;
-        return p;
-    }
-    if (at(Tok::Ident) && cur().text == "_") {
-        advance();
-        p->kind = PatternKind::Wildcard;
-        return p;
-    }
-    if (accept(Tok::LParen)) {
-        NewlineGuard g(*this, true);
-        std::vector<Pattern*> sub;
-        bool comma = false;
-        while (!at(Tok::RParen) && !at(Tok::Eof)) {
-            sub.push_back(parsePattern());
-            if (!accept(Tok::Comma)) {
-                break;
-            }
-            comma = true;
-        }
-        expect(Tok::RParen, "to close the tuple pattern");
-        if (sub.size() == 1 && !comma) {
-            return sub[0]; // `(p)` only groups
-        }
-        p->kind = PatternKind::Tuple;
-        p->sub = list(sub);
-        p->span = begin.to(prevSpan());
-        return p;
-    }
-    if (at(Tok::Ident)) {
-        std::span<Symbol> path = parsePath();
-        if (path.size() == 1 && !at(Tok::LParen)) {
-            p->kind = PatternKind::Binding;
-            p->name = path[0];
-            p->path = path;
-            return p;
-        }
-        p->kind = PatternKind::Variant;
-        p->path = path;
-        p->name = path[path.size() - 1];
-        if (accept(Tok::LParen)) {
-            NewlineGuard g(*this, true);
-            std::vector<Pattern*> sub;
-            while (!at(Tok::RParen) && !at(Tok::Eof)) {
-                sub.push_back(parsePattern());
-                if (!accept(Tok::Comma)) {
-                    break;
-                }
-            }
-            expect(Tok::RParen, "to close the variant pattern");
-            p->sub = list(sub);
-        }
-        p->span = begin.to(prevSpan());
-        return p;
-    }
-    p->kind = PatternKind::Literal;
-    p->literal = parseUnary();
-    if (at(Tok::DotDot) || at(Tok::DotDotEq)) {
-        p->inclusive = advance().kind == Tok::DotDotEq;
-        p->kind = PatternKind::Range;
-        p->rangeHi = parseUnary();
-    }
-    p->span = begin.to(prevSpan());
-    return p;
 }
 
 Expr* Parser::parseArmBody() {

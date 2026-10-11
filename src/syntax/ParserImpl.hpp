@@ -44,6 +44,8 @@ public:
     Expr* parseIf();
     Expr* parseMatch();
     Pattern* parsePattern();
+    Pattern* parsePrimaryPattern();
+    Expr* parseJump();
     Expr* parseArmBody();
     std::span<Arg> parseArgs();
     Expr* parseWith(Expr* value);

@@ -235,6 +235,9 @@ void Walker::expr(const Expr* e, const Expr* parent) {
     case ExprKind::Wait:
         expr(static_cast<const WaitExpr*>(e)->value, e);
         break;
+    case ExprKind::Jump:
+        expr(static_cast<const JumpExpr*>(e)->value, e);
+        break;
     case ExprKind::If: {
         const auto* i = static_cast<const IfExpr*>(e);
         expr(i->cond, e);
@@ -305,6 +308,12 @@ void Walker::type(const TypeExpr* t) {
 
 void Walker::pattern(const Pattern* p, std::uint32_t subject) {
     if (p == nullptr) {
+        return;
+    }
+    if (p->kind == PatternKind::Or) {
+        for (const Pattern* alt : p->sub) {
+            pattern(alt, subject);
+        }
         return;
     }
     const sema::Program* prog = a_.program();

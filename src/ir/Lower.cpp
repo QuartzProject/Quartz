@@ -624,24 +624,6 @@ void Lowerer::lowerAssign(AssignStmt* s) {
     assignPlace(s->target, res);
 }
 
-void Lowerer::lowerWhile(WhileStmt* s) {
-    // Rotated: block $exit { if !cond br $exit; loop $top { block $cont { body } if cond br $top } }
-    std::size_t exit = depth_;
-    open(Op::Block);
-    branchIfFalse(s->cond, exit);
-    std::size_t loop = depth_;
-    open(Op::Loop);
-    std::size_t cont = depth_;
-    open(Op::Block);
-    loops_.push_back({exit, cont, scopes_.size()});
-    lowerBlockStmts(s->body);
-    loops_.pop_back();
-    close();
-    branchIfTrue(s->cond, loop);
-    close();
-    close();
-}
-
 void Lowerer::branchIfFalse(Expr* e, std::size_t frame) {
     if (e->kind == ExprKind::Binary) {
         auto* b = static_cast<BinaryExpr*>(e);

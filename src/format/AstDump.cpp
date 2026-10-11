@@ -218,6 +218,10 @@ public:
         case ExprKind::Wait:
             expr(static_cast<const WaitExpr*>(e)->value);
             break;
+        case ExprKind::Jump:
+            out += std::format(" {}", static_cast<int>(static_cast<const JumpExpr*>(e)->stmt->kind));
+            expr(static_cast<const JumpExpr*>(e)->value);
+            break;
         case ExprKind::If: {
             const auto* i = static_cast<const IfExpr*>(e);
             expr(i->cond);
@@ -290,6 +294,7 @@ public:
             break;
         }
         case StmtKind::While:
+            sym(static_cast<const WhileStmt*>(s)->bindName);
             expr(static_cast<const WhileStmt*>(s)->cond);
             expr(static_cast<const WhileStmt*>(s)->body);
             break;

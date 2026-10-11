@@ -1,0 +1,105 @@
+// expect: 421 3 7
+// expect: round 1.0 round 2.0 strip 3 strip 4 rect empty
+// expect: none none few many true false
+// expect: 42 -1 8
+// expect: 0 5 nothing circle 2 3
+enum Chain {
+    Nil
+    Cons(int, Chain)
+}
+
+enum Shape {
+    Circle(float)
+    Square(float)
+    Rect(int, int)
+    Empty
+}
+
+fn kind(s: Shape) -> str {
+    return match s {
+        Circle(r) | Square(r) => "round {r}"
+        Rect(w, 1) | Rect(1, w) => "strip {w}"
+        Rect(_, _) => "rect"
+        Empty => "empty"
+    }
+}
+
+fn small(n: int?) -> str {
+    return match n {
+        null | 0 => "none"
+        1 | 2 | 3 => "few"
+        _ => "many"
+    }
+}
+
+fn parse(s: str) -> int {
+    let n = s.toInt() ?? return -1
+    return n * 2
+}
+
+fn firstEven(xs: [int?]) -> int {
+    for x in xs {
+        let v = x ?? continue
+        if v % 2 == 0 {
+            return v
+        }
+    }
+    return 0
+}
+
+fn total(xs: [str]) -> int {
+    var sum = 0
+    var i = 0
+    while true {
+        let s = (if i < xs.len() { xs[i] } else { null }) ?? break
+        sum += s.toInt() ?? 0
+        i += 1
+    }
+    return sum
+}
+
+fn bump(n: int?) -> int {
+    return match n {
+        null => 0
+        v => v + 1
+    }
+}
+
+fn describe(s: Shape?) -> str {
+    return match s {
+        null | Empty => "nothing"
+        Circle(r) => "circle {r as int}"
+        _ => "other"
+    }
+}
+
+fn length(t: str?) -> int {
+    return match t {
+        null => -1
+        v => v.len()
+    }
+}
+
+fn main() -> int {
+    let xs = [1, 2, 3, 4]
+    var popped = ""
+    while let x = xs.pop() {
+        if x == 3 {
+            continue
+        }
+        popped += "{x}"
+    }
+    var c = Chain.Cons(1, Chain.Cons(2, Chain.Cons(3, Chain.Nil)))
+    var sum = 0
+    while c is Cons(v, rest) && v < 3 {
+        sum += v
+        c = rest
+    }
+    print("{popped} {sum} {total(["1", "2", "a", "4"])}")
+    print("{kind(Shape.Circle(1.0))} {kind(Shape.Square(2.0))} {kind(Shape.Rect(3, 1))} {kind(Shape.Rect(1, 4))} {kind(Shape.Rect(2, 2))} {kind(Shape.Empty)}")
+    let s = Shape.Square(5.0)
+    print("{small(null)} {small(0)} {small(2)} {small(9)} {s is Circle(_) | Square(_)} {s is Empty | Rect(_, _)}")
+    print("{parse("21")} {parse("x")} {firstEven([null, 3, null, 8, 10])}")
+    print("{bump(null)} {bump(4)} {describe(null)} {describe(Shape.Circle(2.0))} {length("abc")}")
+    return 0
+}

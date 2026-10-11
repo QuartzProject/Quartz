@@ -11,6 +11,12 @@ bool isNullPattern(const Pattern* p) {
     return p->kind == PatternKind::Literal && p->literal->kind == ExprKind::NullLit;
 }
 
+bool matchesNull(const Pattern* p) {
+    return isNullPattern(p) ||
+           (p->kind == PatternKind::Or &&
+            std::any_of(p->sub.begin(), p->sub.end(), [](const Pattern* a) { return matchesNull(a); }));
+}
+
 bool isLiteral(const Expr* lit) {
     switch (lit->kind) {
     case ExprKind::IntLit:
@@ -65,7 +71,14 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
                 }
             }
         }
+        if (!orFrames_.empty()) {
+            bindOrName(p, subject);
+            return;
+        }
         p->local = declareLocal(p->name, subject, patternMutable_, p->span);
+        return;
+    case PatternKind::Or:
+        checkOrPattern(p, subject);
         return;
     case PatternKind::Literal:
     case PatternKind::Range: {
@@ -152,6 +165,87 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
         return;
     }
     }
+}
+
+namespace {
+
+void collectLocals(const Pattern* p, std::map<std::uint32_t, Local*>& out) {
+    if (p->kind == PatternKind::Binding && p->local != nullptr) {
+        out.emplace(p->name.id, p->local);
+    }
+    std::span<Pattern* const> subs = p->kind == PatternKind::Or ? p->sub.first(std::min<std::size_t>(1, p->sub.size()))
+                                                                : std::span<Pattern* const>(p->sub);
+    for (const Pattern* s : subs) {
+        collectLocals(s, out);
+    }
+}
+
+} // namespace
+
+void Checker::checkOrPattern(Pattern* p, TypeId subject) {
+    if (p->sub.empty()) {
+        return;
+    }
+    checkPattern(p->sub[0], subject);
+    std::map<std::uint32_t, Local*> names;
+    collectLocals(p->sub[0], names);
+    for (std::size_t i = 1; i < p->sub.size(); ++i) {
+        orFrames_.push_back({names, {}});
+        checkPattern(p->sub[i], subject);
+        std::set<std::uint32_t> seen = std::move(orFrames_.back().seen);
+        orFrames_.pop_back();
+        for (const auto& [id, local] : names) {
+            if (!seen.contains(id)) {
+                diags_.error(p->sub[i]->span, std::format("this alternative does not bind '{}'; every alternative of "
+                                                          "a '|' pattern binds the same names",
+                                                          str(local->name)));
+            }
+        }
+    }
+}
+
+void Checker::bindOrName(Pattern* p, TypeId subject) {
+    OrFrame& frame = orFrames_.back();
+    auto it = frame.names.find(p->name.id);
+    if (it == frame.names.end()) {
+        diags_.error(p->span, std::format("'{}' is not bound by the first alternative; every alternative of a '|' "
+                                          "pattern binds the same names",
+                                          str(p->name)));
+        p->local = declareLocal(p->name, subject, patternMutable_, p->span);
+        return;
+    }
+    if (it->second->type != subject && it->second->type != ir::kError && subject != ir::kError) {
+        diags_.error(p->span, std::format("'{}' is a '{}' here but a '{}' in the first alternative", str(p->name),
+                                          typeName(subject), typeName(it->second->type)));
+    }
+    p->local = it->second;
+    frame.seen.insert(p->name.id);
+}
+
+std::vector<Checker::PatternRow> Checker::expandOr(const std::vector<PatternRow>& rows) {
+    bool any = std::any_of(rows.begin(), rows.end(), [](const PatternRow& r) {
+        return !r.empty() && r[0] != nullptr && r[0]->kind == PatternKind::Or;
+    });
+    if (!any) {
+        return rows;
+    }
+    std::vector<PatternRow> out;
+    for (const PatternRow& r : rows) {
+        if (r.empty() || r[0] == nullptr || r[0]->kind != PatternKind::Or) {
+            out.push_back(r);
+            continue;
+        }
+        std::vector<PatternRow> alts;
+        for (const Pattern* alt : r[0]->sub) {
+            PatternRow row = r;
+            row[0] = alt;
+            alts.push_back(std::move(row));
+        }
+        for (PatternRow& row : expandOr(alts)) {
+            out.push_back(std::move(row));
+        }
+    }
+    return out;
 }
 
 bool Checker::patternBinds(const Pattern* p) const {
@@ -243,8 +337,9 @@ std::string Checker::ctorText(const Ctor& c, TypeId t, std::span<const std::stri
     return args.empty() && k != ir::TypeKind::Struct ? c.name : c.name + "(" + inside + ")";
 }
 
-std::optional<std::vector<std::string>> Checker::uncovered(const std::vector<PatternRow>& rows,
+std::optional<std::vector<std::string>> Checker::uncovered(const std::vector<PatternRow>& unexpanded,
                                                            const std::vector<TypeId>& cols) const {
+    std::vector<PatternRow> rows = expandOr(unexpanded);
     if (cols.empty()) {
         return rows.empty() ? std::optional(std::vector<std::string>{}) : std::nullopt;
     }
@@ -297,8 +392,10 @@ std::optional<std::vector<std::string>> Checker::uncovered(const std::vector<Pat
     return std::nullopt;
 }
 
-std::optional<std::vector<std::string>>
-Checker::specialized(const std::vector<PatternRow>& rows, const std::vector<TypeId>& cols, const Ctor& c, int k) const {
+std::optional<std::vector<std::string>> Checker::specialized(const std::vector<PatternRow>& unexpanded,
+                                                             const std::vector<TypeId>& cols, const Ctor& c,
+                                                             int k) const {
+    std::vector<PatternRow> rows = expandOr(unexpanded);
     TypeId t = cols[0];
     std::vector<const Pattern*> args;
     std::vector<PatternRow> spec;
@@ -356,10 +453,18 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
     TypeId result = ir::kNever;
     std::vector<const Pattern*> unguarded;
     bool badPatterns = false;
-    for (MatchArm& arm : m->arms) {
+    TypeId armSubject = subject;
+    m->narrowFrom = ~0U;
+    for (std::size_t a = 0; a < m->arms.size(); ++a) {
+        MatchArm& arm = m->arms[a];
         pushScope();
         std::size_t errors = diags_.errorCount();
-        checkPattern(arm.pattern, subject);
+        checkPattern(arm.pattern, armSubject);
+        if (arm.guard == nullptr && armSubject == subject && types_->kind(subject) == ir::TypeKind::Nullable &&
+            matchesNull(arm.pattern)) {
+            armSubject = types_->info(subject).elem;
+            m->narrowFrom = static_cast<std::uint32_t>(a + 1);
+        }
         badPatterns = badPatterns || diags_.errorCount() != errors;
         if (arm.guard != nullptr) {
             expectAssignable(checkValue(arm.guard, ir::kBool), ir::kBool, arm.guard->span);
@@ -420,8 +525,8 @@ TypeId Checker::checkIs(IsExpr* e) {
     }
     checkPattern(e->pattern, t);
     if (patternBinds(e->pattern) && !isBindOk_.contains(e)) {
-        diags_.error(e->pattern->span, "names bound by 'is' can only be used in an 'if' condition, alone or joined "
-                                       "with '&&'");
+        diags_.error(e->pattern->span, "names bound by 'is' can only be used in an 'if' or 'while' condition, alone "
+                                       "or joined with '&&'");
     }
     return ir::kBool;
 }

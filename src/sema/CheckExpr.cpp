@@ -244,6 +244,15 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
     case ExprKind::If: return checkIf(static_cast<IfExpr*>(e), expected, true);
     case ExprKind::Match: return checkMatch(static_cast<MatchExpr*>(e), expected, true);
     case ExprKind::Block: return checkBlock(static_cast<BlockExpr*>(e), expected, true);
+    case ExprKind::Jump: {
+        auto* j = static_cast<JumpExpr*>(e);
+        if (!jumpOk_.contains(e)) {
+            diags_.error(e->span, "'return', 'break' and 'continue' are statements; as a value they can only follow '?"
+                                  "?'");
+        }
+        checkStmt(j->stmt);
+        return ir::kNever;
+    }
     }
     return ir::kError;
 }
@@ -340,6 +349,9 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
         return ir::kBool;
     }
     if (op == BinaryOp::Coalesce) {
+        if (e->rhs->kind == ExprKind::Jump) {
+            jumpOk_.insert(e->rhs);
+        }
         TypeId hint = expected != ir::kError ? types_->nullable(expected) : ir::kError;
         TypeId lt = checkValue(e->lhs, hint);
         if (lt == ir::kError) {

@@ -265,6 +265,9 @@ public:
         case ExprKind::Wait:
             expr(static_cast<const WaitExpr*>(e)->value);
             break;
+        case ExprKind::Jump:
+            expr(static_cast<const JumpExpr*>(e)->value);
+            break;
         case ExprKind::If: {
             const auto* i = static_cast<const IfExpr*>(e);
             expr(i->cond) || expr(i->bindValue) || expr(i->then) || expr(i->otherwise);

@@ -549,6 +549,10 @@ Stmt* Parser::parseStmt() {
         auto* w = node<WhileStmt>(begin);
         w->kind = StmtKind::While;
         noBraceExpr_ = true;
+        if (accept(Tok::KwLet)) {
+            w->bindName = expectIdent("binding name");
+            expect(Tok::Eq, "in 'while let'");
+        }
         w->cond = parseExpr();
         noBraceExpr_ = false;
         w->body = parseBlock();

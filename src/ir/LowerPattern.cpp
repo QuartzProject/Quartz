@@ -10,7 +10,8 @@ void Lowerer::matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fai
         emit(Op::Not, miss, ok);
         brIf(miss, fail);
     };
-    if (info.kind == TypeKind::Nullable && p->kind != PatternKind::Wildcard && p->kind != PatternKind::Binding) {
+    if (info.kind == TypeKind::Nullable && p->kind != PatternKind::Wildcard && p->kind != PatternKind::Binding &&
+        p->kind != PatternKind::Or) {
         TypeId inner = info.elem;
         Reg isNull = newReg(kBool);
         emit(Op::IsNull, isNull, subject);
@@ -28,6 +29,10 @@ void Lowerer::matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fai
     case PatternKind::Wildcard:
         return;
     case PatternKind::Binding:
+        if (orBound_.contains(p->local)) {
+            emit(Op::Move, p->local->reg, subject);
+            return;
+        }
         if (p->local != nullptr) {
             p->local->reg = newReg(type);
             p->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
@@ -67,6 +72,9 @@ void Lowerer::matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fai
         }
         return;
     }
+    case PatternKind::Or:
+        matchOr(p, subject, type, fail);
+        return;
     case PatternKind::Tuple:
     case PatternKind::Struct: {
         std::vector<TypeId> fields = info.elems;
@@ -86,6 +94,49 @@ void Lowerer::matchPattern(Pattern* p, Reg subject, TypeId type, std::size_t fai
         }
         return;
     }
+    }
+}
+
+namespace {
+
+void bindingsOf(Pattern* p, std::vector<Pattern*>& out) {
+    if (p->kind == PatternKind::Binding && p->local != nullptr) {
+        out.push_back(p);
+    }
+    for (Pattern* s : p->sub) {
+        bindingsOf(s, out);
+    }
+}
+
+} // namespace
+
+// Every alternative writes the same registers, so the names are bound on each path that reaches the end.
+void Lowerer::matchOr(Pattern* p, Reg subject, TypeId type, std::size_t fail) {
+    std::vector<Pattern*> binds;
+    bindingsOf(p, binds);
+    std::vector<sema::Local*> fresh;
+    for (Pattern* b : binds) {
+        if (!orBound_.contains(b->local)) {
+            b->local->reg = newReg(b->local->type);
+            b->local->scopeDepth = static_cast<std::uint32_t>(scopes_.size());
+            orBound_.insert(b->local);
+            fresh.push_back(b->local);
+        }
+    }
+    std::size_t matched = depth_;
+    open(Op::Block);
+    for (std::size_t i = 0; i + 1 < p->sub.size(); ++i) {
+        std::size_t next = depth_;
+        open(Op::Block);
+        matchPattern(p->sub[i], subject, type, next);
+        br(matched);
+        close();
+    }
+    matchPattern(p->sub.back(), subject, type, fail);
+    close();
+    for (sema::Local* l : fresh) {
+        orBound_.erase(l);
+        nameLocal(l);
     }
 }
 
@@ -137,7 +188,15 @@ Reg Lowerer::lowerMatch(MatchExpr* m, TypeId want, bool wantValue) {
     Reg result = wantValue && rt != kVoid && rt != kNever ? newReg(rt) : kNoReg;
     std::size_t exit = depth_;
     open(Op::Block);
-    for (MatchArm& arm : m->arms) {
+    for (std::size_t a = 0; a < m->arms.size(); ++a) {
+        MatchArm& arm = m->arms[a];
+        if (a == m->narrowFrom && types_->kind(st) == TypeKind::Nullable) {
+            // An earlier arm took null, so the rest match the value inside.
+            st = types_->info(st).elem;
+            Reg inner = newReg(st);
+            emit(Op::Unwrap, inner, subject);
+            subject = inner;
+        }
         std::size_t next = depth_;
         open(Op::Block);
         matchPattern(arm.pattern, subject, st, next);

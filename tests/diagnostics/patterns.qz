@@ -2,8 +2,11 @@
 // error: match is not exhaustive; missing: (false, false)
 // error: match is not exhaustive; missing: null
 // error: this pattern can fail (it does not match Rect(_, _))
-// error: names bound by 'is' can only be used in an 'if' condition
+// error: names bound by 'is' can only be used in an 'if' or 'while' condition
 // error: match is not exhaustive; add a '_' arm
+// error: 'r' is a 'str' here but a 'float' in the first alternative
+// error: 'x' is not bound by the first alternative
+// error: as a value they can only follow '??'
 
 enum Shape {
     Circle(float)
@@ -44,4 +47,15 @@ fn e(n: int) -> int {
         0 => 1
         1..10 => 2
     }
+}
+fn f(s: Shape, t: (str, float)) -> int {
+    let n = match s {
+        Circle(r) | Rect(r, _) => 1
+        Empty | Rect(_, x) => 2
+        _ => 3
+    }
+    let m = match t {
+        (_, r) | (r, _) => 1
+    }
+    let q = return n + m
 }

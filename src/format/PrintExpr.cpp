@@ -427,6 +427,15 @@ void Printer::exprInner(const Expr* e) {
         space();
         expr(static_cast<const WaitExpr*>(e)->value, kPrecRange);
         return;
+    case ExprKind::Jump: {
+        const auto* j = static_cast<const JumpExpr*>(e);
+        text(j->stmt->kind == StmtKind::Return ? "return" : j->stmt->kind == StmtKind::Break ? "break" : "continue");
+        if (j->value != nullptr) {
+            space();
+            expr(j->value, kPrecLowest);
+        }
+        return;
+    }
     case ExprKind::If:
         ifExpr(static_cast<const IfExpr*>(e));
         return;

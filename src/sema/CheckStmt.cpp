@@ -249,10 +249,25 @@ void Checker::checkStmt(Stmt* s) {
     case StmtKind::Assign: checkAssign(static_cast<AssignStmt*>(s)); return;
     case StmtKind::While: {
         auto* w = static_cast<WhileStmt*>(s);
-        expectAssignable(checkValue(w->cond, ir::kBool), ir::kBool, w->cond->span);
+        pushScope();
+        if (w->bindName.valid()) {
+            TypeId bt = checkValue(w->cond, ir::kError);
+            TypeId inner = ir::kError;
+            if (bt != ir::kError && types_->kind(bt) != ir::TypeKind::Nullable) {
+                diags_.error(w->cond->span,
+                             std::format("'while let' needs a nullable value, found '{}'", typeName(bt)));
+            } else if (bt != ir::kError) {
+                inner = types_->info(bt).elem;
+            }
+            w->bindLocal = declareLocal(w->bindName, inner, false, w->cond->span);
+        } else {
+            allowIsBindings(w->cond);
+            expectAssignable(checkValue(w->cond, ir::kBool), ir::kBool, w->cond->span);
+        }
         ++loopDepth_;
         watchLoop(w->body);
         --loopDepth_;
+        popScope();
         return;
     }
     case StmtKind::For: checkFor(static_cast<ForStmt*>(s)); return;

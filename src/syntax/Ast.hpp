@@ -82,6 +82,7 @@ enum class ExprKind : std::uint8_t {
     If,
     Match,
     Block,
+    Jump, // `return`, `break` or `continue` on the right of `??`
 };
 
 enum class UnaryOp : std::uint8_t { Neg, Not, BitNot };
@@ -288,6 +289,12 @@ struct WaitExpr : Expr {
 
 struct Stmt;
 
+/// `x ?? return v`, `x ?? break`, `x ?? continue`: a jump statement used as a value of type `never`.
+struct JumpExpr : Expr {
+    Stmt* stmt;
+    Expr* value; // the returned value, or null
+};
+
 struct BlockExpr : Expr {
     std::span<Stmt*> stmts;
 };
@@ -301,14 +308,14 @@ struct IfExpr : Expr {
     Expr* otherwise; // BlockExpr, IfExpr or null
 };
 
-enum class PatternKind : std::uint8_t { Wildcard, Binding, Literal, Variant, Range, Tuple, Struct };
+enum class PatternKind : std::uint8_t { Wildcard, Binding, Literal, Variant, Range, Tuple, Struct, Or };
 
 struct Pattern {
     PatternKind kind;
     Span span;
     Symbol name;                    // binding name, or variant name
     std::span<Symbol> path;         // `Enum.Variant`
-    std::span<struct Pattern*> sub; // variant payload, tuple element or struct field patterns
+    std::span<struct Pattern*> sub; // variant payload, tuple element, struct field patterns or `|` alternatives
     Expr* literal;                  // literal or range lo
     Expr* rangeHi;
     bool inclusive = false; // `a..=b`; `a..b` excludes b, as in `for`
@@ -325,6 +332,7 @@ struct MatchArm {
 struct MatchExpr : Expr {
     Expr* subject;
     std::span<MatchArm> arms;
+    std::uint32_t narrowFrom = ~0U; // after an unguarded `null` arm, later arms match the non-null value
 };
 
 // ---------------------------------------------------------------- statements
@@ -374,8 +382,10 @@ struct AssignStmt : Stmt {
 };
 
 struct WhileStmt : Stmt {
-    Expr* cond;
+    Expr* cond; // with `bindName`, the nullable value of `while let name = value`
     BlockExpr* body;
+    Symbol bindName;
+    sema::Local* bindLocal = nullptr;
 };
 
 struct ForStmt : Stmt {

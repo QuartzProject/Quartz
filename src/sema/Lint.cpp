@@ -130,10 +130,19 @@ bool Checker::sameLiteral(const Pattern* a, const Pattern* b) {
 }
 
 // Usefulness (Maranget): true when some value `q` matches is matched by no row; literals only cover themselves.
-bool Checker::useful(const std::vector<PatternRow>& rows, const PatternRow& q, const std::vector<TypeId>& cols) const {
+bool Checker::useful(const std::vector<PatternRow>& unexpanded, const PatternRow& q,
+                     const std::vector<TypeId>& cols) const {
     if (cols.empty()) {
-        return rows.empty();
+        return unexpanded.empty();
     }
+    if (q[0] != nullptr && q[0]->kind == PatternKind::Or) {
+        return std::any_of(q[0]->sub.begin(), q[0]->sub.end(), [&](const Pattern* alt) {
+            PatternRow one = q;
+            one[0] = alt;
+            return useful(unexpanded, one, cols);
+        });
+    }
+    std::vector<PatternRow> rows = expandOr(unexpanded);
     TypeId t = cols[0];
     std::vector<TypeId> rest(cols.begin() + 1, cols.end());
     std::vector<const Pattern*> args;

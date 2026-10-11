@@ -113,6 +113,18 @@ void Printer::stmt(const Stmt* s) {
     }
     case StmtKind::While: {
         const auto* w = static_cast<const WhileStmt*>(s);
+        if (w->bindName.valid()) {
+            text("while let");
+            space();
+            text(name(w->bindName));
+            space();
+            text("=");
+            space();
+            expr(w->cond);
+            space();
+            block(w->body);
+            return;
+        }
         keywordBlock("while", w->cond, w->body);
         return;
     }
@@ -300,6 +312,16 @@ void Printer::pattern(const Pattern* p, std::size_t fence) {
             [&](std::size_t i) { pattern(p->sub[i], open); });
         return;
     }
+    case PatternKind::Or:
+        for (std::size_t i = 0; i < p->sub.size(); ++i) {
+            if (i > 0) {
+                space();
+                text("|");
+                space();
+            }
+            pattern(p->sub[i], fence);
+        }
+        return;
     }
 }
 
