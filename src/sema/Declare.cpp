@@ -114,13 +114,20 @@ void Checker::completeTypes() {
         }
         bool isHandle = info.kind == ir::TypeKind::Handle;
         std::vector<ir::Field> fields;
-        for (const FieldDecl& f : entry.decl->fields) {
+        for (FieldDecl& f : entry.decl->fields) {
             for (const ir::Field& existing : fields) {
                 if (existing.name == str(f.name)) {
                     diags_.error(f.span, std::format("duplicate field '{}'", str(f.name)));
                 }
             }
             TypeId ft = resolveType(f.type);
+            if (f.defaultValue == nullptr && !isHandle && types_->kind(ft) == ir::TypeKind::Nullable) {
+                // Left out, a nullable field is null, as `Decode` reads a missing key (D174).
+                auto* null = arena_.make<NullLitExpr>();
+                null->kind = ExprKind::NullLit;
+                null->span = f.span;
+                f.defaultValue = null;
+            }
             std::string renamed;
             for (const Attribute& a : f.attrs) {
                 if (str(a.name) == "key" && derivesCodec(entry.decl)) {

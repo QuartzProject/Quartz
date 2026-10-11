@@ -1,6 +1,17 @@
 // expect: true false true false
+// expect: a 0 1 none
 struct P {
     x: int
+}
+
+struct Cfg {
+    name: str
+    port: int?
+    tags: [str]?
+}
+
+struct Box<T> {
+    v: T?
 }
 
 fn present(a: [int]?) -> bool {
@@ -11,5 +22,8 @@ fn main() -> int {
     let none: P? = null
     let some: P? = P(1)
     print("{none == null} {null != none} {some != null} {present(null)}")
+    let c = Cfg("a")
+    let d = Cfg("b", tags = ["x"])
+    print("{c.name} {c.port ?? 0} {d.tags?.len() ?? 0} {Box::<str>().v ?? "none"}")
     return 0
 }
