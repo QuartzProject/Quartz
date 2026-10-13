@@ -6,7 +6,6 @@
 // error: match is not exhaustive; add a '_' arm
 // error: 'r' is a 'str' here but a 'float' in the first alternative
 // error: 'x' is not bound by the first alternative
-// error: as a value they can only follow '??'
 
 enum Shape {
     Circle(float)
@@ -57,5 +56,5 @@ fn f(s: Shape, t: (str, float)) -> int {
     let m = match t {
         (_, r) | (r, _) => 1
     }
-    let q = return n + m
+    return n + m
 }
