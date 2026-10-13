@@ -90,6 +90,9 @@ TypeId TypeTable::fn(const std::vector<TypeId>& params, TypeId result) {
 }
 
 TypeId TypeTable::result(TypeId ok, TypeId err) {
+    // `Result<(), E>`: no value is the empty tuple, a real value of no slots (D182).
+    ok = ok == kVoid ? tuple({}) : ok;
+    err = err == kVoid ? tuple({}) : err;
     TypeInfo t;
     t.kind = TypeKind::Enum;
     t.name = std::format("Result<{}, {}>", name(ok), name(err));

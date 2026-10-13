@@ -29,10 +29,14 @@ void Checker::markHoleSites(Expr* body) {
 }
 
 bool Checker::resultHole(CallExpr* call, std::uint32_t variant) {
-    if (holes_.empty() || !holeSites_.contains(call) || call->args.size() != 1 || call->args[0].name.valid()) {
+    if (holes_.empty() || !holeSites_.contains(call) || call->args.size() > 1 ||
+        (call->args.size() == 1 && call->args[0].name.valid())) {
         return false;
     }
-    TypeId arg = checkValue(call->args[0].value, ir::kError);
+    unitArg(call, types_->tuple({}));
+    Expr* only = call->args[0].value;
+    bool unit = only->kind == ExprKind::TupleLit && static_cast<TupleLitExpr*>(only)->elems.empty();
+    TypeId arg = unit ? check(only, types_->tuple({})) : checkValue(only, ir::kError);
     call->callKind = CallKind::Variant;
     call->variant = variant;
     std::vector<Expr*> ordered{call->args[0].value};

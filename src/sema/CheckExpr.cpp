@@ -223,7 +223,7 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
     case ExprKind::TupleLit: {
         auto* t = static_cast<TupleLitExpr*>(e);
         if (t->elems.empty()) {
-            return ir::kVoid;
+            return want == types_->tuple({}) ? want : ir::kVoid;
         }
         const ir::TypeInfo* hint = types_->kind(want) == ir::TypeKind::Tuple ? &types_->info(want) : nullptr;
         std::vector<TypeId> elems;

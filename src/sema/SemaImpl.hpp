@@ -98,6 +98,7 @@ public:
     TypeId checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expected, bool& found, bool qualified = false);
     TypeId checkConstruct(CallExpr* call, TypeId type);
     TypeId finishCall(CallExpr* call, FnInfo* fn, Expr* receiver);
+    void unitArg(CallExpr* call, TypeId payload);
     bool bindArgs(CallExpr* call, const std::vector<TypeId>& params, const std::vector<Symbol>& names,
                   const std::vector<Expr*>& defaults, std::size_t skip);
     std::optional<BuiltinSig> builtinMethod(TypeId recv, std::string_view name);

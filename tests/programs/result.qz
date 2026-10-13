@@ -3,6 +3,7 @@
 // expect: 7 0 true false
 // expect: 5 9
 // expect: Err(neg) Ok(4) null
+// expect: ok err negative err zero 5 true
 
 enum ParseError {
     Empty
@@ -35,6 +36,30 @@ fn parse(s: str) -> Result<int, ParseError> {
     return Ok(n)
 }
 
+fn check(n: int) -> Result<(), str> {
+    if n < 0 {
+        return Err("negative")
+    }
+    return Ok(())
+}
+
+fn nonZero(n: int) -> Result<void, str> {
+    return if n == 0 { Err("zero") } else { Ok() }
+}
+
+fn both(n: int) -> Result<int, str> {
+    check(n)?
+    nonZero(n)?
+    return Ok(5)
+}
+
+fn unitText(r: Result<(), str>) -> str {
+    return match r {
+        Ok(()) => "ok"
+        Err(e) => "err {e}"
+    }
+}
+
 fn shown(n: int) -> str {
     let r = match n {
         0 => null
@@ -63,5 +88,6 @@ fn main() -> int {
     let none: int? = null
     print("{some.unwrap()} {none.unwrapOr(9)}")
     print("{shown(-1)} {shown(2)} {shown(0)}")
+    print("{unitText(check(1))} {unitText(check(-1))} {unitText(nonZero(0))} {both(1).unwrap()} {both(-1).isErr()}")
     return 0
 }

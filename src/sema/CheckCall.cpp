@@ -88,6 +88,18 @@ std::optional<BuiltinSig> Checker::builtinMethod(TypeId recv, std::string_view n
     return std::nullopt;
 }
 
+// `Ok()` for a `Result<(), E>` means `Ok(())`.
+void Checker::unitArg(CallExpr* call, TypeId payload) {
+    if (!call->args.empty() || payload != types_->tuple({})) {
+        return;
+    }
+    auto* unit = arena_.make<TupleLitExpr>();
+    unit->kind = ExprKind::TupleLit;
+    unit->span = call->span;
+    std::vector<Arg> args{Arg{Symbol{}, unit}};
+    call->args = arena_.copy(args);
+}
+
 bool Checker::bindArgs(CallExpr* call, const std::vector<TypeId>& params, const std::vector<Symbol>& names,
                        const std::vector<Expr*>& defaults, std::size_t skip) {
     std::size_t n = params.size() - skip;
@@ -324,6 +336,7 @@ TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expecte
         std::uint32_t v = n == "Ok" ? 0 : 1;
         call->callKind = CallKind::Variant;
         call->variant = v;
+        unitArg(call, types_->info(want).variants[v].payload[0]);
         bindArgs(call, types_->info(want).variants[v].payload, {}, {}, 0);
         return want;
     }
