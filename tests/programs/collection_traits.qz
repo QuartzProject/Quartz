@@ -2,6 +2,7 @@
 // expect: -1 1 0 true true false
 // expect: {a=[4], b=[2, 3]} {} {(1, x)=null} {k=v}
 // expect: Row(cells=[1, 2]) true true
+// expect: [Row(cells=[0, 9]), Row(cells=[1]), Row(cells=[1, 0])] Row(cells=[0, 9]) Row(cells=[1, 0]) [1, 2, 3] 3 null
 @derive(Eq, Ord, Show)
 struct Row {
     cells: [int]
@@ -24,5 +25,9 @@ fn main() -> int {
     s["k"] = "v"
     print("{m} {empty} {t} {s.show()}")
     print("{Row([1, 2])} {Row([1]) < Row([1, 0])} {Row([2]) == Row([2])}")
+    let rows = [Row([1, 0]), Row([0, 9]), Row([1])]
+    let none: [Row] = []
+    rows.sort()
+    print("{rows} {rows.min()} {[Row([1, 0]), Row([1])].max()} {[3, 1, 2].sorted()} {[3, 1, 2].max()} {none.min()}")
     return 0
 }

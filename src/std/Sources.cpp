@@ -344,6 +344,52 @@ pub fn sortWith<T>(xs: [T], cmp: fn(T, T) -> int) {
         xs[k] = src[k]
     }
 }
+
+/// sort() for elements it does not compare natively: stable, by their Ord.
+pub fn sortOrd<T: Ord>(xs: [T]) {
+    sortWith(xs, (a, b) => a.cmp(b))
+}
+
+/// sorted() for numbers, bool, char and str: a copy sorted natively.
+pub fn sortedNative<T>(xs: [T]) -> [T] {
+    let out = xs.slice(0, xs.len())
+    out.sortNative()
+    return out
+}
+
+pub fn sortedOrd<T: Ord>(xs: [T]) -> [T] {
+    let out = xs.slice(0, xs.len())
+    sortOrd(out)
+    return out
+}
+
+/// The first smallest element by Ord, or null when the list is empty.
+pub fn minOf<T: Ord>(xs: [T]) -> T? {
+    if xs.len() == 0 {
+        return null
+    }
+    var best = xs[0]
+    for x in xs {
+        if x.cmp(best) < 0 {
+            best = x
+        }
+    }
+    return best
+}
+
+/// The first largest element by Ord, or null when the list is empty.
+pub fn maxOf<T: Ord>(xs: [T]) -> T? {
+    if xs.len() == 0 {
+        return null
+    }
+    var best = xs[0]
+    for x in xs {
+        if x.cmp(best) > 0 {
+            best = x
+        }
+    }
+    return best
+}
 )";
 
 } // namespace

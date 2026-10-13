@@ -94,9 +94,13 @@ std::optional<BuiltinSig> Checker::extraBuiltinMethod(TypeId recv, std::string_v
         if (name == "sort" && comparable) {
             return BuiltinSig{Intrinsic::ListSort, {}, ir::kVoid};
         }
-        // Only sortBy uses it; the validator checks the keys once the generic code has concrete types.
-        if (name == "sortByKeys" && currentFile_ < files_.size() && files_[currentFile_].package == kListsPackage) {
+        // Only sortBy and sorted use them; the validator checks the elements once the generic code has concrete types.
+        bool lists = currentFile_ < files_.size() && files_[currentFile_].package == kListsPackage;
+        if (name == "sortByKeys" && lists) {
             return BuiltinSig{Intrinsic::ListSortByKeys, {ir::kError}, ir::kVoid};
+        }
+        if (name == "sortNative" && lists) {
+            return BuiltinSig{Intrinsic::ListSort, {}, ir::kVoid};
         }
         return std::nullopt;
     }
@@ -144,14 +148,27 @@ std::optional<BuiltinSig> Checker::extraBuiltinMethod(TypeId recv, std::string_v
 }
 
 bool Checker::checkListFunctionMethod(CallExpr* call, TypeId recv, Symbol name, TypeId& result) {
-    static constexpr std::string_view kNames[] = {"map",  "filter",     "any",    "all",
-                                                  "find", "indexWhere", "sortBy", "sortWith"};
+    static constexpr std::string_view kNames[] = {"map",    "filter",   "any",  "all",    "find", "indexWhere",
+                                                  "sortBy", "sortWith", "sort", "sorted", "min",  "max"};
     std::string_view n = str(name);
     if (types_->kind(recv) != ir::TypeKind::List ||
         std::find(std::begin(kNames), std::end(kNames), n) == std::end(kNames)) {
         return false;
     }
-    auto* fn = static_cast<FnInfo*>(findIn(std::string(kListsPackage), name, NameKind::Function));
+    // sort() on numbers, bool, char and str stays native; elements with Ord go through their cmp.
+    bool native = ir::isComparableElement(*types_, types_->info(recv).elem);
+    std::string_view target = n;
+    if (n == "sort") {
+        if (native) {
+            return false;
+        }
+        target = "sortOrd";
+    } else if (n == "sorted") {
+        target = native ? "sortedNative" : "sortedOrd";
+    } else if (n == "min" || n == "max") {
+        target = n == "min" ? "minOf" : "maxOf";
+    }
+    auto* fn = static_cast<FnInfo*>(findIn(std::string(kListsPackage), names_.intern(target), NameKind::Function));
     if (fn == nullptr || call->receiver == nullptr) {
         return false;
     }
