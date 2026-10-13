@@ -2,6 +2,7 @@
 // expect: error: bad digit x
 // expect: 7 0 true false
 // expect: 5 9
+// expect: Err(neg) Ok(4) null
 
 enum ParseError {
     Empty
@@ -34,6 +35,18 @@ fn parse(s: str) -> Result<int, ParseError> {
     return Ok(n)
 }
 
+fn shown(n: int) -> str {
+    let r = match n {
+        0 => null
+        _ => if n < 0 { Err("neg") } else { Ok(n * 2) }
+    }
+    return match r {
+        null => "null"
+        Ok(v) => "Ok({v})"
+        Err(e) => "Err({e})"
+    }
+}
+
 fn main() -> int {
     match parse("21") {
         Ok(v) => print("{v} ok")
@@ -49,5 +62,6 @@ fn main() -> int {
     let some: int? = 5
     let none: int? = null
     print("{some.unwrap()} {none.unwrapOr(9)}")
+    print("{shown(-1)} {shown(2)} {shown(0)}")
     return 0
 }

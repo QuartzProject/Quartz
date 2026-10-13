@@ -48,6 +48,19 @@ bool Checker::matchable(TypeId t) const {
     }
 }
 
+// A pattern that cannot match its subject still binds its names, so their uses do not report again.
+void Checker::bindAsErrors(Pattern* p) {
+    for (Pattern* s : p->sub) {
+        if (s->kind == PatternKind::Binding && orFrames_.empty()) {
+            s->local = declareLocal(s->name, ir::kError, patternMutable_, s->span);
+        } else if (s->kind == PatternKind::Binding) {
+            bindOrName(s, ir::kError);
+        } else {
+            bindAsErrors(s);
+        }
+    }
+}
+
 void Checker::checkPattern(Pattern* p, TypeId subject) {
     TypeId inner = subject;
     if (types_->kind(subject) == ir::TypeKind::Nullable) {
@@ -109,6 +122,7 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
                 diags_.error(p->span,
                              std::format("a tuple pattern of {} cannot match '{}'", p->sub.size(), typeName(subject)));
             }
+            bindAsErrors(p);
             return;
         }
         for (std::size_t i = 0; i < p->sub.size(); ++i) {
@@ -121,12 +135,14 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
             StructDecl* decl = structDeclOf(inner);
             if (decl == nullptr || p->path.size() != 1 || decl->name != p->name) {
                 diags_.error(p->span, std::format("pattern does not belong to '{}'", typeName(inner)));
+                bindAsErrors(p);
                 return;
             }
             p->kind = PatternKind::Struct;
             if (p->sub.size() != info.fields.size()) {
                 diags_.error(p->span, std::format("'{}' has {} field(s), the pattern has {}", typeName(inner),
                                                   info.fields.size(), p->sub.size()));
+                bindAsErrors(p);
                 return;
             }
             for (std::size_t i = 0; i < p->sub.size(); ++i) {
@@ -138,11 +154,13 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
             if (subject != ir::kError) {
                 diags_.error(p->span, std::format("variant pattern on a value of type '{}'", typeName(subject)));
             }
+            bindAsErrors(p);
             return;
         }
         std::string enumName = info.genericBase != 0 ? types_->info(info.genericBase).name : info.name;
         if (p->path.size() > 2 || (p->path.size() == 2 && str(p->path[0]) != enumName)) {
             diags_.error(p->span, std::format("pattern does not belong to '{}'", info.name));
+            bindAsErrors(p);
             return;
         }
         for (std::uint32_t v = 0; v < info.variants.size(); ++v) {
@@ -154,6 +172,7 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
             if (p->sub.size() != payload.size()) {
                 diags_.error(p->span, std::format("variant '{}' has {} field(s), the pattern has {}", str(p->name),
                                                   payload.size(), p->sub.size()));
+                bindAsErrors(p);
                 return;
             }
             for (std::size_t i = 0; i < payload.size(); ++i) {
@@ -162,6 +181,7 @@ void Checker::checkPattern(Pattern* p, TypeId subject) {
             return;
         }
         diags_.error(p->span, std::format("'{}' has no variant '{}'", info.name, str(p->name)));
+        bindAsErrors(p);
         return;
     }
     }
@@ -455,8 +475,15 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
     bool badPatterns = false;
     TypeId armSubject = subject;
     m->narrowFrom = ~0U;
+    bool holes = wantValue && expected == ir::kError;
+    if (holes) {
+        holes_.emplace_back();
+    }
     for (std::size_t a = 0; a < m->arms.size(); ++a) {
         MatchArm& arm = m->arms[a];
+        if (holes) {
+            markHoleSites(arm.body);
+        }
         pushScope();
         std::size_t errors = diags_.errorCount();
         checkPattern(arm.pattern, armSubject);
@@ -488,6 +515,13 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
             result = ir::kVoid;
         }
         popScope();
+    }
+    if (holes) {
+        std::vector<Expr*> bodies;
+        for (MatchArm& arm : m->arms) {
+            bodies.push_back(arm.body);
+        }
+        result = fillResultHoles(result, bodies);
     }
     if (subject != ir::kError && !badPatterns) {
         std::vector<std::string> missing = missingCases(unguarded, subject);

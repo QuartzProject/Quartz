@@ -297,7 +297,9 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
         diags_.error(e->span, std::format("'{}' is a type, not a value", str(e->name)));
         return ir::kError;
     }
-    diags_.error(e->span, std::format("unknown name '{}'", str(e->name)));
+    if (firstUnknown(e->name)) {
+        diags_.error(e->span, std::format("unknown name '{}'", str(e->name)));
+    }
     return ir::kError;
 }
 
@@ -442,6 +444,23 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
 }
 
 TypeId Checker::checkIf(IfExpr* e, TypeId expected, bool wantValue) {
+    bool holes = wantValue && expected == ir::kError;
+    bool shared = holes && elseShares_ && !holes_.empty();
+    elseShares_ = false;
+    if (holes && !shared) {
+        holes_.emplace_back();
+    }
+    if (holes) {
+        markHoleSites(e->then);
+        if (e->otherwise != nullptr && e->otherwise->kind == ExprKind::Block) {
+            markHoleSites(e->otherwise);
+        }
+    }
+    TypeId t = checkIfBranches(e, expected, wantValue, holes);
+    return holes && !shared ? fillResultHoles(t, {e->then, e->otherwise}) : t;
+}
+
+TypeId Checker::checkIfBranches(IfExpr* e, TypeId expected, bool wantValue, bool holes) {
     pushScope();
     if (e->bindValue != nullptr) {
         TypeId bt = checkValue(e->bindValue, ir::kError);
@@ -471,6 +490,7 @@ TypeId Checker::checkIf(IfExpr* e, TypeId expected, bool wantValue) {
     }
     TypeId elseT = ir::kVoid;
     if (e->otherwise->kind == ExprKind::If) {
+        elseShares_ = holes;
         elseT = checkIf(static_cast<IfExpr*>(e->otherwise), expected, wantValue);
     } else {
         elseT = checkBlock(static_cast<BlockExpr*>(e->otherwise), expected, wantValue);

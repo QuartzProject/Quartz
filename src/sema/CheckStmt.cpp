@@ -158,6 +158,7 @@ void Checker::checkFunction(FnInfo* fn) {
     }
     currentFn_ = fn;
     checkingFn_ = fn;
+    unknownSeen_.clear();
     selfType_ = fn->owner;
     loopDepth_ = 0;
     scopes_.clear();

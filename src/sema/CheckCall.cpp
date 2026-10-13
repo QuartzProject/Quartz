@@ -311,6 +311,9 @@ TypeId Checker::checkBuiltinFunction(CallExpr* call, Symbol name, TypeId expecte
         if (want != ir::kError && types_->kind(want) == ir::TypeKind::Nullable) {
             want = types_->info(want).elem;
         }
+        if (want == ir::kError && resultHole(call, n == "Ok" ? 0 : 1)) {
+            return ir::kNever;
+        }
         if (want == ir::kError || !types_->isResult(want)) {
             diags_.error(call->span, std::format("cannot infer the Result type of '{}(...)'; annotate the type", n));
             for (Arg& a : call->args) {
@@ -612,7 +615,9 @@ TypeId Checker::checkCall(CallExpr* e, TypeId expected) {
             }
             return checkConstruct(e, tt);
         }
-        diags_.error(id->span, std::format("unknown function '{}'", str(id->name)));
+        if (firstUnknown(id->name)) {
+            diags_.error(id->span, std::format("unknown function '{}'", str(id->name)));
+        }
         for (Arg& a : e->args) {
             check(a.value, ir::kError);
         }

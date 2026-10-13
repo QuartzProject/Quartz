@@ -37,6 +37,9 @@ void Checker::indexFiles() {
             if (imp.star || !imp.names.empty()) {
                 if (!packages_.contains(path)) {
                     diags_.error(imp.span, std::format("unknown package '{}'", path));
+                    for (Symbol n : imp.names) {
+                        failedImports_.insert({mod->file->id(), n.id});
+                    }
                     continue;
                 }
                 if (imp.star) {
@@ -51,19 +54,30 @@ void Checker::indexFiles() {
                 fs.packageImports[imp.alias.valid() ? imp.alias : imp.path[imp.path.size() - 1]] = path;
                 continue;
             }
+            Symbol local = imp.alias.valid() ? imp.alias : imp.path[imp.path.size() - 1];
             if (imp.path.size() < 2) {
                 diags_.error(imp.span, std::format("unknown package '{}'", path));
+                failedImports_.insert({mod->file->id(), local.id});
                 continue;
             }
             std::string pkg = joinPath(names_, imp.path.subspan(0, imp.path.size() - 1));
             if (!packages_.contains(pkg)) {
                 diags_.error(imp.span, std::format("unknown package '{}'", pkg));
+                failedImports_.insert({mod->file->id(), local.id});
                 continue;
             }
             Symbol last = imp.path[imp.path.size() - 1];
             fs.symbolImports[imp.alias.valid() ? imp.alias : last] = {pkg, last};
         }
     }
+}
+
+// One error per unknown name and function body, and none for the name of an import that already failed.
+bool Checker::firstUnknown(Symbol name) {
+    if (failedImports_.contains({currentFile_, name.id})) {
+        return false;
+    }
+    return unknownSeen_.insert(name.id).second;
 }
 
 void Checker::addName(Symbol name, NameKind kind, void* target, const Decl* decl, std::uint32_t file) {

@@ -74,6 +74,7 @@ public:
     TypeId checkBinary(BinaryExpr* e, TypeId expected);
     TypeId checkUnary(UnaryExpr* e, TypeId expected);
     TypeId checkIf(IfExpr* e, TypeId expected, bool wantValue);
+    TypeId checkIfBranches(IfExpr* e, TypeId expected, bool wantValue, bool holes);
     TypeId checkCast(CastExpr* e);
     TypeId checkWith(WithExpr* e, TypeId expected);
     TypeId checkIndex(IndexExpr* e);
@@ -133,6 +134,7 @@ public:
 
     TypeId checkMatch(MatchExpr* m, TypeId expected, bool wantValue);
     void checkPattern(Pattern* p, TypeId subject);
+    void bindAsErrors(Pattern* p);
     [[nodiscard]] bool matchable(TypeId t) const;
     [[nodiscard]] bool patternBinds(const Pattern* p) const;
     [[nodiscard]] std::optional<std::vector<Ctor>> ctorsOf(TypeId t) const;
@@ -160,6 +162,25 @@ public:
     std::set<const Expr*> isBindOk_;
     std::set<const Expr*> jumpOk_; // `return`, `break` or `continue` on the right of `??`
     bool patternMutable_ = false;
+
+    // ResultHoles.cpp: `Ok(...)` and `Err(...)` as a branch's value take their Result type from the other branches.
+    struct ResultHole {
+        CallExpr* call;
+        std::uint32_t variant;
+        TypeId arg;
+    };
+
+    struct HoleFrame {
+        std::vector<ResultHole> holes;
+        std::vector<const Expr*> sites;
+    };
+
+    std::vector<HoleFrame> holes_;
+    std::set<const Expr*> holeSites_;
+    bool elseShares_ = false; // the `else if` being checked fills the holes of the `if` around it
+    void markHoleSites(Expr* body);
+    bool resultHole(CallExpr* call, std::uint32_t variant);
+    TypeId fillResultHoles(TypeId unified, const std::vector<Expr*>& bodies);
 
     // FormatSpec.cpp
     std::uint64_t formatSpec(std::string_view spec, TypeId t, Span span);
@@ -319,6 +340,9 @@ public:
         std::unordered_map<Symbol, std::string> packageImports;                   // `import a.b.c` -> c names a.b.c
     };
     void indexFiles();
+    bool firstUnknown(Symbol name);
+    std::set<std::pair<std::uint32_t, std::uint32_t>> failedImports_; // (file, local name) of imports that failed
+    std::set<std::uint32_t> unknownSeen_;                             // names reported unknown in this function
     void addName(Symbol name, NameKind kind, void* target, const Decl* decl, std::uint32_t file);
     bool visibleFrom(const NameEntry& e, Symbol name, std::uint32_t file) const;
     bool imported(const NameEntry& e, Symbol alias, std::uint32_t file) const;
