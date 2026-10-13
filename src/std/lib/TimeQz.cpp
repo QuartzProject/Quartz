@@ -190,6 +190,35 @@ impl Duration {
         return parseDuration(text)
     }
 
+    /// `Duration.nanos(n)` to `Duration.days(n)` are the package functions of the same name.
+    pub fn nanos(n: int) -> Duration {
+        return Duration(n)
+    }
+
+    pub fn micros(n: int) -> Duration {
+        return Duration(must(n.checkedMul(NanosPerMicro), "duration"))
+    }
+
+    pub fn millis(n: int) -> Duration {
+        return Duration(must(n.checkedMul(NanosPerMilli), "duration"))
+    }
+
+    pub fn seconds(n: int) -> Duration {
+        return Duration(must(n.checkedMul(NanosPerSecond), "duration"))
+    }
+
+    pub fn minutes(n: int) -> Duration {
+        return Duration(must(n.checkedMul(NanosPerMinute), "duration"))
+    }
+
+    pub fn hours(n: int) -> Duration {
+        return Duration(must(n.checkedMul(NanosPerHour), "duration"))
+    }
+
+    pub fn days(n: int) -> Duration {
+        return Duration(must(n.checkedMul(NanosPerDay), "duration"))
+    }
+
     pub fn toNanos(self) -> int {
         return self.nanos
     }

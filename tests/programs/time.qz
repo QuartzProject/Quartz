@@ -9,6 +9,7 @@
 // expect: cron 2026-01-01T02:30:00Z 2025-11-21T00:00:00Z 2025-12-01T00:00:00Z 2026-12-31T23:59:00Z 2026-01-01T00:00:00Z
 // expect: cron 2028-02-29T00:00:00Z none 2025-11-23T00:00:00Z true false
 // expect: cron errors true true true true true true
+// expect: 1.5s 1m2s true 24
 
 import org.quartzlang.time
 import org.quartzlang.time.{parseCron, parseDuration, parseInstant}
@@ -56,5 +57,6 @@ fn main() -> int {
         out.push("{parseCron(bad).isErr()}")
     }
     print("cron errors {out.join(" ")}")
+    print("{time.Duration.millis(1500)} {time.Duration.seconds(2).plus(time.Duration.minutes(1))} {time.Duration.micros(3000) == time.millis(3)} {time.Duration.days(1).toHours()}")
     return 0
 }

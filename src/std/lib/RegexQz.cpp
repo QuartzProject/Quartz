@@ -46,6 +46,16 @@ pub fn compileRegex(pattern: str) -> Result<Regex, str> {
     }
 }
 
+fn namedGroups(names: [str]) -> [str] {
+    var out: [str] = []
+    for i, n in names {
+        if i > 0 && n.len() > 0 {
+            out.push(n)
+        }
+    }
+    return out
+}
+
 fn matchAt(subject: str, spans: [int], base: int, names: [str]) -> Match {
     let start = spans[base]
     let end = spans[base + 1]
@@ -108,6 +118,16 @@ impl Regex {
     pub fn groupCount(self) -> int {
         return self.names.len() - 1
     }
+
+    /// The names of the named groups in the order they open; groups without a name are left out.
+    pub fn groupNames(self) -> [str] {
+        return namedGroups(self.names)
+    }
+
+    /// True when the pattern has a group with this name, so `named(name)` does not panic.
+    pub fn hasGroup(self, name: str) -> bool {
+        return name.len() > 0 && self.names.contains(name)
+    }
 }
 
 impl Match {
@@ -150,6 +170,16 @@ impl Match {
     /// The number of capturing groups, not counting the whole match.
     pub fn groupCount(self) -> int {
         return self.names.len() - 1
+    }
+
+    /// The names of the pattern's named groups in the order they open, whether or not they took part.
+    pub fn groupNames(self) -> [str] {
+        return namedGroups(self.names)
+    }
+
+    /// True when the pattern has a group with this name, so `named(name)` does not panic.
+    pub fn hasGroup(self, name: str) -> bool {
+        return name.len() > 0 && self.names.contains(name)
     }
 }
 )qz";

@@ -105,6 +105,7 @@
 // expect: split 5 a|b,c,d
 // expect: split 6 a,b,c,d
 // expect: split 7 |a|b|
+// expect: names [year, day] [year, day] true false false 17
 
 import org.quartzlang.regex.*
 
@@ -260,5 +261,8 @@ fn main(k: Kept) -> int {
     split(5, ",", "a,b,c,d", 2)
     split(6, ",", "a,b,c,d", 1)
     split(7, "\\s+", " a b ", 0)
+    let dated = compileRegex(r"(?P<year>\d{4})-(\d{2})-(?<day>\d{2})").unwrap()
+    let m = dated.find("on 2024-05-17").unwrap()
+    print("names {dated.groupNames()} {m.groupNames()} {m.hasGroup("day")} {m.hasGroup("month")} {dated.hasGroup("")} {m.named("day") ?? "-"}")
     return 0
 }
