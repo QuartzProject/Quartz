@@ -511,6 +511,8 @@ Stmt* Parser::parseLet(bool mutable_, bool isConst, bool isRef) {
         let->init = parseExpr();
     } else if (!mutable_) {
         error(cur().span, "an immutable binding needs an initializer");
+    } else if (let->pattern != nullptr) {
+        error(cur().span, "a destructuring binding needs an initializer");
     }
     endStmt();
     let->span = begin.to(prevSpan());

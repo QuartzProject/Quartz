@@ -575,6 +575,10 @@ void Checker::allowIsBindings(Expr* cond) {
 }
 
 void Checker::checkLetPattern(LetStmt* s) {
+    if (s->init == nullptr) {
+        bindAsErrors(s->pattern); // the parser reported the missing initializer
+        return;
+    }
     TypeId declared = s->type != nullptr ? resolveType(s->type) : ir::kError;
     TypeId t = checkValue(s->init, declared);
     if (declared != ir::kError) {
