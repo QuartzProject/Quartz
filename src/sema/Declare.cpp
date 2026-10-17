@@ -122,7 +122,7 @@ void Checker::completeTypes() {
             }
             TypeId ft = resolveType(f.type);
             if (f.defaultValue == nullptr && !isHandle && types_->kind(ft) == ir::TypeKind::Nullable) {
-                // Left out, a nullable field is null, as `Decode` reads a missing key (D174).
+                // Left out, a nullable field is null, as `Decode` reads a missing key (D180).
                 auto* null = arena_.make<NullLitExpr>();
                 null->kind = ExprKind::NullLit;
                 null->span = f.span;
@@ -297,7 +297,7 @@ void Checker::completeTypes() {
             }
         }
     }
-    // A struct that contains itself by value has no finite size; an enum on the way is boxed instead (D171).
+    // A struct that contains itself by value has no finite size; an enum on the way is boxed instead (D177).
     for (auto& entryPtr : typeEntries_) {
         TypeEntry& entry = *entryPtr;
         if (entry.decl == nullptr || types_->kind(entry.type) != ir::TypeKind::Struct) {

@@ -33,6 +33,10 @@ public:
         if (e == nullptr || !literalOf(e, type) || e->span.file >= sources_.size()) {
             return {};
         }
+        // An implicit null default (D180) carries the field's span, not its own text.
+        if (e->kind == ExprKind::NullLit) {
+            return "null";
+        }
         std::string_view text = sources_.file(e->span.file).text();
         if (e->span.end > text.size() || e->span.begin >= e->span.end) {
             return {};

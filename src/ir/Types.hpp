@@ -151,7 +151,7 @@ public:
     [[nodiscard]] bool hostBuildable(TypeId id) const;
     /// Per variant and payload: whether it holds its own enum (or another instance of it) by value.
     [[nodiscard]] std::vector<std::vector<bool>> recursivePayloads(TypeId e) const;
-    /// Stores each recursive enum payload in a list of one so every value has a finite size (D171).
+    /// Stores each recursive enum payload in a list of one so every value has a finite size (D177).
     void boxRecursivePayloads();
     /// The field through which a struct holds itself by value with no enum between, if any.
     [[nodiscard]] std::optional<std::size_t> inlineCycle(TypeId id) const;

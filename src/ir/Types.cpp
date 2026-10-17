@@ -90,7 +90,7 @@ TypeId TypeTable::fn(const std::vector<TypeId>& params, TypeId result) {
 }
 
 TypeId TypeTable::result(TypeId ok, TypeId err) {
-    // `Result<(), E>`: no value is the empty tuple, a real value of no slots (D182).
+    // `Result<(), E>`: no value is the empty tuple, a real value of no slots (D188).
     ok = ok == kVoid ? tuple({}) : ok;
     err = err == kVoid ? tuple({}) : err;
     TypeInfo t;
@@ -394,7 +394,7 @@ bool TypeTable::hostBuildable(TypeId id) const {
 
 bool TypeTable::hasRefs(TypeId id) const { return hasRefsAt(id, 0); }
 
-// Only a recursive enum payload, which lowering boxes in a list (D171), nests deeper than the validator allows.
+// Only a recursive enum payload, which lowering boxes in a list (D177), nests deeper than the validator allows.
 bool TypeTable::hasRefsAt(TypeId id, std::uint32_t depth) const {
     const TypeInfo& t = types_[id];
     if (depth > kMaxTypeNesting) {

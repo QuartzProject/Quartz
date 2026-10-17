@@ -144,7 +144,7 @@ public:
     void lowerAssert(CallExpr* e);
     TypeId builtinElementParam(CallExpr* e, Intrinsic op, const Expr* arg);
 
-    // Recursive enums (D171): a payload holding its own enum by value lives in a list of one.
+    // Recursive enums (D177): a payload holding its own enum by value lives in a list of one.
     std::unordered_map<TypeId, std::vector<std::vector<bool>>> boxed_;
     bool boxedPayload(TypeId e, std::uint32_t v, std::uint32_t i);
     void enumMake(Reg dst, TypeId e, std::uint32_t v, std::vector<Reg> args);
