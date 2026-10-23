@@ -70,7 +70,7 @@ class SandboxTest {
             assertEquals("hi zoë x3", sandbox.call("hello", "zoë ", 3).asString());
             CompileException bad = assertThrows(CompileException.class,
                     () -> Quartz.compile(Source.of("bad.qz", "fn f() -> int {\n    return \"x\"\n}\n")));
-            assertTrue(bad.diagnostics().contains("error"), bad.diagnostics());
+            assertTrue(bad.text().contains("error"), bad.text());
         }
     }
 

@@ -221,7 +221,7 @@ final class Mapper {
         };
     }
 
-    private static Class<?> subclass(Shape s, String name) {
+    static Class<?> subclass(Shape s, String name) {
         for (Class<?> sub : s.subclasses) {
             if (sub.getSimpleName().equals(name)) {
                 return sub;
@@ -312,7 +312,7 @@ final class Mapper {
         return value instanceof Long || value instanceof Integer || value instanceof Short || value instanceof Byte;
     }
 
-    private static Class<?> raw(java.lang.reflect.Type t) {
+    static Class<?> raw(java.lang.reflect.Type t) {
         return switch (t) {
             case Class<?> c -> c;
             case ParameterizedType p -> (Class<?>) p.getRawType();
@@ -321,7 +321,11 @@ final class Mapper {
         };
     }
 
-    private static String describe(Object value) {
+    static Class<?> box(Class<?> c) {
+        return c.isPrimitive() ? java.lang.invoke.MethodType.methodType(c).wrap().returnType() : c;
+    }
+
+    static String describe(Object value) {
         return switch (value) {
             case Struct s -> "struct " + s.names();
             case Variant v -> "variant " + v.name();

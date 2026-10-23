@@ -220,4 +220,71 @@ class ValuesTest {
             assertNull(sandbox.call("half", 1).to(Long.class));
         }
     }
+
+    static final class Player {
+        final String name;
+
+        Player(String name) {
+            this.name = name;
+        }
+    }
+
+    sealed interface Event {
+        record Join(Player who) implements Event {}
+
+        record Leave(Player who, String why) implements Event {}
+    }
+
+    record Stats(Player who, long score) {}
+
+    @Test
+    void handlesMapInsideVariantsAndTaskResultsComeBackWhole() {
+        String host = """
+                @handle
+                struct Player {}
+                enum Event {
+                    Join(Player)
+                    Leave(Player, str)
+                }
+                fn relay(e: Event) -> Event
+                """;
+        String plugin = """
+                fn flip(e: Event) -> Event {
+                    return match relay(e) {
+                        Join(p) => Event.Leave(p, "flip")
+                        Leave(p, _) => Event.Join(p)
+                    }
+                }
+                suspend fn stats(p: Player) -> (Player, int) {
+                    return (p, 7)
+                }
+                """;
+        List<Player> table = List.of(new Player("ann"), new Player("bob"));
+        HandleMapper handles = new HandleMapper() {
+            @Override
+            public Object object(long id, Type type) {
+                return table.get((int) id);
+            }
+
+            @Override
+            public long id(Object object, Type type) {
+                return table.indexOf(object);
+            }
+        };
+        try (Program program = Quartz.compile(Source.of("host.qzi", host), Source.of("plugin.qz", plugin));
+                Sandbox sandbox = new Sandbox(program)) {
+            Type event = program.findImport("relay").orElseThrow().signature().result();
+            sandbox.bind("relay", call -> Values.from(call.arg(0, Event.class, handles), event, handles));
+            sandbox.start();
+            Export flip = program.export("flip");
+            Object leave = Values.from(new Event.Leave(table.get(1), "bye"), flip.signature().params().get(0), handles);
+            assertEquals(Variant.of("Leave", 1L, "bye"), leave);
+            assertEquals(new Event.Join(table.get(1)), sandbox.call(flip, leave).to(Event.class, handles));
+            Event left = (Event) sandbox.call(flip, Variant.of("Join", 0L)).to(Event.class, handles);
+            assertEquals(new Event.Leave(table.get(0), "flip"), left);
+            TaskOutcome done = sandbox.spawn("stats", 1L);
+            assertTrue(done.done());
+            assertEquals(new Stats(table.get(1), 7), done.value().to(Stats.class, handles));
+        }
+    }
 }

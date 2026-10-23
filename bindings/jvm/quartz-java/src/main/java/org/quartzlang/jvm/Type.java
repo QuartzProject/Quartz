@@ -33,6 +33,8 @@ public final class Type {
     private List<Case> cases = List.of();
     private boolean pointerNullable;
     private String name = "";
+    private String packageName = "";
+    private volatile Boolean handles;
 
     public Type(Kind kind, int slots) {
         this(kind, slots, 0, null);
@@ -59,9 +61,24 @@ public final class Type {
         name = typeName == null ? "" : typeName;
     }
 
-    /** How the source names a struct or enum ({@code Point}, {@code Box<int>}); empty when unknown. */
+    void named(String typeName, String typePackage) {
+        named(typeName);
+        packageName = typePackage == null ? "" : typePackage;
+    }
+
+    /** How the source writes it ({@code Point}, {@code [int]}, {@code Box<int>}); empty when unknown. */
     public String name() {
         return name;
+    }
+
+    /** The package of a struct, enum or handle type ({@code org.example}); empty for others and when unknown. */
+    public String packageName() {
+        return packageName;
+    }
+
+    /** {@link #name()} with its package in front, when it has one. */
+    public String qualifiedName() {
+        return packageName.isEmpty() ? name : packageName + "." + name;
     }
 
     public Kind kind() {
@@ -112,6 +129,41 @@ public final class Type {
             }
         }
         return null;
+    }
+
+    /** True when a value of this type can hold a {@code @handle} anywhere inside, recursive types included. */
+    public boolean holdsHandles() {
+        Boolean known = handles;
+        if (known == null) {
+            known = scanHandles(this, java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
+            handles = known;
+        }
+        return known;
+    }
+
+    private static boolean scanHandles(Type type, java.util.Set<Type> seen) {
+        if (type == null || !seen.add(type)) {
+            return false;
+        }
+        if (type.kind == Kind.HANDLE) {
+            return true;
+        }
+        if (scanHandles(type.element, seen) || scanHandles(type.key, seen)) {
+            return true;
+        }
+        for (Field f : type.fields) {
+            if (scanHandles(f.type(), seen)) {
+                return true;
+            }
+        }
+        for (Case c : type.cases) {
+            for (Field f : c.payload()) {
+                if (scanHandles(f.type(), seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** A nullable that is one slot, 0 when null (str, Bytes, lists, maps); other nullables add a presence slot. */

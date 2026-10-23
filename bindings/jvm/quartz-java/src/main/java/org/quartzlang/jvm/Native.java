@@ -2,6 +2,7 @@ package org.quartzlang.jvm;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BOOLEAN;
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
@@ -31,6 +32,11 @@ final class Native {
             JAVA_BOOLEAN.withName("keep_lines"), MemoryLayout.paddingLayout(6), ADDRESS.withName("manifest"));
     static final StructLayout LIMITS = MemoryLayout.structLayout(SIZE_T.withName("memory_bytes"),
             JAVA_LONG.withName("fuel_per_call"), JAVA_INT.withName("max_depth"), JAVA_INT.withName("tier"));
+    static final StructLayout RULE_LEVEL = MemoryLayout.structLayout(ADDRESS.withName("rule"),
+            JAVA_INT.withName("level"), MemoryLayout.paddingLayout(4));
+    static final StructLayout ATTRIBUTE_ARG = MemoryLayout.structLayout(ADDRESS.withName("key"),
+            JAVA_INT.withName("kind"), MemoryLayout.paddingLayout(4), JAVA_LONG.withName("int_value"),
+            JAVA_DOUBLE.withName("float_value"), ADDRESS.withName("text"));
     static final StructLayout TASK_OUTCOME = MemoryLayout.structLayout(JAVA_INT.withName("kind"),
             JAVA_INT.withName("task"), JAVA_LONG.withName("value"));
 
@@ -113,6 +119,35 @@ final class Native {
     static final MethodHandle TYPE_NAME;
     static final MethodHandle SANDBOX_BYTES;
     static final MethodHandle CALL_BYTES;
+    static final MethodHandle COMPILE_WITH;
+    static final MethodHandle DIAGNOSTICS_FREE;
+    static final MethodHandle DIAGNOSTICS_COUNT;
+    static final MethodHandle DIAGNOSTICS_TEXT;
+    static final MethodHandle DIAGNOSTIC_SEVERITY;
+    static final MethodHandle DIAGNOSTIC_RULE;
+    static final MethodHandle DIAGNOSTIC_FILE;
+    static final MethodHandle DIAGNOSTIC_MESSAGE;
+    static final MethodHandle DIAGNOSTIC_RANGE;
+    static final MethodHandle WARNING_RULE_COUNT;
+    static final MethodHandle WARNING_RULE;
+    static final MethodHandle FIND_FUNCTION;
+    static final MethodHandle EXPORT_COUNT;
+    static final MethodHandle EXPORT;
+    static final MethodHandle FUNCTION_NAME;
+    static final MethodHandle FUNCTION_PACKAGE;
+    static final MethodHandle FUNCTION_PARAM_NAME;
+    static final MethodHandle FUNCTION_VISIBILITY;
+    static final MethodHandle FUNCTION_IS_SUSPEND;
+    static final MethodHandle FUNCTION_IS_EXPORTED;
+    static final MethodHandle IMPORT_PACKAGE;
+    static final MethodHandle IMPORT_IS_REQUIRED;
+    static final MethodHandle TYPE_PACKAGE;
+    static final MethodHandle ATTRIBUTE_COUNT;
+    static final MethodHandle ATTRIBUTE_NAME;
+    static final MethodHandle ATTRIBUTE_FILTER;
+    static final MethodHandle ATTRIBUTE_ARG_COUNT;
+    static final MethodHandle ATTRIBUTE_ARG_READ;
+    static final MethodHandle SANDBOX_TASK_RESULT;
 
     static {
         if (ADDRESS.byteSize() != 8) {
@@ -214,6 +249,50 @@ final class Native {
         SANDBOX_BYTES = fn("qz_sandbox_bytes", FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS, SIZE_T),
                 CRITICAL_HEAP);
         CALL_BYTES = fn("qz_call_bytes", FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS, SIZE_T), CRITICAL_HEAP);
+        COMPILE_WITH = fn("qz_compile_with",
+                FunctionDescriptor.of(ADDRESS, ADDRESS, SIZE_T, ADDRESS, ADDRESS, SIZE_T, ADDRESS));
+        DIAGNOSTICS_FREE = fn("qz_diagnostics_free", FunctionDescriptor.ofVoid(ADDRESS));
+        DIAGNOSTICS_COUNT = fn("qz_diagnostics_count", FunctionDescriptor.of(SIZE_T, ADDRESS), CRITICAL);
+        DIAGNOSTICS_TEXT = fn("qz_diagnostics_text", FunctionDescriptor.of(ADDRESS, ADDRESS), CRITICAL);
+        DIAGNOSTIC_SEVERITY = fn("qz_diagnostic_severity", FunctionDescriptor.of(JAVA_INT, ADDRESS, SIZE_T), CRITICAL);
+        DIAGNOSTIC_RULE = fn("qz_diagnostic_rule", FunctionDescriptor.of(ADDRESS, ADDRESS, SIZE_T), CRITICAL);
+        DIAGNOSTIC_FILE = fn("qz_diagnostic_file", FunctionDescriptor.of(ADDRESS, ADDRESS, SIZE_T), CRITICAL);
+        DIAGNOSTIC_MESSAGE = fn("qz_diagnostic_message", FunctionDescriptor.of(ADDRESS, ADDRESS, SIZE_T), CRITICAL);
+        DIAGNOSTIC_RANGE = fn("qz_diagnostic_range",
+                FunctionDescriptor.ofVoid(ADDRESS, SIZE_T, ADDRESS, ADDRESS, ADDRESS, ADDRESS), CRITICAL);
+        WARNING_RULE_COUNT = fn("qz_warning_rule_count", FunctionDescriptor.of(SIZE_T), CRITICAL);
+        WARNING_RULE = fn("qz_warning_rule", FunctionDescriptor.of(ADDRESS, SIZE_T), CRITICAL);
+        FIND_FUNCTION = fn("qz_program_find_function", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS),
+                CRITICAL);
+        EXPORT_COUNT = fn("qz_program_export_count", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
+        EXPORT = fn("qz_program_export", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
+        FUNCTION_NAME = fn("qz_program_function_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+        FUNCTION_PACKAGE = fn("qz_program_function_package", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT),
+                CRITICAL);
+        FUNCTION_PARAM_NAME = fn("qz_program_function_param_name",
+                FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        FUNCTION_VISIBILITY = fn("qz_program_function_visibility", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT),
+                CRITICAL);
+        FUNCTION_IS_SUSPEND = fn("qz_program_function_is_suspend",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT), CRITICAL);
+        FUNCTION_IS_EXPORTED = fn("qz_program_function_is_exported",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT), CRITICAL);
+        IMPORT_PACKAGE = fn("qz_program_import_package", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+        IMPORT_IS_REQUIRED = fn("qz_program_import_is_required",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT), CRITICAL);
+        TYPE_PACKAGE = fn("qz_type_package", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+        ATTRIBUTE_COUNT = fn("qz_program_function_attribute_count",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
+        ATTRIBUTE_NAME = fn("qz_program_function_attribute_name",
+                FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        ATTRIBUTE_FILTER = fn("qz_program_function_attribute_filter",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        ATTRIBUTE_ARG_COUNT = fn("qz_program_function_attribute_arg_count",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT), CRITICAL);
+        ATTRIBUTE_ARG_READ = fn("qz_program_function_attribute_arg",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS), CRITICAL);
+        SANDBOX_TASK_RESULT = fn("qz_sandbox_task_result",
+                FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, SIZE_T), CRITICAL);
         int abi = abiVersion();
         if (abi != ABI_VERSION) {
             throw new UnsatisfiedLinkError("libquartz has ABI " + abi + ", quartz-jvm needs " + ABI_VERSION);
@@ -275,6 +354,11 @@ final class Native {
                 free(cString);
             }
         }
+    }
+
+    /** A NUL-terminated string the library keeps alive, or "" for NULL. */
+    static String borrowString(MemorySegment cString) {
+        return cString.address() == 0 ? "" : cString.reinterpret(Long.MAX_VALUE).getString(0);
     }
 
     static RuntimeException rethrow(Throwable t) {

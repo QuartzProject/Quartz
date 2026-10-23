@@ -240,7 +240,7 @@ final class Slots {
         };
     }
 
-    private static Object[] structValues(Type type, Object value) {
+    static Object[] structValues(Type type, Object value) {
         if (value == null) {
             throw new IllegalArgumentException("null cannot be passed as " + type);
         }
@@ -279,7 +279,7 @@ final class Slots {
         return Mapper.structValues(value, type);
     }
 
-    private static Object[] tupleValues(Type type, Object value) {
+    static Object[] tupleValues(Type type, Object value) {
         int n = type.fields().size();
         Object[] out;
         if (value instanceof List<?> list) {
@@ -299,7 +299,7 @@ final class Slots {
         return out;
     }
 
-    private static Variant variantOf(Type type, Object value) {
+    static Variant variantOf(Type type, Object value) {
         if (value instanceof Variant v) {
             return v;
         }
@@ -350,7 +350,7 @@ final class Slots {
         return kind.isInteger() ? integer(kind, Slots.widen(v.kind(), v.bits())) : v.bits();
     }
 
-    private static long integer(Kind kind, Object value) {
+    static long integer(Kind kind, Object value) {
         long n;
         if (value instanceof Long || value instanceof Integer || value instanceof Short || value instanceof Byte) {
             n = ((Number) value).longValue();
@@ -373,7 +373,7 @@ final class Slots {
         return n;
     }
 
-    private static double floating(Type type, Object value) {
+    static double floating(Type type, Object value) {
         if (value instanceof Double || value instanceof Float || value instanceof Long || value instanceof Integer
                 || value instanceof Short || value instanceof Byte) {
             return ((Number) value).doubleValue();
@@ -381,7 +381,7 @@ final class Slots {
         throw mismatch(type, value);
     }
 
-    private static long codePoint(Type type, Object value) {
+    static long codePoint(Type type, Object value) {
         int cp;
         if (value instanceof Character c) {
             cp = c;

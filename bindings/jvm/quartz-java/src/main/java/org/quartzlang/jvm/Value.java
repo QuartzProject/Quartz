@@ -107,8 +107,7 @@ public final class Value {
      */
     public Object get() {
         if (wide == null && type.slots() > 1) {
-            throw new UnsupportedOperationException("only the first slot of this " + type + " came back: the C "
-                    + "interface returns one slot for a task's result");
+            throw new UnsupportedOperationException("only the first slot of this " + type + " is known");
         }
         Slots.Readers readers = owner.readers(generation);
         if (wide != null) {
@@ -133,6 +132,11 @@ public final class Value {
     /** The value converted to a generic type given as a {@link java.lang.reflect.Type}. */
     public Object to(java.lang.reflect.Type target) {
         return Mapper.convert(get(), target);
+    }
+
+    /** The value converted to {@code target}, every handle inside mapped to its host object by {@code handles}. */
+    public Object to(java.lang.reflect.Type target, HandleMapper handles) {
+        return TypedValues.to(get(), type, target, handles);
     }
 
     public Struct asStruct() {

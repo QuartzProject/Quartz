@@ -5,7 +5,7 @@ package org.quartzlang.jvm;
  *
  * @param kind why it stopped
  * @param task the task id to resume or cancel
- * @param value DONE: the result; WAIT and AT_*: the awaited handle
+ * @param value DONE: the whole result, as {@link Sandbox#call} gives it; WAIT and AT_*: the awaited handle
  */
 public record TaskOutcome(Kind kind, int task, Value value) {
     public enum Kind {

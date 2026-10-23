@@ -606,17 +606,24 @@ public final class Sandbox implements AutoCloseable {
         return count;
     }
 
-    private TaskOutcome outcome(Confinement c) {
+    private TaskOutcome outcome(Confinement c) throws Throwable {
         TaskOutcome.Kind[] kinds = TaskOutcome.Kind.values();
         int code = outcome.get(JAVA_INT, 0);
         TaskOutcome.Kind kind = code >= 0 && code < kinds.length ? kinds[code] : TaskOutcome.Kind.YIELD;
         int task = outcome.get(JAVA_INT, 4);
         Type type = new Type(Kind.HANDLE, 1);
+        long bits = outcome.get(JAVA_LONG, 8);
         if (kind == TaskOutcome.Kind.DONE) {
             Type declared = taskResults.remove(task);
             type = declared == null ? new Type(Kind.OTHER, 1) : declared;
+            if (type.slots() > 1) {
+                MemorySegment out = wideResult(type.slots());
+                check((int) Native.SANDBOX_TASK_RESULT.invokeExact(address, task, out, (long) type.slots()), c);
+                long[] wide = out.asSlice(0, (long) type.slots() * Long.BYTES).toArray(JAVA_LONG);
+                return new TaskOutcome(kind, task, new Value(wide[0], this, c.generation, type, wide));
+            }
         }
-        return new TaskOutcome(kind, task, new Value(outcome.get(JAVA_LONG, 8), this, c.generation, type));
+        return new TaskOutcome(kind, task, new Value(bits, this, c.generation, type));
     }
 
     private void requireOwn(Export function) {

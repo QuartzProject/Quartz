@@ -43,7 +43,7 @@ private fun jvm(program: Program): JvmProgram =
 internal inline fun <R> translated(block: () -> R): R = try {
     block()
 } catch (e: JCompileException) {
-    throw CompileException(e.diagnostics())
+    throw CompileException(e.text())
 } catch (e: JTrapException) {
     throw TrapException(TrapCode.entries[e.code().ordinal], e.message, e.cause)
 } catch (e: JQuartzException) {
@@ -106,7 +106,7 @@ internal fun signatureOf(s: JSignature): Signature = Signature(s.params().map(::
 internal class JvmProgram(val java: JProgram) : Program {
     private val exports = ConcurrentHashMap<String, JvmExport>()
 
-    override val diagnostics: String get() = java.diagnostics()
+    override val diagnostics: String get() = java.diagnosticsText()
     override val imports: List<Import> by lazy {
         translated { java.imports().map { Import(it.name(), signatureOf(it.signature()), it.builtIn()) } }
     }

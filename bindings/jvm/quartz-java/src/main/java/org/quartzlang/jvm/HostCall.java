@@ -118,6 +118,11 @@ public final class HostCall {
         return Mapper.convert(arg(index), target);
     }
 
+    /** Argument {@code index} converted to {@code target}, every handle inside mapped by {@code handles}. */
+    public Object arg(int index, java.lang.reflect.Type target, HandleMapper handles) {
+        return TypedValues.to(arg(index), signature.params().get(index), target, handles);
+    }
+
     /** A list argument with its elements boxed by the element type. */
     public List<Object> listArg(int index) {
         if (kind(index) != Kind.LIST) {

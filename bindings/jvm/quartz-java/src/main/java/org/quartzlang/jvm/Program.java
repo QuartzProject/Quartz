@@ -2,6 +2,7 @@ package org.quartzlang.jvm;
 
 import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
+import static java.lang.foreign.ValueLayout.JAVA_DOUBLE;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
@@ -21,15 +22,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class Program implements AutoCloseable {
     private final NativeHandle handle;
     private final Cleaner.Cleanable cleanable;
-    private final String diagnostics;
-    private final ConcurrentHashMap<String, Optional<Export>> exports = new ConcurrentHashMap<>();
+    private final String diagnosticsText;
+    private final List<Diagnostic> diagnostics;
+    private final ConcurrentHashMap<String, Optional<Export>> byName = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Export> functions = new ConcurrentHashMap<>();
+    private volatile List<Export> exports;
     private volatile List<Import> imports;
     private final ConcurrentHashMap<Integer, Type> types = new ConcurrentHashMap<>();
 
-    Program(MemorySegment address, String diagnostics) {
+    Program(MemorySegment address, String diagnosticsText, List<Diagnostic> diagnostics) {
         this.handle = new NativeHandle(address, Program::free);
         this.cleanable = Cleaning.CLEANER.register(this, handle::release);
-        this.diagnostics = diagnostics == null ? "" : diagnostics;
+        this.diagnosticsText = diagnosticsText == null ? "" : diagnosticsText;
+        this.diagnostics = List.copyOf(diagnostics);
     }
 
     /** Loads a .qzb module, checking its hash and decoding and validating it. */
@@ -60,15 +65,20 @@ public final class Program implements AutoCloseable {
             if (program.address() == 0) {
                 throw new QuartzException(message == null ? "cannot load the module" : message);
             }
-            return new Program(program, "");
+            return new Program(program, "", List.of());
         } catch (Throwable t) {
             throw Native.rethrow(t);
         }
     }
 
-    /** Warnings the compiler printed; empty for a loaded module. */
-    public String diagnostics() {
+    /** The warnings and notes of a compiled program; empty for a loaded module. */
+    public List<Diagnostic> diagnostics() {
         return diagnostics;
+    }
+
+    /** {@link #diagnostics()} rendered as the compiler prints them. */
+    public String diagnosticsText() {
+        return diagnosticsText;
     }
 
     /** The portable .qzb bytes, present when compiled with {@link CompileOptions#emitBinary()} or loaded. */
@@ -92,9 +102,13 @@ public final class Program implements AutoCloseable {
         }
     }
 
-    /** The function called {@code name}, if the program has one. */
+    /**
+     * The function called {@code name}, with its package or, when only one function has it, without.
+     *
+     * @throws IllegalArgumentException when several functions share {@code name} without a package
+     */
     public Optional<Export> find(String name) {
-        return exports.computeIfAbsent(name, this::lookup);
+        return byName.computeIfAbsent(name, this::lookup);
     }
 
     /** @throws NoSuchElementException when the program has no function called {@code name} */
@@ -102,22 +116,104 @@ public final class Program implements AutoCloseable {
         return find(name).orElseThrow(() -> new NoSuchElementException("no function named " + name));
     }
 
+    /** The functions the program offers the host, in declaration order. */
+    public List<Export> exports() {
+        List<Export> known = exports;
+        if (known != null) {
+            return known;
+        }
+        handle.retain();
+        try {
+            MemorySegment p = handle.address();
+            int count = (int) Native.EXPORT_COUNT.invokeExact(p);
+            List<Export> out = new ArrayList<>(count);
+            for (int i = 0; i < count; ++i) {
+                out.add(function((int) Native.EXPORT.invokeExact(p, i)));
+            }
+            known = List.copyOf(out);
+            exports = known;
+            return known;
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            handle.release();
+        }
+    }
+
     private Optional<Export> lookup(String name) {
         handle.retain();
         try (Arena arena = Arena.ofConfined()) {
-            int index = (int) Native.PROGRAM_FUNCTION.invokeExact(handle.address(),
-                    arena.allocateFrom(name, StandardCharsets.UTF_8));
-            if (index == -1) {
-                return Optional.empty();
+            MemorySegment index = arena.allocate(JAVA_INT);
+            int status = (int) Native.FIND_FUNCTION.invokeExact(handle.address(),
+                    arena.allocateFrom(name, StandardCharsets.UTF_8), index);
+            if (status == Native.LOOKUP_AMBIGUOUS) {
+                throw new IllegalArgumentException("several functions are named " + name + "; give its package");
             }
+            return status == Native.LOOKUP_FOUND ? Optional.of(function(index.get(JAVA_INT, 0))) : Optional.empty();
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            handle.release();
+        }
+    }
+
+    /** Function {@code index} with its signature and names; the caller holds the handle. */
+    Export function(int index) {
+        Export known = functions.get(index);
+        return known != null ? known : functions.computeIfAbsent(index, this::describe);
+    }
+
+    private Export describe(int index) {
+        try {
             MemorySegment p = handle.address();
             int arity = (int) Native.FUNCTION_ARITY.invokeExact(p, index);
             List<Type> params = new ArrayList<>(arity);
+            List<String> names = new ArrayList<>(arity);
             for (int i = 0; i < arity; ++i) {
                 params.add(type((int) Native.FUNCTION_PARAM_TYPE.invokeExact(p, index, i)));
+                names.add(Native.borrowString((MemorySegment) Native.FUNCTION_PARAM_NAME.invokeExact(p, index, i)));
             }
             Type result = type((int) Native.FUNCTION_RESULT_TYPE.invokeExact(p, index));
-            return Optional.of(new Export(this, name, index, new Signature(params, result)));
+            return new Export(this, index, Native.borrowString((MemorySegment) Native.FUNCTION_NAME.invokeExact(p,
+                    index)), Native.borrowString((MemorySegment) Native.FUNCTION_PACKAGE.invokeExact(p, index)),
+                    new Signature(params, result), names,
+                    Visibility.of((int) Native.FUNCTION_VISIBILITY.invokeExact(p, index)),
+                    (boolean) Native.FUNCTION_IS_SUSPEND.invokeExact(p, index),
+                    (boolean) Native.FUNCTION_IS_EXPORTED.invokeExact(p, index));
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        }
+    }
+
+    /** The attributes of function {@code index}, with their arguments and filter functions. */
+    List<Attribute> attributesOf(int index) {
+        handle.retain();
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment p = handle.address();
+            MemorySegment arg = arena.allocate(Native.ATTRIBUTE_ARG);
+            int count = (int) Native.ATTRIBUTE_COUNT.invokeExact(p, index);
+            List<Attribute> out = new ArrayList<>(count);
+            for (int a = 0; a < count; ++a) {
+                String name = Native.borrowString((MemorySegment) Native.ATTRIBUTE_NAME.invokeExact(p, index, a));
+                int n = (int) Native.ATTRIBUTE_ARG_COUNT.invokeExact(p, index, a);
+                List<Attribute.Argument> args = new ArrayList<>(n);
+                for (int i = 0; i < n; ++i) {
+                    if (!(boolean) Native.ATTRIBUTE_ARG_READ.invokeExact(p, index, a, i, arg)) {
+                        continue;
+                    }
+                    Attribute.ArgumentKind kind = Attribute.ArgumentKind.of(arg.get(JAVA_INT, 8));
+                    Object value = switch (kind) {
+                        case INT -> arg.get(JAVA_LONG, 16);
+                        case FLOAT -> arg.get(JAVA_DOUBLE, 24);
+                        case BOOL -> arg.get(JAVA_LONG, 16) != 0;
+                        case STR, NAME -> Native.borrowString(arg.get(ADDRESS, 32));
+                    };
+                    args.add(new Attribute.Argument(Native.borrowString(arg.get(ADDRESS, 0)), kind, value));
+                }
+                int filter = (int) Native.ATTRIBUTE_FILTER.invokeExact(p, index, a);
+                out.add(new Attribute(name, args, filter == -1 ? null : function(filter)));
+            }
+            return List.copyOf(out);
         } catch (Throwable t) {
             throw Native.rethrow(t);
         } finally {
@@ -145,7 +241,9 @@ public final class Program implements AutoCloseable {
                 }
                 Type result = type((int) Native.IMPORT_RESULT_TYPE.invokeExact(p, i));
                 boolean builtIn = (boolean) Native.IMPORT_IS_NATIVE.invokeExact(p, i);
-                out.add(new Import(name, new Signature(params, result), builtIn));
+                String pkg = Native.borrowString((MemorySegment) Native.IMPORT_PACKAGE.invokeExact(p, i));
+                boolean required = (boolean) Native.IMPORT_IS_REQUIRED.invokeExact(p, i);
+                out.add(new Import(name, new Signature(params, result), builtIn, pkg, required));
             }
             known = List.copyOf(out);
             imports = known;
@@ -185,6 +283,8 @@ public final class Program implements AutoCloseable {
             MemorySegment p = handle.address();
             Kind kind = Kind.of((int) Native.TYPE_KIND.invokeExact(p, id, cell));
             Type t = new Type(kind, cell.get(JAVA_INT, 0), id, null);
+            t.named(Native.borrowString((MemorySegment) Native.TYPE_NAME.invokeExact(p, id)),
+                    Native.borrowString((MemorySegment) Native.TYPE_PACKAGE.invokeExact(p, id)));
             resolving.put(id, t);
             int elementId = (int) Native.TYPE_ELEM.invokeExact(p, id);
             Type element = elementId == 0 ? null : resolve(elementId, resolving);
@@ -198,9 +298,6 @@ public final class Program implements AutoCloseable {
                     key = keyId == 0 ? null : resolve(keyId, resolving);
                 }
                 case STRUCT, TUPLE -> {
-                    if (kind == Kind.STRUCT) {
-                        t.named(Native.takeString((MemorySegment) Native.TYPE_NAME.invokeExact(p, id), false));
-                    }
                     int count = (int) Native.TYPE_FIELD_COUNT.invokeExact(p, id);
                     for (int i = 0; i < count; ++i) {
                         int fieldId = (int) Native.TYPE_FIELD.invokeExact(p, id, i, cell);
@@ -212,7 +309,6 @@ public final class Program implements AutoCloseable {
                     }
                 }
                 case ENUM -> {
-                    t.named(Native.takeString((MemorySegment) Native.TYPE_NAME.invokeExact(p, id), false));
                     int count = (int) Native.TYPE_VARIANT_COUNT.invokeExact(p, id);
                     for (int v = 0; v < count; ++v) {
                         String name = Native.takeString(
