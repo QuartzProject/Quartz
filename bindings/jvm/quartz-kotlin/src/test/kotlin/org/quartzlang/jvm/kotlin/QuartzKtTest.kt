@@ -86,4 +86,31 @@ class QuartzKtTest {
             }
         }
     }
+
+    class Player(val name: String)
+
+    sealed interface Event {
+        data class Join(val who: Player) : Event
+
+        data class Leave(val who: Player, val why: String) : Event
+    }
+
+    @Test
+    fun handlesInsideSealedClassesMapToHostObjects() {
+        val players = listOf(Player("ann"), Player("bob"))
+        val handles = handleMapper({ id, _ -> players[id.toInt()] }, { p, _ -> players.indexOf(p).toLong() })
+        val program = compileQuartz(
+            "host.qzi" to "@handle\nstruct Player {}\nenum Event {\n    Join(Player)\n    Leave(Player, str)\n}\n",
+            "plugin.qz" to "fn kick(e: Event) -> Event {\n    return match e {\n" +
+                "        Join(p) => Event.Leave(p, \"kick\")\n        Leave(p, _) => Event.Join(p)\n    }\n}\n",
+        )
+        program.use {
+            it.withSandbox { sandbox ->
+                sandbox.start()
+                val event = program.export("kick").signature().params()[0]
+                val join = org.quartzlang.jvm.Values.from(Event.Join(players[1]), event, handles)
+                assertEquals(Event.Leave(players[1], "kick"), sandbox.call("kick", join).read<Event>(handles))
+            }
+        }
+    }
 }
