@@ -32,8 +32,8 @@ class IntrospectionTest {
 
     @Test
     void exportsImportsTypesAndAttributesDescribeTheProgram() {
-        String host = "package org.example.host\n@handle\nstruct Player {}\nimpl Player {\n    fn level(self) -> int\n}\n"
-                + "fn unused(n: int)\n";
+        String host = "package org.example.host\n@handle\nstruct Player {}\n"
+                + "impl Player {\n    fn level(self) -> int\n}\nfn unused(n: int)\n";
         String plugin = """
                 package org.example.a
                 import org.example.host.Player

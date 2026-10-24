@@ -11,15 +11,6 @@ internal actual suspend fun loadRuntime() {}
 
 internal actual external fun qzAbiVersion(): Int
 
-internal actual external fun qzCompile(
-    names: Array<String>,
-    texts: Array<String>,
-    emitBinary: Boolean,
-    keepLines: Boolean,
-    manifest: String?,
-    diagnostics: Array<String?>,
-): Long
-
 internal actual external fun qzLoad(
     bytes: ByteArray,
     keys: Array<ByteArray>,
@@ -30,8 +21,6 @@ internal actual external fun qzLoad(
 internal actual external fun qzProgramBinary(program: Long): ByteArray?
 
 internal actual external fun qzProgramFree(program: Long)
-
-internal actual external fun qzProgramFunction(program: Long, name: String): Int
 
 internal actual external fun qzFunctionArity(program: Long, function: Int): Int
 
@@ -183,3 +172,79 @@ internal actual external fun qzCallBytes(call: Long, data: ByteArray): Long
 internal actual external fun qzProgramFindImport(program: Long, name: String): Long
 
 internal actual external fun qzTypeName(program: Long, type: Int): String
+
+internal actual external fun qzApiLevel(): Int
+
+internal actual external fun qzCompileWith(
+    names: Array<String>,
+    texts: Array<String>,
+    emitBinary: Boolean,
+    keepLines: Boolean,
+    manifest: String?,
+    rules: Array<String>,
+    levels: IntArray,
+    diagnostics: LongArray,
+): Long
+
+internal actual external fun qzDiagnosticsFree(diagnostics: Long)
+
+internal actual external fun qzDiagnosticsCount(diagnostics: Long): Int
+
+internal actual external fun qzDiagnosticsText(diagnostics: Long): String
+
+internal actual external fun qzDiagnosticSeverity(diagnostics: Long, index: Int): Int
+
+internal actual external fun qzDiagnosticRule(diagnostics: Long, index: Int): String
+
+internal actual external fun qzDiagnosticFile(diagnostics: Long, index: Int): String
+
+internal actual external fun qzDiagnosticMessage(diagnostics: Long, index: Int): String
+
+internal actual external fun qzDiagnosticRange(diagnostics: Long, index: Int, out: IntArray)
+
+internal actual external fun qzWarningRuleCount(): Int
+
+internal actual external fun qzWarningRule(index: Int): String
+
+internal actual external fun qzProgramFindFunction(program: Long, name: String): Long
+
+internal actual external fun qzExportCount(program: Long): Int
+
+internal actual external fun qzExport(program: Long, index: Int): Int
+
+internal actual external fun qzFunctionName(program: Long, function: Int): String
+
+internal actual external fun qzFunctionPackage(program: Long, function: Int): String
+
+internal actual external fun qzFunctionParamName(program: Long, function: Int, index: Int): String
+
+internal actual external fun qzFunctionVisibility(program: Long, function: Int): Int
+
+internal actual external fun qzFunctionIsSuspend(program: Long, function: Int): Boolean
+
+internal actual external fun qzFunctionIsExported(program: Long, function: Int): Boolean
+
+internal actual external fun qzImportPackage(program: Long, import: Int): String
+
+internal actual external fun qzImportIsRequired(program: Long, import: Int): Boolean
+
+internal actual external fun qzTypePackage(program: Long, type: Int): String
+
+internal actual external fun qzAttributeCount(program: Long, function: Int): Int
+
+internal actual external fun qzAttributeName(program: Long, function: Int, attribute: Int): String
+
+internal actual external fun qzAttributeFilter(program: Long, function: Int, attribute: Int): Int
+
+internal actual external fun qzAttributeArgCount(program: Long, function: Int, attribute: Int): Int
+
+internal actual external fun qzAttributeArg(
+    program: Long,
+    function: Int,
+    attribute: Int,
+    index: Int,
+    numbers: LongArray,
+    texts: Array<String?>,
+): Boolean
+
+internal actual external fun qzTaskResult(sandbox: Long, task: Int, out: LongArray, slots: Int): Int

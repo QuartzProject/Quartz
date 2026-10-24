@@ -59,9 +59,19 @@ public class Type(public val kind: Kind, public val slots: Int = 1, public val i
 
     private var pointer: Boolean = kind == Kind.NULLABLE && slots == 1
 
-    /** How the source names a struct or enum (`Point`, `Box<int>`); empty when unknown. */
+    /** How the source writes it (`Point`, `[int]`, `Box<int>`); empty when unknown. */
     public var name: String = ""
         internal set
+
+    /** The package of a struct, enum or handle type (`org.example`); empty for others and when unknown. */
+    public var packageName: String = ""
+        internal set
+
+    /** [name] with its package in front, when it has one. */
+    public val qualifiedName: String get() = if (packageName.isEmpty()) name else "$packageName.$name"
+
+    /** True when a value of this type can hold a `@handle` anywhere inside, recursive types included. */
+    public val holdsHandles: Boolean by lazy { scanHandles(this, mutableSetOf()) }
 
     /** Filled in once the type is cached, so recursive types resolve. */
     internal fun complete(element: Type?, key: Type?, fields: List<Field>, cases: List<Case>, pointer: Boolean) {
@@ -106,6 +116,16 @@ public class Type(public val kind: Kind, public val slots: Int = 1, public val i
     }
 }
 
+private fun scanHandles(type: Type?, seen: MutableSet<Type>): Boolean {
+    if (type == null || seen.any { it === type }) {
+        return false
+    }
+    seen += type
+    return type.kind == Kind.HANDLE || scanHandles(type.element, seen) || scanHandles(type.key, seen) ||
+        type.fields.any { scanHandles(it.type, seen) } ||
+        type.cases.any { c -> c.payload.any { scanHandles(it.type, seen) } }
+}
+
 /** `IN_PROGRESS`, `InProgress` and `in_progress` all become `inprogress`. */
 internal fun normalize(name: String): String = name.replace("_", "").lowercase()
 
@@ -126,18 +146,44 @@ public data class Signature(val params: List<Type>, val result: Type) {
     override fun toString(): String = "$params -> $result"
 }
 
-/** A host function a program imports, by its binding name; the runtime binds [builtIn] ones (the standard library). */
-public data class Import(val name: String, val signature: Signature, val builtIn: Boolean = false)
+/**
+ * A host function a program imports, by its binding name with its package; the runtime binds [builtIn] ones (the
+ * standard library), and [required] is false when no function calls it, so `start` does not ask for its binding.
+ */
+public data class Import(
+    val name: String,
+    val signature: Signature,
+    val builtIn: Boolean = false,
+    val packageName: String = "",
+    val required: Boolean = true,
+) {
+    /** The name without its package (`greet`, `Player.health`). */
+    val simpleName: String get() = simpleNameOf(name, packageName)
+}
+
+internal fun simpleNameOf(name: String, pkg: String): String =
+    if (pkg.isEmpty() || !name.startsWith("$pkg.")) name else name.substring(pkg.length + 1)
 
 /** One source file; a name ending in `.qzi` is a host interface. */
 public data class Source(val name: String, val text: String)
 
-/** How to compile: [emitBinary] also produces the .qzb module, [manifest] is package.toml text. */
+/**
+ * How to compile: [emitBinary] also produces the .qzb module, [manifest] is package.toml text, and [rules] sets warning
+ * levels by rule id (`unused-variable`, or `*` for every rule) in order, a later entry winning.
+ */
 public data class CompileOptions(
     val emitBinary: Boolean = false,
     val keepLines: Boolean = true,
     val manifest: String? = null,
-)
+    val rules: Map<String, WarningLevel> = emptyMap(),
+) {
+    /** Sets the level of [rule] (`*` for every rule), after and so above any level set before. */
+    public fun withRule(rule: String, level: WarningLevel): CompileOptions =
+        copy(rules = LinkedHashMap(rules).apply { remove(rule); put(rule, level) })
+
+    /** Every warning as an error, like `quartz check --deny-warnings`. */
+    public fun denyWarnings(): CompileOptions = withRule("*", WarningLevel.ERROR)
+}
 
 /** What a sandbox may spend; zero keeps Quartz's default for that field. */
 public data class Limits(

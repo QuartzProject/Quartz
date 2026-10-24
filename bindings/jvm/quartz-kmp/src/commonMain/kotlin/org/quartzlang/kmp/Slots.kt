@@ -200,7 +200,7 @@ internal object Slots {
         }
     }
 
-    private fun structValues(type: Type, value: Any?): List<Any?> {
+    fun structValues(type: Type, value: Any?): List<Any?> {
         val names = type.fields.map { it.name }
         return when (value) {
             is Struct -> {
@@ -230,7 +230,7 @@ internal object Slots {
         }
     }
 
-    private fun tupleValues(type: Type, value: Any?): List<Any?> {
+    fun tupleValues(type: Type, value: Any?): List<Any?> {
         val values = when (value) {
             is List<*> -> value
             is Array<*> -> value.asList()
@@ -246,7 +246,7 @@ internal object Slots {
         return values
     }
 
-    private fun variantOf(type: Type, value: Any?): Variant = when {
+    fun variantOf(type: Type, value: Any?): Variant = when {
         value is Variant -> value
         value is Result.Ok<*> -> Variant("Ok", listOf(value.value))
         value is Result.Err<*> -> Variant("Err", listOf(value.error))
@@ -262,10 +262,10 @@ internal object Slots {
             "or a @Serializable value through quartzValue()",
     )
 
-    private fun mismatch(type: Type, value: Any) =
+    fun mismatch(type: Type, value: Any) =
         IllegalArgumentException("a ${value::class.simpleName} cannot be passed as $type")
 
-    private fun integer(kind: Kind, value: Any): Long {
+    fun integer(kind: Kind, value: Any): Long {
         val n = when (value) {
             is Long -> value
             is Int -> value.toLong()
@@ -277,7 +277,7 @@ internal object Slots {
         return checkedInteger(kind, n)
     }
 
-    private fun floating(type: Type, value: Any): Double = when (value) {
+    fun floating(type: Type, value: Any): Double = when (value) {
         is Double -> value
         is Float -> value.toDouble()
         is Long -> value.toDouble()
@@ -287,7 +287,7 @@ internal object Slots {
         else -> throw mismatch(type, value)
     }
 
-    private fun codePoint(type: Type, value: Any): Long {
+    fun codePoint(type: Type, value: Any): Long {
         val cp = when (value) {
             is Char -> value.code
             is Int -> value

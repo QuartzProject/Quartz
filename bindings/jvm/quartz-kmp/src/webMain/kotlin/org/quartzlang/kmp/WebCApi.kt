@@ -48,27 +48,27 @@ internal fun webDispatch(call: Int, args: Int, result: Int, user: Int): Int {
     return if (binding.dispatch(addr(call), addr(args), addr(result))) 1 else 0
 }
 
-private fun addr(p: Int): Long = p.toLong() and 0xFFFF_FFFFL
+internal fun addr(p: Int): Long = p.toLong() and 0xFFFF_FFFFL
 
-private fun p(address: Long): Int = address.toInt()
+internal fun p(address: Long): Int = address.toInt()
 
-private fun malloc(size: Int): Int = wasm("malloc", maxOf(size, 1))
+internal fun malloc(size: Int): Int = wasm("malloc", maxOf(size, 1))
 
-private fun free(address: Int) {
+internal fun free(address: Int) {
     if (address != 0) {
         wasm("free", address)
     }
 }
 
-private fun peek64(address: Int): Long =
+internal fun peek64(address: Int): Long =
     (peekI32(address).toLong() and 0xFFFF_FFFFL) or (peekI32(address + 4).toLong() shl 32)
 
-private fun poke64(address: Int, value: Long) {
+internal fun poke64(address: Int, value: Long) {
     pokeI32(address, value.toInt())
     pokeI32(address + 4, (value ushr 32).toInt())
 }
 
-private fun bytesIn(bytes: ByteArray, nul: Boolean = false): Int {
+internal fun bytesIn(bytes: ByteArray, nul: Boolean = false): Int {
     val address = malloc(bytes.size + 1)
     bytes.forEachIndexed { i, b -> pokeU8(address + i, b.toInt()) }
     if (nul) {
@@ -77,11 +77,11 @@ private fun bytesIn(bytes: ByteArray, nul: Boolean = false): Int {
     return address
 }
 
-private fun cString(text: String): Int = bytesIn(text.encodeToByteArray(), nul = true)
+internal fun cString(text: String): Int = bytesIn(text.encodeToByteArray(), nul = true)
 
 private fun bytesOut(address: Int, length: Int): ByteArray = ByteArray(length) { peekU8(address + it).toByte() }
 
-private fun stringAt(address: Int): String {
+internal fun stringAt(address: Int): String {
     var n = 0
     while (peekU8(address + n) != 0) {
         n++
@@ -93,7 +93,7 @@ private fun stringAt(address: Int): String {
 private fun take(address: Int): String? =
     if (address == 0) null else stringAt(address).also { wasm("qz_free", address) }
 
-private inline fun <R> withBuffer(size: Int, use: (Int) -> R): R {
+internal inline fun <R> withBuffer(size: Int, use: (Int) -> R): R {
     val buffer = malloc(size)
     try {
         return use(buffer)
@@ -102,7 +102,7 @@ private inline fun <R> withBuffer(size: Int, use: (Int) -> R): R {
     }
 }
 
-private inline fun <R> withText(text: String?, use: (Int, Int) -> R): R {
+internal inline fun <R> withText(text: String?, use: (Int, Int) -> R): R {
     if (text == null) {
         return use(0, 0)
     }
@@ -124,34 +124,6 @@ private fun slotsIn(values: LongArray, count: Int): Int {
 }
 
 internal actual fun qzAbiVersion(): Int = wasm("qz_abi_version")
-
-internal actual fun qzCompile(
-    names: Array<String>,
-    texts: Array<String>,
-    emitBinary: Boolean,
-    keepLines: Boolean,
-    manifest: String?,
-    diagnostics: Array<String?>,
-): Long {
-    val n = names.size
-    val owned = mutableListOf<Int>()
-    val namePtrs = malloc(4 * n).also { owned += it }
-    val textPtrs = malloc(4 * n).also { owned += it }
-    val lengths = malloc(4 * n).also { owned += it }
-    for (i in 0 until n) {
-        val text = texts[i].encodeToByteArray()
-        pokeI32(namePtrs + 4 * i, cString(names[i]).also { owned += it })
-        pokeI32(textPtrs + 4 * i, bytesIn(text).also { owned += it })
-        pokeI32(lengths + 4 * i, text.size)
-    }
-    val m = if (manifest == null) 0 else cString(manifest).also { owned += it }
-    val flags = (if (emitBinary) 1 else 0) or (if (keepLines) 2 else 0)
-    pokeI32(scratch, 0)
-    val program = wasm("qzw_compile", namePtrs, textPtrs, lengths, n, flags, m, scratch)
-    owned.forEach(::free)
-    diagnostics[0] = take(peekI32(scratch))
-    return addr(program)
-}
 
 internal actual fun qzLoad(bytes: ByteArray, keys: Array<ByteArray>, requireSignature: Boolean, error: Array<String?>):
     Long {
@@ -177,9 +149,6 @@ internal actual fun qzProgramBinary(program: Long): ByteArray? {
 internal actual fun qzProgramFree(program: Long) {
     wasm("qz_program_free", p(program))
 }
-
-internal actual fun qzProgramFunction(program: Long, name: String): Int =
-    withText(name) { n, _ -> wasm("qz_program_function", p(program), n) }
 
 internal actual fun qzFunctionArity(program: Long, function: Int): Int =
     wasm("qz_program_function_arity", p(program), function)

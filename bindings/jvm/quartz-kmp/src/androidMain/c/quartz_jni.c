@@ -1,126 +1,8 @@
 // JNI over quartz.h for ART, which has no java.lang.foreign. Pointers and qz_slot cross as jlong.
-#include "quartz/quartz.h"
-
-#include <jni.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define QZ_JNI(name) JNICALL Java_org_quartzlang_kmp_QuartzJni_##name
+#include "quartz_jni.h"
 
 static JavaVM* vm;
 static jmethodID dispatchMethod;
-
-static void* ptr(jlong p) { return (void*)(intptr_t)p; }
-
-static jlong addr(const void* p) { return (jlong)(intptr_t)p; }
-
-static qz_slot slot(jlong bits) {
-    qz_slot s;
-    s.i = bits;
-    return s;
-}
-
-// UTF-16 to UTF-8, since GetStringUTFChars gives modified UTF-8; NULL for a null string or no memory.
-static char* utf8(JNIEnv* env, jstring text, size_t* length) {
-    if (text == NULL) {
-        return NULL;
-    }
-    jsize n = (*env)->GetStringLength(env, text);
-    const jchar* units = (*env)->GetStringChars(env, text, NULL);
-    char* out = malloc((size_t)n * 3 + 1);
-    size_t k = 0;
-    for (jsize i = 0; out != NULL && i < n; ++i) {
-        uint32_t c = units[i];
-        if (c >= 0xD800 && c < 0xDC00 && i + 1 < n && units[i + 1] >= 0xDC00 && units[i + 1] < 0xE000) {
-            c = 0x10000 + ((c - 0xD800) << 10) + (units[++i] - 0xDC00);
-        } else if (c >= 0xD800 && c < 0xE000) {
-            c = 0xFFFD;
-        }
-        if (c < 0x80) {
-            out[k++] = (char)c;
-        } else if (c < 0x800) {
-            out[k++] = (char)(0xC0 | (c >> 6));
-            out[k++] = (char)(0x80 | (c & 0x3F));
-        } else if (c < 0x10000) {
-            out[k++] = (char)(0xE0 | (c >> 12));
-            out[k++] = (char)(0x80 | ((c >> 6) & 0x3F));
-            out[k++] = (char)(0x80 | (c & 0x3F));
-        } else {
-            out[k++] = (char)(0xF0 | (c >> 18));
-            out[k++] = (char)(0x80 | ((c >> 12) & 0x3F));
-            out[k++] = (char)(0x80 | ((c >> 6) & 0x3F));
-            out[k++] = (char)(0x80 | (c & 0x3F));
-        }
-    }
-    (*env)->ReleaseStringChars(env, text, units);
-    if (out != NULL) {
-        out[k] = '\0';
-    }
-    if (length != NULL) {
-        *length = k;
-    }
-    return out;
-}
-
-// UTF-8 (as Quartz produces it) to a Java string; invalid bytes become U+FFFD.
-static jstring string(JNIEnv* env, const char* text, size_t length) {
-    if (text == NULL) {
-        return NULL;
-    }
-    jchar* units = malloc(length * sizeof(jchar) + 1);
-    if (units == NULL) {
-        return NULL;
-    }
-    const unsigned char* s = (const unsigned char*)text;
-    size_t n = 0;
-    for (size_t i = 0; i < length;) {
-        uint32_t c = s[i];
-        size_t extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
-        if ((c >= 0x80 && c < 0xC0) || c >= 0xF8 || (extra > 0 && i + extra >= length)) {
-            units[n++] = 0xFFFD;
-            ++i;
-            continue;
-        }
-        c &= extra == 0 ? 0x7F : (0x3F >> extra);
-        for (size_t k = 1; k <= extra; ++k) {
-            c = (c << 6) | (s[i + k] & 0x3F);
-        }
-        i += extra + 1;
-        if (c >= 0x10000) {
-            c -= 0x10000;
-            units[n++] = (jchar)(0xD800 + (c >> 10));
-            units[n++] = (jchar)(0xDC00 + (c & 0x3FF));
-        } else {
-            units[n++] = (jchar)c;
-        }
-    }
-    jstring out = (*env)->NewString(env, units, (jsize)n);
-    free(units);
-    return out;
-}
-
-static jstring take(JNIEnv* env, char* text) {
-    jstring out = text != NULL ? string(env, text, strlen(text)) : NULL;
-    qz_free(text);
-    return out;
-}
-
-static jbyteArray bytes(JNIEnv* env, const void* data, size_t length) {
-    jbyteArray out = (*env)->NewByteArray(env, (jsize)length);
-    if (out != NULL && length > 0) {
-        (*env)->SetByteArrayRegion(env, out, 0, (jsize)length, data);
-    }
-    return out;
-}
-
-static void* copyBytes(JNIEnv* env, jbyteArray array, jsize* length) {
-    *length = (*env)->GetArrayLength(env, array);
-    void* out = malloc((size_t)*length + 1);
-    if (out != NULL) {
-        (*env)->GetByteArrayRegion(env, array, 0, *length, out);
-    }
-    return out;
-}
 
 static jlong packType(qz_kind kind, uint32_t slots) { return ((jlong)kind << 32) | slots; }
 
@@ -158,33 +40,6 @@ JNIEXPORT jint QZ_JNI(qzAbiVersion)(JNIEnv* env, jclass cls) {
     (void)env;
     (void)cls;
     return (jint)qz_abi_version();
-}
-
-JNIEXPORT jlong QZ_JNI(qzCompile)(JNIEnv* env, jclass cls, jobjectArray names, jobjectArray texts, jboolean emit,
-                                  jboolean lines, jstring manifest, jobjectArray diagnostics) {
-    (void)cls;
-    jsize n = (*env)->GetArrayLength(env, names);
-    qz_source* sources = calloc((size_t)n + 1, sizeof(qz_source));
-    for (jsize i = 0; sources != NULL && i < n; ++i) {
-        jstring name = (*env)->GetObjectArrayElement(env, names, i);
-        jstring text = (*env)->GetObjectArrayElement(env, texts, i);
-        sources[i].name = utf8(env, name, NULL);
-        sources[i].text = utf8(env, text, &sources[i].length);
-        (*env)->DeleteLocalRef(env, name);
-        (*env)->DeleteLocalRef(env, text);
-    }
-    char* m = utf8(env, manifest, NULL);
-    qz_compile_options options = {emit, lines, m};
-    char* out = NULL;
-    qz_program* p = sources != NULL ? qz_compile(sources, (size_t)n, &options, &out) : NULL;
-    for (jsize i = 0; sources != NULL && i < n; ++i) {
-        free((void*)sources[i].name);
-        free((void*)sources[i].text);
-    }
-    free(sources);
-    free(m);
-    (*env)->SetObjectArrayElement(env, diagnostics, 0, take(env, out));
-    return addr(p);
 }
 
 JNIEXPORT jlong QZ_JNI(qzLoad)(JNIEnv* env, jclass cls, jbyteArray module, jobjectArray keys, jboolean require,
@@ -226,14 +81,6 @@ JNIEXPORT void QZ_JNI(qzProgramFree)(JNIEnv* env, jclass cls, jlong program) {
     (void)env;
     (void)cls;
     qz_program_free(ptr(program));
-}
-
-JNIEXPORT jint QZ_JNI(qzProgramFunction)(JNIEnv* env, jclass cls, jlong program, jstring name) {
-    (void)cls;
-    char* n = utf8(env, name, NULL);
-    jint index = n != NULL ? (jint)qz_program_function(ptr(program), n) : -1;
-    free(n);
-    return index;
 }
 
 JNIEXPORT jint QZ_JNI(qzFunctionArity)(JNIEnv* env, jclass cls, jlong program, jint function) {

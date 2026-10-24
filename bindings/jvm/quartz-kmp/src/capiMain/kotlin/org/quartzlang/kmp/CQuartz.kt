@@ -4,20 +4,49 @@ internal actual suspend fun platformInitialize(): Unit = loadRuntime()
 
 internal actual fun platformAbiVersion(): Int = qzAbiVersion()
 
+internal actual fun platformWarningRules(): List<String> = List(qzWarningRuleCount()) { qzWarningRule(it) }
+
 internal actual fun platformCompile(sources: List<Source>, options: CompileOptions): Program {
-    val diagnostics = arrayOfNulls<String>(1)
-    val p = qzCompile(
+    check(qzApiLevel() >= API_LEVEL_NEEDED) { "the Quartz runtime is older than API level $API_LEVEL_NEEDED" }
+    val out = LongArray(1)
+    val p = qzCompileWith(
         sources.map { it.name }.toTypedArray(),
         sources.map { it.text }.toTypedArray(),
         options.emitBinary,
         options.keepLines,
         options.manifest,
-        diagnostics,
+        options.rules.keys.toTypedArray(),
+        options.rules.values.map { it.ordinal }.toIntArray(),
+        out,
     )
-    if (p == 0L) {
-        throw CompileException(diagnostics[0] ?: "")
+    val d = out[0]
+    val text: String
+    val diagnostics: List<Diagnostic>
+    try {
+        text = if (d == 0L) "" else qzDiagnosticsText(d)
+        diagnostics = if (d == 0L) emptyList() else readDiagnostics(d)
+    } finally {
+        if (d != 0L) {
+            qzDiagnosticsFree(d)
+        }
     }
-    return CProgram(p, diagnostics[0] ?: "")
+    if (p == 0L) {
+        throw CompileException(text, diagnostics)
+    }
+    return CProgram(p, text, diagnostics)
+}
+
+private const val API_LEVEL_NEEDED = 4
+
+private fun readDiagnostics(d: Long): List<Diagnostic> {
+    val range = IntArray(4)
+    return List(qzDiagnosticsCount(d)) { i ->
+        qzDiagnosticRange(d, i, range)
+        Diagnostic(
+            Diagnostic.Severity.of(qzDiagnosticSeverity(d, i)), qzDiagnosticRule(d, i), qzDiagnosticFile(d, i),
+            range[0], range[1], range[2], range[3], qzDiagnosticMessage(d, i),
+        )
+    }
 }
 
 internal actual fun platformLoad(bytes: ByteArray, trustedKeys: List<ByteArray>, requireSignature: Boolean): Program {
@@ -27,7 +56,7 @@ internal actual fun platformLoad(bytes: ByteArray, trustedKeys: List<ByteArray>,
     if (p == 0L) {
         throw QuartzException(error[0] ?: "cannot load the module")
     }
-    return CProgram(p, "")
+    return CProgram(p, "", emptyList())
 }
 
 internal actual fun platformSandbox(program: Program, limits: Limits): Sandbox {
@@ -68,9 +97,14 @@ internal class CHandle(address: Long, private val free: (Long) -> Unit) {
     }
 }
 
-internal class CProgram(address: Long, override val diagnostics: String) : Program {
+internal class CProgram(
+    address: Long,
+    override val diagnosticsText: String,
+    override val diagnostics: List<Diagnostic>,
+) : Program {
     val handle = CHandle(address, ::qzProgramFree)
-    private val exports = mutableMapOf<String, CExport?>()
+    private val byName = mutableMapOf<String, CExport?>()
+    private val functions = mutableMapOf<Int, CExport>()
     private var closed = false
 
     val address: Long get() = handle.address.also { check(it != 0L) { "program is closed" } }
@@ -81,7 +115,10 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
         val p = address
         List(qzImportCount(p)) { i ->
             val params = List(qzImportArity(p, i)) { k -> type(qzImportParamType(p, i, k)) }
-            Import(qzImportName(p, i), Signature(params, type(qzImportResultType(p, i))), qzImportIsNative(p, i))
+            Import(
+                qzImportName(p, i), Signature(params, type(qzImportResultType(p, i))), qzImportIsNative(p, i),
+                qzImportPackage(p, i), qzImportIsRequired(p, i),
+            )
         }
     }
 
@@ -114,9 +151,8 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
             Kind.NULLABLE -> pointer = qzTypeNullableIsPointer(p, id)
             else -> {}
         }
-        if (t.kind == Kind.STRUCT || t.kind == Kind.ENUM) {
-            t.name = qzTypeName(p, id)
-        }
+        t.name = qzTypeName(p, id)
+        t.packageName = qzTypePackage(p, id)
         t.complete(element, key, fields, cases, pointer)
         t
     }
@@ -132,14 +168,54 @@ internal class CProgram(address: Long, override val diagnostics: String) : Progr
         }
     }
 
-    override fun find(name: String): Export? = exports.getOrPut(name) {
+    override val exports: List<Export> by lazy {
         val p = address
-        val index = qzProgramFunction(p, name)
-        if (index == -1) {
-            null
-        } else {
-            val params = List(qzFunctionArity(p, index)) { k -> type(qzFunctionParamType(p, index, k)) }
-            CExport(this, name, index, Signature(params, type(qzFunctionResultType(p, index))))
+        List(qzExportCount(p)) { function(qzExport(p, it)) }
+    }
+
+    override fun find(name: String): Export? = byName.getOrPut(name) {
+        val found = qzProgramFindFunction(address, name)
+        when ((found ushr 32).toInt()) {
+            LOOKUP_FOUND -> function(found.toInt())
+            LOOKUP_AMBIGUOUS -> throw IllegalArgumentException("several functions are named $name; give its package")
+            else -> null
+        }
+    }
+
+    /** Function [index] with its signature, names and flags. */
+    fun function(index: Int): CExport = functions.getOrPut(index) {
+        val p = address
+        val arity = qzFunctionArity(p, index)
+        val params = List(arity) { k -> type(qzFunctionParamType(p, index, k)) }
+        CExport(
+            this, qzFunctionName(p, index), index, Signature(params, type(qzFunctionResultType(p, index))),
+            qzFunctionPackage(p, index), List(arity) { qzFunctionParamName(p, index, it) },
+            Visibility.of(qzFunctionVisibility(p, index)), qzFunctionIsSuspend(p, index),
+            qzFunctionIsExported(p, index),
+        )
+    }
+
+    /** The attributes of function [index], read when first asked for. */
+    fun attributesOf(index: Int): List<Attribute> {
+        val p = address
+        val numbers = LongArray(3)
+        val texts = arrayOfNulls<String>(2)
+        return List(qzAttributeCount(p, index)) { a ->
+            val args = (0 until qzAttributeArgCount(p, index, a)).mapNotNull { i ->
+                if (!qzAttributeArg(p, index, a, i, numbers, texts)) {
+                    return@mapNotNull null
+                }
+                val kind = Attribute.ArgumentKind.of(numbers[0].toInt())
+                val value: Any = when (kind) {
+                    Attribute.ArgumentKind.INT -> numbers[1]
+                    Attribute.ArgumentKind.FLOAT -> Double.fromBits(numbers[2])
+                    Attribute.ArgumentKind.BOOL -> numbers[1] != 0L
+                    else -> texts[1] ?: ""
+                }
+                Attribute.Argument(texts[0] ?: "", kind, value)
+            }
+            val filter = qzAttributeFilter(p, index, a)
+            Attribute(qzAttributeName(p, index, a), args, if (filter == -1) null else function(filter))
         }
     }
 
@@ -162,7 +238,14 @@ internal class CExport(
     override val name: String,
     val index: Int,
     override val signature: Signature,
+    override val packageName: String,
+    override val parameterNames: List<String>,
+    override val visibility: Visibility,
+    override val isSuspend: Boolean,
+    override val isExported: Boolean,
 ) : Export {
+    override val attributes: List<Attribute> by lazy { program.attributesOf(index) }
+
     /** First argument slot of each parameter, and how many slots a call passes. */
     val offsets: IntArray = IntArray(signature.arity).also { o ->
         var at = 0

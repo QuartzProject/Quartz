@@ -50,7 +50,7 @@ public final class Values {
         return from(value, quartz, null);
     }
 
-    /** Like {@link #from(Object, Type)}, turning host objects found where a handle goes into ids with {@code handles}. */
+    /** Like {@link #from(Object, Type)}, turning host objects where a handle goes into ids with {@code handles}. */
     public static Object from(Object value, Type quartz, HandleMapper handles) {
         return TypedValues.from(value, Objects.requireNonNull(quartz, "quartz"), handles);
     }

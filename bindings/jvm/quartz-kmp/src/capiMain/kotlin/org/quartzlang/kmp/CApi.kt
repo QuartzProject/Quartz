@@ -15,14 +15,16 @@ internal expect suspend fun loadRuntime()
 
 internal expect fun qzAbiVersion(): Int
 
-/** Returns the program, or 0 with the reason in `diagnostics[0]` (also set on success, for warnings). */
-internal expect fun qzCompile(
+/** `qz_compile_with`: the program or 0, and the `qz_diagnostics` (or 0) in `diagnostics[0]`, which the caller frees. */
+internal expect fun qzCompileWith(
     names: Array<String>,
     texts: Array<String>,
     emitBinary: Boolean,
     keepLines: Boolean,
     manifest: String?,
-    diagnostics: Array<String?>,
+    rules: Array<String>,
+    levels: IntArray,
+    diagnostics: LongArray,
 ): Long
 
 internal expect fun qzLoad(
@@ -35,8 +37,6 @@ internal expect fun qzLoad(
 internal expect fun qzProgramBinary(program: Long): ByteArray?
 
 internal expect fun qzProgramFree(program: Long)
-
-internal expect fun qzProgramFunction(program: Long, name: String): Int
 
 internal expect fun qzFunctionArity(program: Long, function: Int): Int
 
@@ -192,3 +192,73 @@ internal expect fun qzCallBytes(call: Long, data: ByteArray): Long
 internal expect fun qzProgramFindImport(program: Long, name: String): Long
 
 internal expect fun qzTypeName(program: Long, type: Int): String
+
+internal expect fun qzApiLevel(): Int
+
+internal expect fun qzDiagnosticsFree(diagnostics: Long)
+
+internal expect fun qzDiagnosticsCount(diagnostics: Long): Int
+
+internal expect fun qzDiagnosticsText(diagnostics: Long): String
+
+internal expect fun qzDiagnosticSeverity(diagnostics: Long, index: Int): Int
+
+internal expect fun qzDiagnosticRule(diagnostics: Long, index: Int): String
+
+internal expect fun qzDiagnosticFile(diagnostics: Long, index: Int): String
+
+internal expect fun qzDiagnosticMessage(diagnostics: Long, index: Int): String
+
+/** Line, column, end line and end column of diagnostic [index], into [out]. */
+internal expect fun qzDiagnosticRange(diagnostics: Long, index: Int, out: IntArray)
+
+internal expect fun qzWarningRuleCount(): Int
+
+internal expect fun qzWarningRule(index: Int): String
+
+/** `qz_program_find_function`: the lookup status in the high half and the function index in the low half. */
+internal expect fun qzProgramFindFunction(program: Long, name: String): Long
+
+internal expect fun qzExportCount(program: Long): Int
+
+internal expect fun qzExport(program: Long, index: Int): Int
+
+internal expect fun qzFunctionName(program: Long, function: Int): String
+
+internal expect fun qzFunctionPackage(program: Long, function: Int): String
+
+internal expect fun qzFunctionParamName(program: Long, function: Int, index: Int): String
+
+internal expect fun qzFunctionVisibility(program: Long, function: Int): Int
+
+internal expect fun qzFunctionIsSuspend(program: Long, function: Int): Boolean
+
+internal expect fun qzFunctionIsExported(program: Long, function: Int): Boolean
+
+internal expect fun qzImportPackage(program: Long, import: Int): String
+
+internal expect fun qzImportIsRequired(program: Long, import: Int): Boolean
+
+internal expect fun qzTypePackage(program: Long, type: Int): String
+
+internal expect fun qzAttributeCount(program: Long, function: Int): Int
+
+internal expect fun qzAttributeName(program: Long, function: Int, attribute: Int): String
+
+/** The filter function of `@on(..., where = expr)`, or -1. */
+internal expect fun qzAttributeFilter(program: Long, function: Int, attribute: Int): Int
+
+internal expect fun qzAttributeArgCount(program: Long, function: Int, attribute: Int): Int
+
+/** Argument [index]: kind, int value and the float's bits into [numbers], key and text into [texts]. */
+internal expect fun qzAttributeArg(
+    program: Long,
+    function: Int,
+    attribute: Int,
+    index: Int,
+    numbers: LongArray,
+    texts: Array<String?>,
+): Boolean
+
+/** Every slot of the result of a task the last spawn or resume finished, into [out]. */
+internal expect fun qzTaskResult(sandbox: Long, task: Int, out: LongArray, slots: Int): Int

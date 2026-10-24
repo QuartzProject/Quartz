@@ -22,8 +22,13 @@ internal actual suspend fun platformInitialize() {}
 
 internal actual fun platformAbiVersion(): Int = JQuartz.abiVersion()
 
+internal actual fun platformWarningRules(): List<String> = JQuartz.warningRules()
+
 internal actual fun platformCompile(sources: List<Source>, options: CompileOptions): Program = translated {
-    val opts = org.quartzlang.jvm.CompileOptions(options.emitBinary, options.keepLines, options.manifest)
+    val rules = options.rules.entries.associateTo(LinkedHashMap()) {
+        it.key to org.quartzlang.jvm.WarningLevel.entries[it.value.ordinal]
+    }
+    val opts = org.quartzlang.jvm.CompileOptions(options.emitBinary, options.keepLines, options.manifest, rules)
     JvmProgram(JQuartz.compile(sources.map { org.quartzlang.jvm.Source(it.name, it.text) }, opts))
 }
 
@@ -43,7 +48,7 @@ private fun jvm(program: Program): JvmProgram =
 internal inline fun <R> translated(block: () -> R): R = try {
     block()
 } catch (e: JCompileException) {
-    throw CompileException(e.text())
+    throw CompileException(e.text(), e.diagnostics().map(::diagnosticOf))
 } catch (e: JTrapException) {
     throw TrapException(TrapCode.entries[e.code().ordinal], e.message, e.cause)
 } catch (e: JQuartzException) {
@@ -51,6 +56,14 @@ internal inline fun <R> translated(block: () -> R): R = try {
 }
 
 internal fun kindOf(kind: JKind): Kind = Kind.entries[kind.ordinal]
+
+internal fun diagnosticOf(d: org.quartzlang.jvm.Diagnostic): Diagnostic = Diagnostic(
+    Diagnostic.Severity.entries[d.severity().ordinal], d.rule(), d.file(), d.line(), d.column(), d.endLine(),
+    d.endColumn(), d.message(),
+)
+
+private fun importOf(i: org.quartzlang.jvm.Import): Import =
+    Import(i.name(), signatureOf(i.signature()), i.builtIn(), i.packageName(), i.required())
 
 internal fun typeOf(t: org.quartzlang.jvm.Type): Type = typeOf(t, IdentityHashMap())
 
@@ -60,6 +73,7 @@ private fun typeOf(t: org.quartzlang.jvm.Type, seen: IdentityHashMap<org.quartzl
     seen[t] = out
     fun field(f: org.quartzlang.jvm.Type.Field) = Type.Field(f.name(), typeOf(f.type(), seen), f.offset())
     out.name = t.name()
+    out.packageName = t.packageName()
     out.complete(
         t.element()?.let { typeOf(it, seen) },
         t.key()?.let { typeOf(it, seen) },
@@ -104,24 +118,24 @@ internal fun toJava(value: Any?): Any? = when (value) {
 internal fun signatureOf(s: JSignature): Signature = Signature(s.params().map(::typeOf), typeOf(s.result()))
 
 internal class JvmProgram(val java: JProgram) : Program {
-    private val exports = ConcurrentHashMap<String, JvmExport>()
+    private val functions = ConcurrentHashMap<JExport, JvmExport>()
 
-    override val diagnostics: String get() = java.diagnosticsText()
-    override val imports: List<Import> by lazy {
-        translated { java.imports().map { Import(it.name(), signatureOf(it.signature()), it.builtIn()) } }
-    }
+    override val diagnostics: List<Diagnostic> by lazy { java.diagnostics().map(::diagnosticOf) }
+    override val diagnosticsText: String get() = java.diagnosticsText()
+    override val imports: List<Import> by lazy { translated { java.imports().map(::importOf) } }
+    override val exports: List<Export> by lazy { translated { java.exports().map(::wrap) } }
+
+    /** The common view of a Java export, one per function. */
+    fun wrap(e: JExport): JvmExport = functions.getOrPut(e) { JvmExport(this, e) }
 
     override fun binary(): ByteArray? = translated { java.binary().orElse(null) }
 
-    override fun find(name: String): Export? = exports[name] ?: translated {
-        val found: JExport? = java.find(name).orElse(null)
-        found?.let { JvmExport(this, it) }?.also { exports[name] = it }
-    }
+    override fun find(name: String): Export? = translated { java.find(name).orElse(null)?.let(::wrap) }
 
     override fun packageInterface(manifest: String?): String = translated { java.packageInterface(manifest) }
 
     override fun findImport(name: String): Import? = translated {
-        java.findImport(name).orElse(null)?.let { Import(it.name(), signatureOf(it.signature()), it.builtIn()) }
+        java.findImport(name).orElse(null)?.let(::importOf)
     }
 
     override fun close(): Unit = java.close()
@@ -130,6 +144,19 @@ internal class JvmProgram(val java: JProgram) : Program {
 internal class JvmExport(val program: JvmProgram, val java: JExport) : Export {
     override val name: String get() = java.name()
     override val signature: Signature = signatureOf(java.signature())
+    override val packageName: String get() = java.packageName()
+    override val parameterNames: List<String> get() = java.parameterNames()
+    override val visibility: Visibility get() = Visibility.entries[java.visibility().ordinal]
+    override val isSuspend: Boolean get() = java.isSuspend
+    override val isExported: Boolean get() = java.isExported
+    override val attributes: List<Attribute> by lazy {
+        java.attributes().map { a ->
+            val args = a.arguments().map {
+                Attribute.Argument(it.key(), Attribute.ArgumentKind.entries[it.kind().ordinal], it.value())
+            }
+            Attribute(a.name(), args, a.filter()?.let(program::wrap))
+        }
+    }
 }
 
 internal class JvmValue(val java: JValue) : Value {

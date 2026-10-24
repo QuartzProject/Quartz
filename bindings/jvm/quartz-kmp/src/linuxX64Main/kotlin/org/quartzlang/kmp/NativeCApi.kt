@@ -37,14 +37,11 @@ import kotlinx.cinterop.value
 import org.quartzlang.kmp.cinterop.qz_abi_version
 import org.quartzlang.kmp.cinterop.qz_call_charge
 import org.quartzlang.kmp.cinterop.qz_call_fail
-import org.quartzlang.kmp.cinterop.qz_compile
-import org.quartzlang.kmp.cinterop.qz_compile_options
 import org.quartzlang.kmp.cinterop.qz_free
 import org.quartzlang.kmp.cinterop.qz_limits
 import org.quartzlang.kmp.cinterop.qz_load
 import org.quartzlang.kmp.cinterop.qz_program_binary
 import org.quartzlang.kmp.cinterop.qz_program_free
-import org.quartzlang.kmp.cinterop.qz_program_function
 import org.quartzlang.kmp.cinterop.qz_program_function_arity
 import org.quartzlang.kmp.cinterop.qz_program_function_param_type
 import org.quartzlang.kmp.cinterop.qz_program_function_result_type
@@ -80,7 +77,6 @@ import org.quartzlang.kmp.cinterop.qz_sandbox_start
 import org.quartzlang.kmp.cinterop.qz_sandbox_trap_code
 import org.quartzlang.kmp.cinterop.qz_sandbox_wait_type
 import org.quartzlang.kmp.cinterop.qz_slot
-import org.quartzlang.kmp.cinterop.qz_source
 import org.quartzlang.kmp.cinterop.qz_task_outcome
 import org.quartzlang.kmp.cinterop.qz_program_find_import
 import org.quartzlang.kmp.cinterop.qz_type_elem
@@ -131,33 +127,6 @@ internal actual suspend fun loadRuntime() {}
 
 internal actual fun qzAbiVersion(): Int = qz_abi_version().toInt()
 
-internal actual fun qzCompile(
-    names: Array<String>,
-    texts: Array<String>,
-    emitBinary: Boolean,
-    keepLines: Boolean,
-    manifest: String?,
-    diagnostics: Array<String?>,
-): Long = memScoped {
-    val sources = allocArray<qz_source>(maxOf(1, names.size))
-    for (i in names.indices) {
-        val utf8 = texts[i].encodeToByteArray()
-        sources[i].name = names[i].cstr.ptr
-        val text = allocArray<ByteVar>(maxOf(1, utf8.size))
-        utf8.forEachIndexed { k, v -> text[k] = v }
-        sources[i].text = text
-        sources[i].length = utf8.size.toULong()
-    }
-    val options = alloc<qz_compile_options>()
-    options.emit_binary = emitBinary
-    options.keep_lines = keepLines
-    options.manifest = manifest?.cstr?.ptr
-    val out = alloc<CPointerVar<ByteVar>>()
-    val p = qz_compile(sources, names.size.toULong(), options.ptr, out.ptr)
-    diagnostics[0] = take(out.value)
-    p.toLong()
-}
-
 internal actual fun qzLoad(
     bytes: ByteArray,
     keys: Array<ByteArray>,
@@ -186,9 +155,6 @@ internal actual fun qzProgramBinary(program: Long): ByteArray? = memScoped {
 }
 
 internal actual fun qzProgramFree(program: Long) = qz_program_free(program(program))
-
-internal actual fun qzProgramFunction(program: Long, name: String): Int =
-    qz_program_function(program(program), name).toInt()
 
 internal actual fun qzFunctionArity(program: Long, function: Int): Int =
     qz_program_function_arity(program(program), function.toUInt()).toInt()

@@ -42,9 +42,7 @@ internal class CValue(
 
     override fun get(): Any? {
         if (wide == null && type.slots > 1) {
-            throw UnsupportedOperationException(
-                "only the first slot of this $type came back: the C interface returns one slot for a task's result",
-            )
+            throw UnsupportedOperationException("only the first slot of this $type is known")
         }
         val readers = owner.readers(generation)
         return if (wide != null) Slots.decode(type, wide, 0, readers) else Slots.box(type, bits, readers)

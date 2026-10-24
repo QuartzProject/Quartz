@@ -2,8 +2,14 @@ package org.quartzlang.kmp
 
 /** A compiled or loaded program, immutable and shareable; sandboxes made from it outlive [close]. */
 public interface Program : AutoCloseable {
-    /** Warnings the compiler printed; empty for a loaded module. */
-    public val diagnostics: String
+    /** The warnings and notes of a compiled program; empty for a loaded module. */
+    public val diagnostics: List<Diagnostic>
+
+    /** [diagnostics] rendered as the compiler prints them. */
+    public val diagnosticsText: String
+
+    /** The functions the program offers the host, in declaration order. */
+    public val exports: List<Export>
 
     /** The host functions it imports, the runtime's own included. */
     public val imports: List<Import>
@@ -11,11 +17,15 @@ public interface Program : AutoCloseable {
     /** The .qzb bytes, when compiled with [CompileOptions.emitBinary] or loaded. */
     public fun binary(): ByteArray?
 
+    /**
+     * The function called [name], with its package or, when only one function has it, without.
+     *
+     * @throws IllegalArgumentException when several functions share [name] without a package
+     */
     public fun find(name: String): Export?
 
     public fun export(name: String): Export = find(name) ?: throw NoSuchElementException("no function named $name")
 
-    /** By full name (`org.example.host.Player.name`) or, when only one import ends with it, without the package. */
     /**
      * The import called [name] with its package, or without it when only one import has that name.
      *
@@ -29,8 +39,31 @@ public interface Program : AutoCloseable {
 
 /** A function of one program, resolved once so calls skip the lookup. */
 public interface Export {
+    /** The name with its package (`org.example.greet`, `org.example.Shop.buy`). */
     public val name: String
     public val signature: Signature
+
+    /** The package (`org.example`); empty for a program without one. */
+    public val packageName: String
+
+    /** The name without its package (`greet`, `Shop.buy`). */
+    public val simpleName: String get() = simpleNameOf(name, packageName)
+
+    /** One per parameter of [signature]; empty strings for a function that is not exported. */
+    public val parameterNames: List<String>
+    public val visibility: Visibility
+
+    /** A `suspend fn`, which runs as a task with [Sandbox.spawn]. */
+    public val isSuspend: Boolean
+
+    /** Offered to the host ([Program.exports]). */
+    public val isExported: Boolean
+
+    /** Its attributes as written (`@on`, `@command`...), in source order. */
+    public val attributes: List<Attribute>
+
+    /** The first attribute called [name] (without the `@`), or null. */
+    public fun attribute(name: String): Attribute? = attributes.firstOrNull { it.name == name }
 }
 
 /** A host import: returns what [Sandbox.call] accepts for its result type; what it throws becomes a trap. */
@@ -184,6 +217,9 @@ public object Quartz {
     /** The ABI version of the loaded libquartz. */
     public val abiVersion: Int get() = platformAbiVersion()
 
+    /** The warning rule ids [CompileOptions.withRule] accepts (`unused-variable`...). */
+    public val warningRules: List<String> get() = platformWarningRules()
+
     public fun compile(vararg sources: Source, options: CompileOptions = CompileOptions()): Program =
         platformCompile(sources.toList(), options)
 
@@ -200,6 +236,8 @@ public object Quartz {
 internal expect suspend fun platformInitialize()
 
 internal expect fun platformAbiVersion(): Int
+
+internal expect fun platformWarningRules(): List<String>
 
 internal expect fun platformCompile(sources: List<Source>, options: CompileOptions): Program
 

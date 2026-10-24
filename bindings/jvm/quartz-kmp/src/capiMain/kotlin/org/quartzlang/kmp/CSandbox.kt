@@ -350,6 +350,11 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
         val task = outcome[1].toInt()
         val type =
             if (kind == TaskOutcome.Kind.DONE) taskResults.remove(task) ?: Type(Kind.OTHER) else Type(Kind.HANDLE)
+        if (kind == TaskOutcome.Kind.DONE && type.slots > 1) {
+            val wide = LongArray(type.slots)
+            check(qzTaskResult(address, task, wide, type.slots))
+            return TaskOutcome(kind, task, CValue(wide[0], this, group.generation, type, wide))
+        }
         return TaskOutcome(kind, task, CValue(outcome[2], this, group.generation, type))
     }
 

@@ -16,7 +16,7 @@ public final class Quartz {
         return Native.apiLevel();
     }
 
-    /** The warning rule ids {@link CompileOptions#withRule} accepts ({@code unused-variable}, {@code deprecated}...). */
+    /** The warning rule ids {@link CompileOptions#withRule} accepts ({@code unused-variable}...). */
     public static List<String> warningRules() {
         return Compiler.warningRules();
     }
