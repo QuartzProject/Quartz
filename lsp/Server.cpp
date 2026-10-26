@@ -242,7 +242,7 @@ void Server::publish(const std::string& folder, const Analysis& a) {
         Json item = Json::object();
         std::string message = d.message;
         std::string uri;
-        if (d.span.file < a.fileCount() && !a.input(d.span.file).uri.empty()) {
+        if (d.span.file < a.fileCount() && !a.input(d.span.file).uri.empty() && !a.input(d.span.file).library) {
             uri = a.input(d.span.file).uri;
             item.set("range", range(a, d.span));
         } else {

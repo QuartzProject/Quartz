@@ -446,7 +446,7 @@ Index::Index(const Analysis& a) {
     fileStart_.assign(a.fileCount() + 1, 0);
     for (std::uint32_t f = 0; f < a.fileCount(); ++f) {
         fileStart_[f] = static_cast<std::uint32_t>(all_.size());
-        if (!a.input(f).uri.empty()) {
+        if (!a.input(f).uri.empty() && !a.input(f).library) {
             std::size_t before = all_.size();
             indexer.run(f);
             std::stable_sort(all_.begin() + static_cast<std::ptrdiff_t>(before), all_.end(),

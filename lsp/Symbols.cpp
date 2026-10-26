@@ -63,7 +63,7 @@ Json Server::workspaceSymbols(const Json& params) {
         }
         for (std::uint32_t f = 0; f < a->fileCount(); ++f) {
             const Module* m = a->module(f);
-            if (m == nullptr || a->input(f).uri.empty()) {
+            if (m == nullptr || a->input(f).uri.empty() || a->input(f).library) {
                 continue;
             }
             std::string package = joinPath(*a, m->package);

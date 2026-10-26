@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "lsp/Json.hpp"
+#include "lsp/Text.hpp"
 
 #include <doctest/doctest.h>
 
@@ -258,4 +259,59 @@ TEST_CASE("scripted session: imports and navigation") {
     REQUIRE(symbols != nullptr);
     REQUIRE((*symbols)["result"].size() == 1);
     CHECK((*symbols)["result"][0]["name"].str() == "scale");
+}
+
+TEST_CASE("scripted session: a build script sees the api that Qiln wrote to .qiln/api") {
+    fs::path root = fs::absolute(fs::path(QUARTZ_TEST_DIR) / "lsp-qiln-workspace");
+    fs::remove_all(root);
+    fs::create_directories(root / ".qiln/api/plugins/pack");
+    fs::create_directories(root / "app");
+    std::ofstream(root / ".qiln/api/qiln.qzi") << "package org.quartzlang.qiln\n"
+                                                  "\n"
+                                                  "@handle\n"
+                                                  "struct Project {}\n"
+                                                  "\n"
+                                                  "impl Project {\n"
+                                                  "    fn setGroup(self, value: str)\n"
+                                                  "}\n";
+    std::ofstream(root / ".qiln/api/plugins/pack/pack.qz") << "package org.example.pack\n"
+                                                              "\n"
+                                                              "import org.quartzlang.qiln.*\n"
+                                                              "\n"
+                                                              "pub fn pack(p: Project, level: int = 9) {\n"
+                                                              "    let unused = level\n"
+                                                              "    p.setGroup(\"packed\")\n"
+                                                              "}\n";
+    std::string build = "import org.quartzlang.qiln.*\n"
+                        "import org.example.pack.pack\n"
+                        "\n"
+                        "fn build(p: Project) {\n"
+                        "    p.setGroup(\"org.example\")\n"
+                        "    pack(p)\n"
+                        "}\n";
+    std::string uri = quartz::lsp::pathToUri((root / "app/build.qz").string());
+
+    std::string input;
+    input += frame(request(1, "initialize", Json::object().set("capabilities", Json::object())));
+    input += frame(openDocument(uri, build));
+    input += frame(request(2, "textDocument/definition", at(uri, 5, 5)));
+    input += frame(request(3, "textDocument/hover", at(uri, 4, 8)));
+    input += frame(request(4, "shutdown", nullptr));
+    input += frame(notification("exit", nullptr));
+    std::vector<Json> msgs = runSession("lsp-qiln", input);
+
+    for (const Json& m : msgs) {
+        if (m["method"].str() == "textDocument/publishDiagnostics") {
+            CHECK(m["params"]["uri"].str() == uri);
+            CHECK(m["params"]["diagnostics"].size() == 0);
+        }
+    }
+    const Json* def = response(msgs, 2);
+    REQUIRE(def != nullptr);
+    CHECK((*def)["result"]["uri"].str() == quartz::lsp::pathToUri((root / ".qiln/api/plugins/pack/pack.qz").string()));
+    CHECK((*def)["result"]["range"]["start"]["line"].integer() == 4);
+    const Json* hover = response(msgs, 3);
+    REQUIRE(hover != nullptr);
+    CHECK((*hover)["result"]["contents"]["value"].str().find("Project.setGroup(self, value: str)") !=
+          std::string_view::npos);
 }

@@ -88,7 +88,7 @@ Json Server::semanticTokens(const Json& params) {
                 continue;
             }
             int modifiers = (o.declaration ? kDeclaration : 0) | (o.kind == EntityKind::Const ? kReadonly : 0) |
-                            (a->input(o.declFile).uri.empty() ? kDefaultLibrary : 0);
+                            (a->input(o.declFile).uri.empty() || a->input(o.declFile).library ? kDefaultLibrary : 0);
             std::uint32_t deltaLine = begin.line - previous.line;
             std::uint32_t deltaStart = deltaLine == 0 ? begin.character - previous.character : begin.character;
             std::uint32_t fields[] = {deltaLine, deltaStart, end.character - begin.character,

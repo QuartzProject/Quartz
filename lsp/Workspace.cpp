@@ -11,6 +11,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 namespace quartz::lsp {
@@ -20,6 +21,7 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr std::string_view kUriFolder = "uri:";
+constexpr std::string_view kQilnFolder = "qiln:";
 
 bool isSource(std::string_view path) { return path.ends_with(".qz") || path.ends_with(".qzi"); }
 
@@ -57,6 +59,38 @@ std::string readFile(const fs::path& p) {
     return ss.str();
 }
 
+// Qiln writes the API that `build.qz` and `settings.qz` compile against to `.qiln/api` at the workspace root.
+std::optional<fs::path> qilnApiFor(const fs::path& script) {
+    std::string name = script.filename().string();
+    if (name != "build.qz" && name != "settings.qz") {
+        return std::nullopt;
+    }
+    std::error_code ec;
+    for (fs::path dir = script.parent_path(); !dir.empty(); dir = dir.parent_path()) {
+        fs::path api = dir / ".qiln" / "api";
+        if (fs::is_regular_file(api / "qiln.qzi", ec)) {
+            return api;
+        }
+        if (dir == dir.parent_path()) {
+            break;
+        }
+    }
+    return std::nullopt;
+}
+
+std::vector<fs::path> qilnApiSources(const fs::path& api) {
+    std::vector<fs::path> out;
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(api, ec); !ec && it != fs::recursive_directory_iterator();
+         it.increment(ec)) {
+        if (isSource(it->path().string()) && it->is_regular_file(ec)) {
+            out.push_back(it->path());
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 } // namespace
 
 Analysis::Analysis(std::vector<Input> inputs) : inputs_(std::move(inputs)) {
@@ -64,7 +98,7 @@ Analysis::Analysis(std::vector<Input> inputs) : inputs_(std::move(inputs)) {
     for (const Input& in : inputs_) {
         const SourceFile& file = sources_.add(in.name, in.text);
         modules_.push_back(syntax::parseModule(file, arena_, names_, diags_));
-        if (modules_.back() != nullptr && in.name.starts_with("<std>/")) {
+        if (modules_.back() != nullptr && (in.library || in.name.starts_with("<std>/"))) {
             modules_.back()->library = true;
         }
     }
@@ -117,12 +151,20 @@ std::string Analysis::typeName(std::uint32_t t) const {
     return program_->types.name(t);
 }
 
-std::string Workspace::folderOf(const std::string& uri) const {
+std::string Workspace::folderFor(const std::string& uri) const {
     std::string path = uriToPath(uri);
     if (path.empty()) {
         return std::string(kUriFolder) + uri;
     }
+    if (qilnApiFor(path)) {
+        return std::string(kQilnFolder) + path;
+    }
     return fs::path(path).parent_path().string();
+}
+
+std::string Workspace::folderOf(const std::string& uri) const {
+    auto it = docs_.find(uri);
+    return it != docs_.end() ? it->second.folder : folderFor(uri);
 }
 
 void Workspace::open(const std::string& uri, std::string text, std::int64_t version) {
@@ -131,18 +173,23 @@ void Workspace::open(const std::string& uri, std::string text, std::int64_t vers
     d.path = uriToPath(uri);
     d.text = std::move(text);
     d.version = version;
-    folders_[folderOf(uri)].dirty = true;
+    d.folder = folderFor(uri);
+    folders_[d.folder].dirty = true;
 }
 
 void Workspace::change(const std::string& uri, std::string text, std::int64_t version) {
     auto it = docs_.find(uri);
-    if (it == docs_.end()) {
+    if (it == docs_.end() || it->second.folder != folderFor(uri)) {
+        // A build script becomes one once Qiln has written the workspace's `.qiln/api`.
+        if (it != docs_.end()) {
+            close(uri);
+        }
         open(uri, std::move(text), version);
         return;
     }
     it->second.text = std::move(text);
     it->second.version = version;
-    folders_[folderOf(uri)].dirty = true;
+    folders_[it->second.folder].dirty = true;
 }
 
 void Workspace::close(const std::string& uri) {
@@ -195,6 +242,23 @@ bool Workspace::isDirty(const std::string& folder) const {
 
 std::vector<Analysis::Input> Workspace::inputsFor(const std::string& folder) const {
     std::vector<Analysis::Input> inputs;
+    if (folder.starts_with(kQilnFolder)) {
+        // Like Qiln: the script with the build API and the plugins' APIs, without the CLI's host interface.
+        std::string path = folder.substr(kQilnFolder.size());
+        for (const std::string& uri : documentsIn(folder)) {
+            const Document& d = docs_.at(uri);
+            inputs.push_back({d.uri, d.path, d.text});
+        }
+        if (auto api = qilnApiFor(path)) {
+            for (const fs::path& p : qilnApiSources(*api)) {
+                inputs.push_back({pathToUri(p.string()), p.string(), readFile(p), true});
+            }
+        }
+        for (const auto& [name, text] : stdlib::sources()) {
+            inputs.push_back({{}, std::string(name), std::string(text)});
+        }
+        return inputs;
+    }
     std::set<std::string> openPaths;
     std::set<std::string> packages;
     for (const std::string& uri : documentsIn(folder)) {

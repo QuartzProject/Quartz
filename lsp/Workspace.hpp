@@ -23,6 +23,7 @@ struct Document {
     std::string path; // empty for non-file URIs
     std::string text;
     std::int64_t version = 0;
+    std::string folder; // the analysis it belongs to, see Workspace::folderOf
 };
 
 /// One program: the front end run over a folder's sources, kept alive for queries.
@@ -32,6 +33,7 @@ public:
         std::string uri; // empty for embedded std and host sources
         std::string name;
         std::string text;
+        bool library = false; // navigable, but not reported, indexed or linted
     };
 
     explicit Analysis(std::vector<Input> inputs);
@@ -79,7 +81,7 @@ private:
     mutable std::vector<std::unique_ptr<LineIndex>> lines_;
 };
 
-/// Open documents grouped by folder; each folder is analyzed as one program.
+/// Open documents grouped by folder; each folder is analyzed as one program, and each Qiln build script alone.
 class Workspace {
 public:
     void open(const std::string& uri, std::string text, std::int64_t version);
@@ -104,6 +106,7 @@ private:
     };
 
     std::vector<Analysis::Input> inputsFor(const std::string& folder) const;
+    [[nodiscard]] std::string folderFor(const std::string& uri) const;
 
     std::map<std::string, Document> docs_;
     std::map<std::string, Folder> folders_;
