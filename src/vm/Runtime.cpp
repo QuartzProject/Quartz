@@ -373,9 +373,9 @@ List* Sandbox::newList(TypeId elem) {
     return l;
 }
 
-bool Sandbox::growList(List* l, std::uint32_t need) {
+bool Sandbox::growList(List* l, std::uint32_t need, bool exact) {
     std::uint64_t cap = l->cap == 0 ? 4 : static_cast<std::uint64_t>(l->cap) * 2;
-    cap = std::max<std::uint64_t>(cap, need);
+    cap = exact ? need : std::max<std::uint64_t>(cap, need);
     if (cap * l->stride() > (1ULL << 31)) {
         return fail(ir::TrapCode::OutOfMemory, "list too large");
     }
@@ -409,7 +409,7 @@ List* Sandbox::filledList(std::int64_t n, const Slot* value, TypeId elem) {
         return nullptr;
     }
     List* l = newList(elem);
-    if (l == nullptr || (n > 0 && !growList(l, static_cast<std::uint32_t>(n)))) {
+    if (l == nullptr || (n > 0 && !growList(l, static_cast<std::uint32_t>(n), true))) {
         return nullptr;
     }
     std::uint16_t es = l->elemSlots;
@@ -545,215 +545,6 @@ bool Sandbox::storeState(TypeId type, const Slot* src, Slot* dst) {
     releaseState(type, dst);
     std::memcpy(dst, copy, n * sizeof(Slot));
     return true;
-}
-
-bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {
-    const ir::TypeTable& types = program_->module->types;
-    const Layouts& lay = *program_->layouts;
-    const ir::TypeInfo& info = types.info(type);
-    switch (info.kind) {
-    case TypeKind::Str:
-    case TypeKind::Bytes: {
-        const auto* s = static_cast<const Str*>(src->p);
-        if (s->owner == Owner::Static) {
-            dst->p = src->p; // lives as long as the program, which the sandbox keeps alive
-            return true;
-        }
-        auto* out = static_cast<Str*>(heap_.allocate(kStrHeader + s->len + 1));
-        if (out == nullptr) {
-            return fail(ir::TrapCode::OutOfMemory);
-        }
-        out->len = s->len;
-        out->hash = s->hash;
-        out->owner = Owner::State;
-        std::memcpy(out->data, s->data, s->len + 1);
-        dst->p = out;
-        return true;
-    }
-    case TypeKind::List: {
-        const auto* l = static_cast<const List*>(src->p);
-        auto* out = static_cast<List*>(heap_.allocate(sizeof(List)));
-        if (out == nullptr) {
-            return fail(ir::TrapCode::OutOfMemory);
-        }
-        *out = *l;
-        out->owner = Owner::State;
-        out->data = nullptr;
-        out->cap = 0;
-        out->len = 0;
-        dst->p = out;
-        if (l->len > 0 && !growList(out, l->len)) {
-            return false;
-        }
-        if (!l->elemHasRefs) {
-            if (l->len > 0) {
-                std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
-            }
-            out->len = l->len;
-            return true;
-        }
-        for (std::uint32_t i = 0; i < l->len; ++i) {
-            std::size_t off = static_cast<std::size_t>(i) * l->elemSlots;
-            if (l->elemHasRefs) {
-                if (!copyIntoState(l->elemType, l->data + off, out->data + off)) {
-                    out->len = i;
-                    return false;
-                }
-            } else {
-                std::memcpy(out->data + off, l->data + off, l->elemSlots * sizeof(Slot));
-            }
-            out->len = i + 1;
-        }
-        return true;
-    }
-    case TypeKind::Map: {
-        const auto* m = static_cast<const Map*>(src->p);
-        auto* out = static_cast<Map*>(heap_.allocate(sizeof(Map)));
-        if (out == nullptr) {
-            return fail(ir::TrapCode::OutOfMemory);
-        }
-        *out = *m;
-        out->owner = Owner::State;
-        out->hashes = nullptr;
-        out->entries = nullptr;
-        out->order = nullptr;
-        out->place = nullptr;
-        out->cap = 0;
-        out->count = 0;
-        out->used = 0;
-        out->ordered = 0;
-        dst->p = out;
-        bool ok = true;
-        forEachEntry(m, [&](const Slot* e) { ok = ok && mapSet(out, e, e + m->keySlots); });
-        return ok;
-    }
-    case TypeKind::Nullable: {
-        if (lay.nullableIsPointer(type)) {
-            if (src->p == nullptr) {
-                dst->p = nullptr;
-                return true;
-            }
-            return copyIntoState(info.elem, src, dst);
-        }
-        dst[0] = src[0];
-        if (src[0].u == 0) {
-            return true;
-        }
-        return copyIntoState(info.elem, src + 1, dst + 1);
-    }
-    case TypeKind::Struct:
-    case TypeKind::Tuple: {
-        std::size_t count = info.kind == TypeKind::Struct ? info.fields.size() : info.elems.size();
-        for (std::uint32_t i = 0; i < count; ++i) {
-            TypeId ft = info.kind == TypeKind::Struct ? info.fields[i].type : info.elems[i];
-            std::uint32_t off = lay.fieldOffset(type, i);
-            if (!copyIntoState(ft, src + off, dst + off)) {
-                return false;
-            }
-        }
-        return true;
-    }
-    case TypeKind::Enum: {
-        dst[0] = src[0];
-        auto tag = static_cast<std::size_t>(src[0].u);
-        if (tag >= info.variants.size()) {
-            return true;
-        }
-        std::uint32_t off = 1;
-        for (TypeId p : info.variants[tag].payload) {
-            if (!copyIntoState(p, src + off, dst + off)) {
-                return false;
-            }
-            off += lay.slots(p);
-        }
-        return true;
-    }
-    case TypeKind::State:
-    case TypeKind::Fn: return fail(ir::TrapCode::Unreachable, "this value cannot be stored in state");
-    default: std::memcpy(dst, src, lay.slots(type) * sizeof(Slot)); return true;
-    }
-}
-
-void Sandbox::releaseState(TypeId type, Slot* slots) {
-    const ir::TypeTable& types = program_->module->types;
-    const Layouts& lay = *program_->layouts;
-    const ir::TypeInfo& info = types.info(type);
-    switch (info.kind) {
-    case TypeKind::Str:
-    case TypeKind::Bytes: {
-        auto* s = static_cast<Str*>(slots->p);
-        if (s != nullptr && s->owner == Owner::State) {
-            heap_.release(s);
-        }
-        return;
-    }
-    case TypeKind::List: {
-        auto* l = static_cast<List*>(slots->p);
-        if (l == nullptr || l->owner != Owner::State) {
-            return;
-        }
-        listClear(l);
-        heap_.release(l->data);
-        heap_.release(l);
-        return;
-    }
-    case TypeKind::Map: {
-        auto* m = static_cast<Map*>(slots->p);
-        if (m == nullptr || m->owner != Owner::State) {
-            return;
-        }
-        std::uint32_t es = m->keySlots + m->valueSlots;
-        for (std::uint32_t i = 0; i < m->cap; ++i) {
-            if (m->hashes[i] >= 2) {
-                Slot* e = m->entries + static_cast<std::size_t>(i) * es;
-                if (m->keyHasRefs) {
-                    releaseState(m->keyType, e);
-                }
-                if (m->valueHasRefs) {
-                    releaseState(m->valueType, e + m->keySlots);
-                }
-            }
-        }
-        heap_.release(m->hashes);
-        heap_.release(m->entries);
-        heap_.release(m->order);
-        heap_.release(m);
-        return;
-    }
-    case TypeKind::Nullable:
-        if (lay.nullableIsPointer(type)) {
-            if (slots->p != nullptr) {
-                releaseState(info.elem, slots);
-            }
-        } else if (slots[0].u != 0) {
-            releaseState(info.elem, slots + 1);
-        }
-        return;
-    case TypeKind::Struct:
-    case TypeKind::Tuple: {
-        std::size_t count = info.kind == TypeKind::Struct ? info.fields.size() : info.elems.size();
-        for (std::uint32_t i = 0; i < count; ++i) {
-            TypeId ft = info.kind == TypeKind::Struct ? info.fields[i].type : info.elems[i];
-            if (types.hasRefs(ft)) {
-                releaseState(ft, slots + lay.fieldOffset(type, i));
-            }
-        }
-        return;
-    }
-    case TypeKind::Enum: {
-        auto tag = static_cast<std::size_t>(slots[0].u);
-        if (tag >= info.variants.size()) {
-            return;
-        }
-        std::uint32_t off = 1;
-        for (TypeId p : info.variants[tag].payload) {
-            releaseState(p, slots + off);
-            off += lay.slots(p);
-        }
-        return;
-    }
-    default: return;
-    }
 }
 
 } // namespace quartz::vm

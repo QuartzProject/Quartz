@@ -211,6 +211,10 @@ bool Sandbox::growMap(Map* m) {
     if (cap > (1u << 26)) {
         return fail(ir::TrapCode::OutOfMemory, "map too large");
     }
+    return growMapTo(m, cap);
+}
+
+bool Sandbox::growMapTo(Map* m, std::uint32_t cap) {
     std::size_t es = entrySlots(m);
     InvocationArena* region = regionFor(m->owner, m->level);
     InvocationArena* savedCur = cur_;

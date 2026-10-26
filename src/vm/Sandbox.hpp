@@ -282,7 +282,7 @@ private:
     bool enter(std::uint32_t function, Slot* base);
     bool runNative(NativeEntry entry, std::uint32_t function, Slot* base);
     bool copyIntoState(ir::TypeId type, const Slot* src, Slot* dst);
-    bool growList(List* l, std::uint32_t need);
+    bool growList(List* l, std::uint32_t need, bool exact = false);
     bool growMap(Map* m);
     [[nodiscard]] std::uint64_t keyHash(const Map* m, const Slot* key) const;
     void compactOrder(Map* m);
@@ -379,6 +379,37 @@ private:
     std::uint32_t finishedSlots_ = 0;
     static constexpr std::uint32_t kNoTask = 0xFFFFFFFF;
     void finishTask(std::uint32_t id, std::uint32_t slots);
+
+    // DeepCopy.cpp: walks over values keep their pending containers here, never on the native stack.
+    struct WalkFrame {
+        const Slot* src = nullptr;
+        Slot* dst = nullptr;
+        const void* from = nullptr; // Entries: the source map; Captures: the function
+        void* to = nullptr;         // Entries: the destination map; Release*: the container to free
+        ir::TypeId type = 0;
+        ir::TypeId toType = 0;
+        std::uint32_t next = 0;
+        std::uint32_t end = 0;
+        std::uint32_t at = 0; // Entries: position in the destination map's order
+        std::uint16_t stride = 0;
+        std::uint16_t toStride = 0;
+        std::uint8_t kind = 0;
+    };
+
+    std::vector<WalkFrame> walk_;
+    std::size_t walkCharged_ = 0;
+    std::vector<Slot> walkTemp_;
+    bool walkPush(const WalkFrame& frame, bool force = false);
+    void walkEnd(std::size_t base);
+    template <class Visit>
+    bool walkStep(Visit&& visit);
+    bool copyNode(ir::TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level);
+    bool stateNode(ir::TypeId type, const Slot* src, Slot* dst);
+    void releaseNode(ir::TypeId type, Slot* slots);
+    bool acrossNode(const Sandbox& from, ir::TypeId fromType, const Slot* src, ir::TypeId toType, Slot* dst);
+    bool mapCopyEntries(Map* out, const Map* m, bool zeroRefs);
+    bool growMapTo(Map* m, std::uint32_t cap);
+    bool hostListResize(List* l, std::uint32_t n);
 
     friend struct HostCall;
     friend class Interpreter;

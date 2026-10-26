@@ -365,37 +365,43 @@ bool Checker::derivedFromState(const Expr* e) const {
     }
 }
 
+// Iterative with a visited set: a recursive enum holds itself before its payloads are boxed (D177).
 bool Checker::holdsMutable(TypeId t) const {
-    const ir::TypeInfo& info = types_->info(t);
-    switch (info.kind) {
-    case ir::TypeKind::List:
-    case ir::TypeKind::Map: return true;
-    case ir::TypeKind::Nullable: return holdsMutable(info.elem);
-    case ir::TypeKind::Struct:
-        for (const ir::Field& f : info.fields) {
-            if (holdsMutable(f.type)) {
-                return true;
-            }
+    std::vector<TypeId> work{t};
+    std::vector<TypeId> seen;
+    while (!work.empty()) {
+        TypeId id = work.back();
+        work.pop_back();
+        if (std::ranges::contains(seen, id)) {
+            continue;
         }
-        return false;
-    case ir::TypeKind::Tuple:
-        for (TypeId x : info.elems) {
-            if (holdsMutable(x)) {
-                return true;
+        seen.push_back(id);
+        const ir::TypeInfo& info = types_->info(id);
+        switch (info.kind) {
+        case ir::TypeKind::List:
+        case ir::TypeKind::Map:
+            return true;
+        case ir::TypeKind::Nullable:
+            work.push_back(info.elem);
+            break;
+        case ir::TypeKind::Struct:
+            for (const ir::Field& f : info.fields) {
+                work.push_back(f.type);
             }
-        }
-        return false;
-    case ir::TypeKind::Enum:
-        for (const ir::VariantInfo& v : info.variants) {
-            for (TypeId x : v.payload) {
-                if (holdsMutable(x)) {
-                    return true;
-                }
+            break;
+        case ir::TypeKind::Tuple:
+            work.insert(work.end(), info.elems.begin(), info.elems.end());
+            break;
+        case ir::TypeKind::Enum:
+            for (const ir::VariantInfo& v : info.variants) {
+                work.insert(work.end(), v.payload.begin(), v.payload.end());
             }
+            break;
+        default:
+            break;
         }
-        return false;
-    default: return false;
     }
+    return false;
 }
 
 void Checker::checkViewBinding(Local* l, const Expr* init, Span span) {

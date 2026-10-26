@@ -66,6 +66,24 @@ bool Sandbox::hostListPush(List* l, std::span<const Slot> element) {
     return true;
 }
 
+// Exactly `n` elements, left for the caller to fill, in the arena `hostListPush` would use.
+bool Sandbox::hostListResize(List* l, std::uint32_t n) {
+    std::uint64_t bytes = static_cast<std::uint64_t>(n) * l->stride();
+    if (bytes > (1ULL << 31)) {
+        return false;
+    }
+    auto* data =
+        static_cast<Slot*>(hostArena(inCall_, cur_, hostArenas_, hostArena_)
+                               .allocate(std::max<std::size_t>(static_cast<std::size_t>(bytes), sizeof(Slot))));
+    if (data == nullptr) {
+        return false;
+    }
+    l->data = data;
+    l->cap = n;
+    l->len = n;
+    return true;
+}
+
 ir::TypeId Sandbox::waitType(std::uint32_t task) const {
     return task < tasks_.size() && tasks_[task].live ? tasks_[task].waitType : ir::kVoid;
 }
