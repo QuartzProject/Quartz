@@ -14,14 +14,16 @@ add_library(quartz_doctest INTERFACE)
 target_include_directories(quartz_doctest SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/third_party)
 
 add_library(quartz_monocypher STATIC third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
-target_include_directories(quartz_monocypher SYSTEM PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party>)
+target_include_directories(quartz_monocypher SYSTEM PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party>
+    $<INSTALL_INTERFACE:include/quartz/third_party>)
 target_compile_options(quartz_monocypher PRIVATE -ffp-contract=off)
 
 # zstd 1.5.7 (BSD), library only, without assembly or threads so it builds the same on every target (D67).
 file(GLOB QUARTZ_ZSTD_SOURCES ${PROJECT_SOURCE_DIR}/third_party/zstd/common/*.c ${PROJECT_SOURCE_DIR}/third_party/zstd/compress/*.c
     ${PROJECT_SOURCE_DIR}/third_party/zstd/decompress/*.c)
 add_library(quartz_zstd STATIC ${QUARTZ_ZSTD_SOURCES})
-target_include_directories(quartz_zstd SYSTEM PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/zstd>)
+target_include_directories(quartz_zstd SYSTEM PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/zstd>
+    $<INSTALL_INTERFACE:include/quartz/third_party/zstd>)
 target_compile_definitions(quartz_zstd PRIVATE ZSTD_DISABLE_ASM=1 ZSTD_MULTITHREAD=0 ZSTD_LEGACY_SUPPORT=0 XXH_NAMESPACE=QZ_)
 target_compile_options(quartz_zstd PRIVATE -ffp-contract=off -w)
 set_target_properties(quartz_zstd PROPERTIES POSITION_INDEPENDENT_CODE ON)

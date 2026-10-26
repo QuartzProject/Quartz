@@ -21,6 +21,12 @@ endif()
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/quartz DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(DIRECTORY ${PROJECT_SOURCE_DIR}/src/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/quartz/detail
     FILES_MATCHING PATTERN "*.hpp")
+# Under include/quartz so that they never shadow a system zstd.h or monocypher.h (D207).
+set(quartz_vendored ${PROJECT_SOURCE_DIR}/third_party)
+install(FILES ${quartz_vendored}/monocypher/monocypher.h ${quartz_vendored}/monocypher/monocypher-ed25519.h
+    ${quartz_vendored}/monocypher/LICENCE.md DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/quartz/third_party/monocypher)
+install(FILES ${quartz_vendored}/zstd/zstd.h ${quartz_vendored}/zstd/zstd_errors.h ${quartz_vendored}/zstd/LICENSE
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/quartz/third_party/zstd)
 
 set(quartz_cmake_dir ${CMAKE_INSTALL_LIBDIR}/cmake/Quartz)
 install(EXPORT QuartzTargets NAMESPACE Quartz:: DESTINATION ${quartz_cmake_dir})
