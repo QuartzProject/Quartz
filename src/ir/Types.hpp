@@ -75,6 +75,9 @@ struct Field {
 struct VariantInfo {
     std::string name;
     std::vector<TypeId> payload;
+    std::vector<bool> boxed{}; // payload i is a recursive one, held in a list of one element (D177)
+
+    [[nodiscard]] bool isBoxed(std::size_t i) const { return i < boxed.size() && boxed[i]; }
 };
 
 struct TypeInfo {

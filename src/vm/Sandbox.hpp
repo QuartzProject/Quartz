@@ -9,6 +9,11 @@ struct DataTypes;
 struct NativeCtx;
 }
 
+namespace quartz::vm::json {
+struct Node;
+class Doc;
+} // namespace quartz::vm::json
+
 #include <expected>
 #include <memory>
 #include <span>
@@ -347,7 +352,6 @@ private:
     void bindNatives();
     Slot* instanceFor(std::size_t state, std::uint64_t handle);
     bool resolveStates(const CompiledFunction& fn, std::span<const Slot> args, std::vector<Slot*>& out);
-    std::expected<void, Trap> importOne(std::size_t state, const void* saved, Slot* target);
     std::vector<std::unordered_map<std::uint64_t, Slot*>> perHandle_;
     std::vector<Slot*> resolved_;
     struct LinkTarget {
@@ -360,8 +364,41 @@ private:
     std::vector<std::unique_ptr<LinkTarget>> links_;
     static bool linkedCall(HostCall& call, void* user);
     bool copyAcross(const Sandbox& from, ir::TypeId fromType, const Slot* src, ir::TypeId toType, Slot* dst);
-    struct ImportCtx;
+
+    // StateValues.cpp: importing keeps lists, maps and boxes still to fill on a stack, like the copies.
+    struct ImportFrame {
+        enum class Kind : std::uint8_t { List, Map, Box };
+        const json::Node* node;
+        Slot* dst;
+        void* map;
+        ir::TypeId type;
+        std::uint32_t i;
+        std::uint32_t n;
+        Kind kind;
+        std::string where{}; // fields and variants between the enclosing frame's element and this container
+    };
+
+public:
+    struct ImportCrumb {
+        const std::string* name; // a field or variant; null for a tuple element
+        std::uint32_t index;
+    };
+
+private:
+    struct ImportCtx {
+        const json::Doc* doc = nullptr;
+        bool boxesAsValues = false; // documents from format 2 on hold a boxed recursive payload as the value itself
+        std::string error;
+        std::string base;
+        std::vector<ImportFrame> frames;
+        std::vector<ImportCrumb> crumbs;
+        std::vector<Slot> tmp;
+    };
     bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
+    bool importNode(ImportCtx& ctx, const json::Node& node, ir::TypeId type, Slot* out);
+    bool importBad(ImportCtx& ctx, std::string_view why);
+    [[nodiscard]] std::string importPath(const ImportCtx& ctx) const;
+    std::expected<void, Trap> importOne(std::size_t state, ImportCtx& ctx, const json::Node& saved, Slot* target);
     void exportValue(std::string& out, ir::TypeId type, const Slot* v);
     std::unique_ptr<stdlib::DataTypes> dataTypes_;
     std::vector<std::unique_ptr<stdlib::NativeCtx>> nativeCtx_;

@@ -388,6 +388,15 @@ private:
                 VariantInfo v;
                 v.name = r.str();
                 v.payload = ids(r);
+                std::vector<TypeId> boxed = ids(r);
+                for (std::size_t k = 0; k < boxed.size() && !r.failed(); ++k) {
+                    if (boxed[k] >= v.payload.size() || (k > 0 && boxed[k] <= boxed[k - 1])) {
+                        r.fail("bad boxed payload index");
+                        break;
+                    }
+                    v.boxed.resize(v.payload.size());
+                    v.boxed[boxed[k]] = true;
+                }
                 info.variants.push_back(std::move(v));
             }
             readGenerics(r, self, info, depth);

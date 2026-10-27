@@ -100,6 +100,12 @@ private:
         case TypeKind::Enum: {
             std::uint64_t largest = 0;
             for (const VariantInfo& v : info.variants) {
+                for (std::size_t i = 0; i < v.payload.size(); ++i) {
+                    if (v.isBoxed(i) && (v.payload[i] >= t_.size() || t_.kind(v.payload[i]) != TypeKind::List)) {
+                        why_ = "boxes a payload that is not a list";
+                        return false;
+                    }
+                }
                 std::uint64_t s = 0;
                 for (TypeId p : v.payload) {
                     ok = ok && child(p, false, depth, s);

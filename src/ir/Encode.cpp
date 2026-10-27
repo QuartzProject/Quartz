@@ -83,6 +83,13 @@ void writeType(Writer& w, const TypeTable& types, TypeId id) {
         for (const VariantInfo& v : t.variants) {
             w.str(v.name);
             list(v.payload);
+            std::vector<TypeId> boxed;
+            for (std::uint32_t i = 0; i < v.payload.size(); ++i) {
+                if (v.isBoxed(i)) {
+                    boxed.push_back(i);
+                }
+            }
+            list(boxed);
         }
         generics();
         return;

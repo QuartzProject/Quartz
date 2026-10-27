@@ -154,7 +154,7 @@ std::vector<TierMode> tiers() {
 
 } // namespace
 
-TEST_CASE("values a million levels deep are copied, stored, released, compared and shown without a crash") {
+TEST_CASE("values a million levels deep are copied, stored, exported, imported, released, compared and shown") {
     auto p = compile({{"deep.qz", kProvider}});
     for (TierMode tier : tiers()) {
         CAPTURE(static_cast<int>(tier));
@@ -165,6 +165,16 @@ TEST_CASE("values a million levels deep are copied, stored, released, compared a
         n.i = kDepth;
         CHECK(callInt(sb, "store", {n}) == 2 * (kDepth - 1));
         CHECK(callInt(sb, "heads") == 3 * (kDepth - 1));
+        auto saved = sb.exportState();
+        REQUIRE_MESSAGE(saved.has_value(), (saved ? "" : saved.error().describe()));
+        {
+            quartz::vm::Sandbox copy(p, limitsFor(tier));
+            copy.bind("int.ticks", ticks);
+            REQUIRE(copy.start().has_value());
+            auto back = copy.importState(*saved);
+            REQUIRE_MESSAGE(back.has_value(), (back ? "" : back.error().describe()));
+            CHECK(callInt(copy, "heads") == 3 * (kDepth - 1));
+        }
         CHECK(trapOf(sb, "same").find("stack overflow") != std::string::npos);
         CHECK(trapOf(sb, "text").find("stack overflow") != std::string::npos);
 
@@ -200,6 +210,44 @@ TEST_CASE("a value a million levels deep crosses between linked sandboxes") {
         n.i = kDepth;
         CHECK(callInt(user, "fetch", {n}) == kDepth - 1);
     }
+}
+
+TEST_CASE("a recursive payload is saved as the value it holds, and documents that saved its box still load") {
+    auto p = compile({{"chain.qz", R"(enum Chain {
+    Nil
+    Cons(int, Chain)
+}
+state Saved {
+    chain: Chain = Chain.Nil
+}
+fn fill(s: Saved) {
+    s.chain = Chain.Cons(1, Chain.Cons(2, Chain.Nil))
+}
+fn sum(s: Saved) -> int {
+    var total = 0
+    var c = s.chain
+    while c is Cons(v, rest) {
+        total = total * 10 + v
+        c = rest
+    }
+    return total
+}
+)"}});
+    quartz::vm::Sandbox sb(p);
+    REQUIRE(sb.start().has_value());
+    REQUIRE(sb.call(p->findFunction("fill"), {}).has_value());
+    auto saved = sb.exportState();
+    REQUIRE(saved.has_value());
+    CHECK(*saved == R"({"format":2,"states":{"Saved":{"version":0,"fields":{"chain":{"variant":"Cons","values":[1,)"
+                    R"({"variant":"Cons","values":[2,{"variant":"Nil","values":[]}]}]}}}},"handles":{}})");
+    quartz::vm::Sandbox legacy(p);
+    REQUIRE(legacy.start().has_value());
+    auto r = legacy.importState(R"({"states":{"Saved":{"version":0,"fields":{"chain":{"variant":"Cons","values":[3,)"
+                                R"([{"variant":"Nil","values":[]}]]}}}},"handles":{}})");
+    REQUIRE_MESSAGE(r.has_value(), (r ? "" : r.error().describe()));
+    CHECK(callInt(legacy, "sum") == 3);
+    REQUIRE(legacy.importState(*saved).has_value());
+    CHECK(callInt(legacy, "sum") == 12);
 }
 
 namespace {

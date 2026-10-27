@@ -392,6 +392,13 @@ fn run(n: int) -> int {
     }
     REQUIRE(expr != quartz::ir::kError);
     REQUIRE(m.types.kind(m.types.info(expr).variants[1].payload[0]) == quartz::ir::TypeKind::List);
+    REQUIRE(m.types.info(expr).variants[1].isBoxed(0));
+    m.types.mutableInfo(expr).variants[0].boxed = {true};
+    auto boxedInt = quartz::ir::validate(m);
+    REQUIRE_FALSE(boxedInt.has_value());
+    CHECK(boxedInt.error().describe(m).find("boxes a payload that is not a list") != std::string::npos);
+    m.types.mutableInfo(expr).variants[0].boxed.clear();
+    m.types.mutableInfo(expr).variants[1].boxed.clear();
     m.types.mutableInfo(expr).variants[1].payload[0] = m.types.nullable(expr);
     auto v = quartz::ir::validate(m);
     REQUIRE_FALSE(v.has_value());

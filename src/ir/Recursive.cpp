@@ -105,7 +105,10 @@ void TypeTable::boxRecursivePayloads() {
             for (std::size_t i = 0; i < b[v].size(); ++i) {
                 if (b[v][i]) {
                     TypeId boxed = list(types_[id].variants[v].payload[i]);
-                    types_[id].variants[v].payload[i] = boxed;
+                    VariantInfo& var = types_[id].variants[v];
+                    var.payload[i] = boxed;
+                    var.boxed.resize(var.payload.size());
+                    var.boxed[i] = true;
                 }
             }
         }
