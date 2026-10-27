@@ -1,0 +1,26 @@
+// expect: 4 2 0
+enum Wrap {
+    W(int, int)
+}
+
+enum Chain {
+    Cons(int, Chain?)
+}
+
+fn first(w: Wrap) -> int {
+    let W(a, _) = w
+    return a
+}
+
+fn second(c: Chain) -> int {
+    let Cons(_, rest) = c
+    return match rest {
+        null => 0
+        Cons(v, _) => v
+    }
+}
+
+fn main() -> int {
+    print("{first(Wrap.W(4, 5))} {second(Chain.Cons(1, Chain.Cons(2, null)))} {second(Chain.Cons(1, null))}")
+    return 0
+}

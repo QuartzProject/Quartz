@@ -108,6 +108,20 @@ void bindingsOf(Pattern* p, std::vector<Pattern*>& out) {
     }
 }
 
+// A variant of a one-variant enum still emits a tag test, which the validator sees as a way around the bindings.
+bool testsSomething(const Pattern* p) {
+    if (p->kind == PatternKind::Variant || p->kind == PatternKind::Literal || p->kind == PatternKind::Range ||
+        p->kind == PatternKind::Or) {
+        return true;
+    }
+    for (const Pattern* s : p->sub) {
+        if (testsSomething(s)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 // Every alternative writes the same registers, so the names are bound on each path that reaches the end.
@@ -158,10 +172,22 @@ void Lowerer::lowerLetPattern(LetStmt* s) {
         t = T(s->type->type);
     }
     Reg v = lowerExpr(s->init, t);
-    // Sema proved the pattern cannot fail, so the block is never left early.
+    if (!testsSomething(s->pattern)) {
+        std::size_t never = depth_;
+        open(Op::Block);
+        matchPattern(s->pattern, v, t, never);
+        close();
+        return;
+    }
+    // Sema proved the pattern cannot fail; the trap after it keeps every path past the `let` through the bindings.
+    std::size_t bound = depth_;
+    open(Op::Block);
     std::size_t never = depth_;
     open(Op::Block);
     matchPattern(s->pattern, v, t, never);
+    br(bound);
+    close();
+    emit(Op::Trap, kNoReg, kNoReg, kNoReg, static_cast<std::uint32_t>(TrapCode::Unreachable));
     close();
 }
 
