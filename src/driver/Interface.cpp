@@ -133,7 +133,8 @@ public:
                     docLines(out, memberDoc(docs, k), "    ");
                     out += "    " + v.name;
                     for (std::size_t i = 0; i < v.payload.size(); ++i) {
-                        out += (i ? ", " : "(") + types_.name(v.payload[i]);
+                        ir::TypeId p = v.isBoxed(i) ? types_.info(v.payload[i]).elem : v.payload[i];
+                        out += (i ? ", " : "(") + types_.name(p);
                     }
                     out += v.payload.empty() ? "\n" : ")\n";
                 }
@@ -151,6 +152,10 @@ private:
             for (ir::TypeId e : info.elems) {
                 markKey(e);
             }
+            return;
+        }
+        if (info.kind == ir::TypeKind::List) {
+            markKey(info.elem); // list keys and boxed recursive payloads compare their elements (D133)
             return;
         }
         if ((info.kind != ir::TypeKind::Struct && info.kind != ir::TypeKind::Enum) || !keys_.insert(t).second) {
