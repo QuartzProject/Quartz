@@ -1,10 +1,21 @@
 // expect: 4 2 0
+// expect: 1 2 3
 enum Wrap {
     W(int, int)
 }
 
 enum Chain {
     Cons(int, Chain?)
+}
+
+enum Opt<T> {
+    None
+    Some(T, Opt<T>)
+}
+
+struct Box<T> {
+    a: Opt<T>
+    b: T
 }
 
 fn first(w: Wrap) -> int {
@@ -22,5 +33,13 @@ fn second(c: Chain) -> int {
 
 fn main() -> int {
     print("{first(Wrap.W(4, 5))} {second(Chain.Cons(1, Chain.Cons(2, null)))} {second(Chain.Cons(1, null))}")
+    var o = Opt.Some(1, Opt.Some(2, Opt.None))
+    var out = ""
+    while o is Some(v, rest) {
+        out += "{v} "
+        o = rest
+    }
+    let x = Box(Opt.None, 3)
+    print(out + "{x.b}")
     return 0
 }

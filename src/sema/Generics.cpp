@@ -346,9 +346,22 @@ TypeId Checker::inferInstance(TypeId base, const std::vector<TypeId>& patterns, 
         return want;
     }
     ir::TypeSubst bindings;
-    for (std::size_t i = 0; i < args.size() && i < patterns.size(); ++i) {
-        TypeId at = checkValue(args[i].value, types_->hasParams(patterns[i]) ? ir::kError : patterns[i]);
+    // A variant written without its type (`Opt.None`) waits until the other arguments have bound the parameters.
+    std::vector<std::size_t> later;
+    auto checkArg = [&](std::size_t i, bool mayWait) {
+        TypeId want = types_->subst(patterns[i], bindings);
+        if (types_->hasParams(want) && mayWait && args[i].value->kind == ExprKind::Member) {
+            later.push_back(i);
+            return;
+        }
+        TypeId at = checkValue(args[i].value, types_->hasParams(want) ? ir::kError : want);
         unify(patterns[i], at, bindings);
+    };
+    for (std::size_t i = 0; i < args.size() && i < patterns.size(); ++i) {
+        checkArg(i, true);
+    }
+    for (std::size_t i : std::vector<std::size_t>(later)) {
+        checkArg(i, false);
     }
     std::vector<TypeId> targs;
     for (TypeId p : types_->info(base).typeParams) {
