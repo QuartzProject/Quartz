@@ -1,0 +1,27 @@
+// expect: 2 30 -1 2 b
+@derive(Eq, Hash, Show)
+enum Chain {
+    Nil
+    Cons(int, Chain)
+}
+
+fn build(n: int) -> Chain {
+    var c = Chain.Nil
+    for i in 0..n {
+        c = Chain.Cons(i, c)
+    }
+    return c
+}
+
+fn main() -> int {
+    var m: Map<Chain, int> = Map()
+    m[build(3)] = 3
+    m[build(2)] = 2
+    m[build(3)] = 30
+    var lists: Map<[int], str> = Map()
+    lists[[1, 2]] = "a"
+    lists[[1, 2]] = "b"
+    lists[[2]] = "c"
+    print("{m.len()} {m.get(build(3)) ?? -1} {m.get(build(4)) ?? -1} {lists.len()} {lists.get([1, 2]) ?? "-"}")
+    return 0
+}

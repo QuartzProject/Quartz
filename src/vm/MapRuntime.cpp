@@ -38,9 +38,10 @@ Map* Sandbox::newMap(TypeId mapType) {
     m->valueSlots = static_cast<std::uint16_t>(program_->layouts->slots(info.elem));
     m->keySlots = static_cast<std::uint16_t>(program_->layouts->slots(info.key));
     TypeKind kk = types.kind(info.key);
-    m->keyKind = info.key == ir::kStr                                                      ? kMapKeyStr
-                 : kk == TypeKind::Struct || kk == TypeKind::Tuple || kk == TypeKind::Enum ? kMapKeyFields
-                                                                                           : kMapKeyRaw;
+    m->keyKind = info.key == ir::kStr ? kMapKeyStr
+                 : kk == TypeKind::Struct || kk == TypeKind::Tuple || kk == TypeKind::Enum || kk == TypeKind::List
+                     ? kMapKeyFields
+                     : kMapKeyRaw;
     m->keyHasRefs = types.hasRefs(info.key);
     m->valueHasRefs = types.hasRefs(info.elem);
     m->valuePtrNullable = types.isRefKind(info.elem) || types.kind(info.elem) == TypeKind::Handle;
@@ -49,73 +50,149 @@ Map* Sandbox::newMap(TypeId mapType) {
     return m;
 }
 
-// Equal values hash equal: both walk the same fields, and only the payload of the variant the tag names.
+namespace {
+
+// A list inside a key (a boxed recursive payload, or a list key) waits here, so a deep key never recurses natively.
+struct KeyFrame {
+    const List* a;
+    const List* b;
+    std::uint32_t next;
+};
+
+} // namespace
+
+// Equal values hash equal: both walk the same fields, only the payload of the variant the tag names, and the
+// elements of lists in the same order.
 std::uint64_t Sandbox::valueHash(TypeId type, const Slot* v) const {
-    const ir::TypeInfo& info = program_->module->types.info(type);
-    const Layouts& lay = *program_->layouts;
-    switch (info.kind) {
-    case TypeKind::Str:
-        return strHash(static_cast<Str*>(v->p));
-    case TypeKind::Struct:
-    case TypeKind::Tuple: {
-        std::uint64_t h = info.kind == TypeKind::Tuple ? 1 : 0;
-        std::size_t n = info.kind == TypeKind::Tuple ? info.elems.size() : info.fields.size();
-        for (std::uint32_t i = 0; i < n; ++i) {
-            TypeId ft = info.kind == TypeKind::Tuple ? info.elems[i] : info.fields[i].type;
-            h = combine(h, valueHash(ft, v + lay.fieldOffset(type, i)));
-        }
-        return h;
-    }
-    case TypeKind::Enum: {
-        std::uint64_t h = combine(2, v[0].u);
-        if (v[0].u < info.variants.size()) {
-            std::uint32_t off = 1;
-            for (TypeId p : info.variants[static_cast<std::size_t>(v[0].u)].payload) {
-                h = combine(h, valueHash(p, v + off));
-                off += lay.slots(p);
+    std::vector<KeyFrame> lists;
+    std::uint64_t h = 0;
+    auto walk = [&](auto& self, TypeId t, const Slot* at) -> void {
+        const ir::TypeInfo& info = program_->module->types.info(t);
+        const Layouts& lay = *program_->layouts;
+        switch (info.kind) {
+        case TypeKind::Str:
+            h = combine(h, strHash(static_cast<Str*>(at->p)));
+            return;
+        case TypeKind::Struct:
+        case TypeKind::Tuple: {
+            h = combine(h, info.kind == TypeKind::Tuple ? 1 : 0);
+            std::size_t n = info.kind == TypeKind::Tuple ? info.elems.size() : info.fields.size();
+            for (std::uint32_t i = 0; i < n; ++i) {
+                self(self, info.kind == TypeKind::Tuple ? info.elems[i] : info.fields[i].type,
+                     at + lay.fieldOffset(t, i));
             }
+            return;
         }
-        return h;
+        case TypeKind::Enum: {
+            h = combine(h, combine(2, at[0].u));
+            if (at[0].u < info.variants.size()) {
+                std::uint32_t off = 1;
+                for (TypeId p : info.variants[static_cast<std::size_t>(at[0].u)].payload) {
+                    self(self, p, at + off);
+                    off += lay.slots(p);
+                }
+            }
+            return;
+        }
+        case TypeKind::List: {
+            const auto* l = static_cast<const List*>(at->p);
+            h = combine(h, combine(3, l->len));
+            if (l->len > 0) {
+                lists.push_back({l, nullptr, 0});
+            }
+            return;
+        }
+        default:
+            h = combine(h, mix64(at->u ^ hashKey().k0));
+            return;
+        }
+    };
+    walk(walk, type, v);
+    while (!lists.empty()) {
+        KeyFrame& f = lists.back();
+        const List* l = f.a;
+        std::uint32_t i = f.next++;
+        if (f.next >= l->len) {
+            lists.pop_back();
+        }
+        if (l->packed) {
+            h = combine(h, l->bytes()[i]);
+        } else {
+            walk(walk, l->elemType, l->data + static_cast<std::size_t>(i) * l->elemSlots);
+        }
     }
-    default:
-        return mix64(v->u ^ hashKey().k0);
-    }
+    return h;
 }
 
 bool Sandbox::valueEq(TypeId type, const Slot* a, const Slot* b) const {
-    const ir::TypeInfo& info = program_->module->types.info(type);
-    const Layouts& lay = *program_->layouts;
-    switch (info.kind) {
-    case TypeKind::Str:
-        return strEq(static_cast<const Str*>(a->p), static_cast<const Str*>(b->p));
-    case TypeKind::Struct:
-    case TypeKind::Tuple: {
-        std::size_t n = info.kind == TypeKind::Tuple ? info.elems.size() : info.fields.size();
-        for (std::uint32_t i = 0; i < n; ++i) {
-            TypeId ft = info.kind == TypeKind::Tuple ? info.elems[i] : info.fields[i].type;
-            std::uint32_t off = lay.fieldOffset(type, i);
-            if (!valueEq(ft, a + off, b + off)) {
+    std::vector<KeyFrame> lists;
+    auto walk = [&](auto& self, TypeId t, const Slot* x, const Slot* y) -> bool {
+        const ir::TypeInfo& info = program_->module->types.info(t);
+        const Layouts& lay = *program_->layouts;
+        switch (info.kind) {
+        case TypeKind::Str:
+            return strEq(static_cast<const Str*>(x->p), static_cast<const Str*>(y->p));
+        case TypeKind::Struct:
+        case TypeKind::Tuple: {
+            std::size_t n = info.kind == TypeKind::Tuple ? info.elems.size() : info.fields.size();
+            for (std::uint32_t i = 0; i < n; ++i) {
+                std::uint32_t off = lay.fieldOffset(t, i);
+                if (!self(self, info.kind == TypeKind::Tuple ? info.elems[i] : info.fields[i].type, x + off, y + off)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        case TypeKind::Enum: {
+            if (x[0].u != y[0].u || x[0].u >= info.variants.size()) {
+                return x[0].u == y[0].u;
+            }
+            std::uint32_t off = 1;
+            for (TypeId p : info.variants[static_cast<std::size_t>(x[0].u)].payload) {
+                if (!self(self, p, x + off, y + off)) {
+                    return false;
+                }
+                off += lay.slots(p);
+            }
+            return true;
+        }
+        case TypeKind::List: {
+            const auto* la = static_cast<const List*>(x->p);
+            const auto* lb = static_cast<const List*>(y->p);
+            if (la == lb) {
+                return true;
+            }
+            if (la->len != lb->len) {
                 return false;
             }
-        }
-        return true;
-    }
-    case TypeKind::Enum: {
-        if (a[0].u != b[0].u || a[0].u >= info.variants.size()) {
-            return a[0].u == b[0].u;
-        }
-        std::uint32_t off = 1;
-        for (TypeId p : info.variants[static_cast<std::size_t>(a[0].u)].payload) {
-            if (!valueEq(p, a + off, b + off)) {
-                return false;
+            if (la->len > 0) {
+                lists.push_back({la, lb, 0});
             }
-            off += lay.slots(p);
+            return true;
         }
-        return true;
+        default:
+            return x->u == y->u;
+        }
+    };
+    if (!walk(walk, type, a, b)) {
+        return false;
     }
-    default:
-        return a->u == b->u;
+    while (!lists.empty()) {
+        KeyFrame& f = lists.back();
+        const List* la = f.a;
+        const List* lb = f.b;
+        std::uint32_t i = f.next++;
+        if (f.next >= la->len) {
+            lists.pop_back();
+        }
+        bool same = la->packed ? la->bytes()[i] == lb->bytes()[i]
+                               : walk(walk, la->elemType, la->data + static_cast<std::size_t>(i) * la->elemSlots,
+                                      lb->data + static_cast<std::size_t>(i) * lb->elemSlots);
+        if (!same) {
+            return false;
+        }
     }
+    return true;
 }
 
 std::uint64_t Sandbox::keyHash(const Map* m, const Slot* key) const {

@@ -589,9 +589,18 @@ void Sandbox::releaseNode(TypeId type, Slot* slots) {
 
 bool Sandbox::copyAcross(const Sandbox& from, TypeId fromType, const Slot* src, TypeId toType, Slot* dst) {
     std::size_t base = walk_.size();
-    bool ok = acrossNode(from, fromType, src, toType, dst);
+    bool ok = acrossNode(from, fromType, src, toType, dst) && acrossDrain(from, base, 0);
+    walkEnd(base);
+    return ok;
+}
+
+// A map key is copied completely before the destination hashes it, so it drains its own frames first.
+bool Sandbox::acrossDrain(const Sandbox& from, std::size_t base, std::uint32_t keys) {
+    if (keys > ir::kMaxTypeNesting) {
+        return fail(ir::TrapCode::StackOverflow, "map keys nested too deeply");
+    }
     const Layouts& tl = *program_->layouts;
-    while (ok && walk_.size() > base) {
+    while (walk_.size() > base) {
         WalkFrame& f = walk_.back();
         if (f.kind == kElements) {
             const Slot* s = f.src;
@@ -603,7 +612,9 @@ bool Sandbox::copyAcross(const Sandbox& from, TypeId fromType, const Slot* src, 
             if (++f.next >= f.end) {
                 walk_.pop_back();
             }
-            ok = acrossNode(from, a, s, b, d);
+            if (!acrossNode(from, a, s, b, d)) {
+                return false;
+            }
             continue;
         }
         const auto* m = static_cast<const Map*>(f.from);
@@ -618,16 +629,17 @@ bool Sandbox::copyAcross(const Sandbox& from, TypeId fromType, const Slot* src, 
         if (f.next >= f.end) {
             walk_.pop_back();
         }
-        // The pair is built here and copied into the map; what it points to is filled later, so the temp is free again.
         std::uint32_t ks = tl.slots(out->keyType);
-        walkTemp_.assign(ks + tl.slots(out->valueType), Slot{});
-        ok = acrossNode(from, m->keyType, e, out->keyType, walkTemp_.data()) &&
-             acrossNode(from, m->valueType, e + m->keySlots, out->valueType, walkTemp_.data() + ks) &&
-             hostMapSet(out, std::span<const Slot>(walkTemp_.data(), ks),
-                        std::span<const Slot>(walkTemp_.data() + ks, walkTemp_.size() - ks));
+        std::vector<Slot> pair(ks + tl.slots(out->valueType));
+        std::size_t mark = walk_.size();
+        if (!acrossNode(from, m->keyType, e, out->keyType, pair.data()) || !acrossDrain(from, mark, keys + 1) ||
+            !acrossNode(from, m->valueType, e + m->keySlots, out->valueType, pair.data() + ks) ||
+            !hostMapSet(out, std::span<const Slot>(pair.data(), ks),
+                        std::span<const Slot>(pair.data() + ks, pair.size() - ks))) {
+            return false;
+        }
     }
-    walkEnd(base);
-    return ok;
+    return true;
 }
 
 bool Sandbox::acrossNode(const Sandbox& from, TypeId fromType, const Slot* src, TypeId toType, Slot* dst) {

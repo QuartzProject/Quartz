@@ -130,6 +130,9 @@ bool Checker::builtinImplements(TypeId t, LangTrait lang) {
         }
         return hashable || types_->isFloat(t) || (info.kind == ir::TypeKind::Tuple && all(info.elems));
     case LangTrait::Hash:
+        if (info.kind == ir::TypeKind::List) {
+            return implements(info.elem, langTraits_[std::size_t(lang)]); // keys compare lists by content (D133)
+        }
         return hashable || (info.kind == ir::TypeKind::Tuple && all(info.elems));
     case LangTrait::Ord:
         if (info.kind == ir::TypeKind::List) {

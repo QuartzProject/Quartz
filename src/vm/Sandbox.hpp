@@ -392,10 +392,10 @@ private:
         std::string base;
         std::vector<ImportFrame> frames;
         std::vector<ImportCrumb> crumbs;
-        std::vector<Slot> tmp;
     };
     bool importValue(ImportCtx& ctx, const void* node, ir::TypeId type, Slot* out, const std::string& path);
     bool importNode(ImportCtx& ctx, const json::Node& node, ir::TypeId type, Slot* out);
+    bool importDrain(ImportCtx& ctx, std::size_t base, std::uint32_t keys);
     bool importBad(ImportCtx& ctx, std::string_view why);
     [[nodiscard]] std::string importPath(const ImportCtx& ctx) const;
     std::expected<void, Trap> importOne(std::size_t state, ImportCtx& ctx, const json::Node& saved, Slot* target);
@@ -435,7 +435,6 @@ private:
 
     std::vector<WalkFrame> walk_;
     std::size_t walkCharged_ = 0;
-    std::vector<Slot> walkTemp_;
     bool walkPush(const WalkFrame& frame, bool force = false);
     void walkEnd(std::size_t base);
     template <class Visit>
@@ -444,6 +443,7 @@ private:
     bool stateNode(ir::TypeId type, const Slot* src, Slot* dst);
     void releaseNode(ir::TypeId type, Slot* slots);
     bool acrossNode(const Sandbox& from, ir::TypeId fromType, const Slot* src, ir::TypeId toType, Slot* dst);
+    bool acrossDrain(const Sandbox& from, std::size_t base, std::uint32_t keys);
     bool mapCopyEntries(Map* out, const Map* m, bool zeroRefs);
     bool growMapTo(Map* m, std::uint32_t cap);
     bool hostListResize(List* l, std::uint32_t n);

@@ -142,13 +142,6 @@ void Checker::checkDerives() {
                 need(p, std::format("variant '{}'", v.name));
             }
         }
-        if (d.trait->lang == LangTrait::Hash && info.kind == ir::TypeKind::Enum) {
-            std::vector<std::vector<bool>> boxed = types_->recursivePayloads(d.type);
-            if (std::any_of(boxed.begin(), boxed.end(), [](const auto& v) { return std::ranges::contains(v, true); })) {
-                diags_.error(d.span, std::format("cannot derive 'Hash' for '{}': a recursive enum cannot be a map key",
-                                                 info.name));
-            }
-        }
         for (auto& [p, b] : saved) {
             paramBounds_[p] = std::move(b);
         }

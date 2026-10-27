@@ -26,7 +26,7 @@ impl int {
 
 constexpr const char* kProvider = R"(package org.example.deep
 
-@derive(Eq, Show)
+@derive(Eq, Hash, Show)
 enum Chain {
     Nil
     Cons(int, Chain)
@@ -41,6 +41,7 @@ state Deep {
     chain: Chain = Chain.Nil
     tree: Node = Node(0, [])
     byName: Map<str, Chain> = Map()
+    byChain: Map<Chain, int> = Map()
 }
 
 fn build(n: int) -> Chain {
@@ -65,6 +66,7 @@ fn store(d: Deep, n: int) -> int {
     }
     d.chain = kept
     d.byName["a"] = kept
+    d.byChain[kept] = 5
     var t = Node(0, [])
     scope {
         var x = Node(0, [])
@@ -78,10 +80,18 @@ fn store(d: Deep, n: int) -> int {
 }
 
 fn heads(d: Deep) -> int {
-    return head(d.chain) + head(d.byName.get("a") ?? Chain.Nil) + d.tree.v
+    return head(d.chain) + head(d.byName.get("a") ?? Chain.Nil) + d.tree.v + (d.byChain.get(d.chain) ?? 0)
+}
+
+fn keyed(n: int) -> int {
+    var m: Map<Chain, int> = Map()
+    m[build(n)] = 7
+    m[build(n - 1)] = 8
+    return (m.get(build(n)) ?? -1) * 10 + (m.get(build(n + 1)) ?? 0)
 }
 
 fn clear(d: Deep) -> int {
+    d.byChain.remove(d.chain)
     d.chain = Chain.Nil
     d.byName.remove("a")
     d.tree = Node(0, [])
@@ -154,7 +164,7 @@ std::vector<TierMode> tiers() {
 
 } // namespace
 
-TEST_CASE("values a million levels deep are copied, stored, exported, imported, released, compared and shown") {
+TEST_CASE("values a million levels deep are copied, stored, hashed, exported, imported, released, compared and shown") {
     auto p = compile({{"deep.qz", kProvider}});
     for (TierMode tier : tiers()) {
         CAPTURE(static_cast<int>(tier));
@@ -164,7 +174,8 @@ TEST_CASE("values a million levels deep are copied, stored, exported, imported, 
         Slot n{};
         n.i = kDepth;
         CHECK(callInt(sb, "store", {n}) == 2 * (kDepth - 1));
-        CHECK(callInt(sb, "heads") == 3 * (kDepth - 1));
+        CHECK(callInt(sb, "heads") == 3 * (kDepth - 1) + 5);
+        CHECK(callInt(sb, "keyed", {n}) == 70);
         auto saved = sb.exportState();
         REQUIRE_MESSAGE(saved.has_value(), (saved ? "" : saved.error().describe()));
         {
@@ -173,7 +184,7 @@ TEST_CASE("values a million levels deep are copied, stored, exported, imported, 
             REQUIRE(copy.start().has_value());
             auto back = copy.importState(*saved);
             REQUIRE_MESSAGE(back.has_value(), (back ? "" : back.error().describe()));
-            CHECK(callInt(copy, "heads") == 3 * (kDepth - 1));
+            CHECK(callInt(copy, "heads") == 3 * (kDepth - 1) + 5);
         }
         CHECK(trapOf(sb, "same").find("stack overflow") != std::string::npos);
         CHECK(trapOf(sb, "text").find("stack overflow") != std::string::npos);

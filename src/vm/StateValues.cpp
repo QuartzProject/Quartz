@@ -246,10 +246,17 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
     ctx.crumbs.clear();
     const json::Doc& doc = *ctx.doc;
     const Layouts& lay = *program_->layouts;
-    if (!importNode(ctx, *static_cast<const Node*>(nodePtr), type, out)) {
-        return false;
+    return importNode(ctx, *static_cast<const Node*>(nodePtr), type, out) && importDrain(ctx, 0, 0);
+}
+
+// Fills the frames above `base`; a map key is filled completely before it is hashed, so it drains on its own.
+bool Sandbox::importDrain(ImportCtx& ctx, std::size_t base, std::uint32_t keys) {
+    if (keys > ir::kMaxTypeNesting) {
+        return importBad(ctx, "map keys nested too deeply");
     }
-    while (!ctx.frames.empty()) {
+    const json::Doc& doc = *ctx.doc;
+    const Layouts& lay = *program_->layouts;
+    while (ctx.frames.size() > base) {
         ImportFrame& f = ctx.frames.back();
         if (f.i >= f.n) {
             ctx.frames.pop_back();
@@ -275,8 +282,7 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
             auto* m = static_cast<Map*>(f.map);
             const ir::TypeInfo& info = program_->module->types.info(t);
             std::uint32_t ks = lay.slots(info.key);
-            std::vector<Slot>& tmp = ctx.tmp;
-            tmp.assign(ks + std::max<std::uint32_t>(lay.slots(info.elem), 1), Slot{});
+            std::vector<Slot> tmp(ks + std::max<std::uint32_t>(lay.slots(info.elem), 1));
             Node key;
             const Node* kn = &key;
             const Node* vn = nullptr;
@@ -295,8 +301,9 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
                 key.b = key.text == "true";
                 vn = &doc.child(*node, i);
             }
-            if (!importNode(ctx, *kn, info.key, tmp.data()) || !importNode(ctx, *vn, info.elem, tmp.data() + ks) ||
-                !mapSet(m, tmp.data(), tmp.data() + ks)) {
+            std::size_t mark = ctx.frames.size();
+            if (!importNode(ctx, *kn, info.key, tmp.data()) || !importDrain(ctx, mark, keys + 1) ||
+                !importNode(ctx, *vn, info.elem, tmp.data() + ks) || !mapSet(m, tmp.data(), tmp.data() + ks)) {
                 return false;
             }
             break;
@@ -431,7 +438,7 @@ bool Sandbox::importNode(ImportCtx& ctx, const Node& node, TypeId type, Slot* ou
     }
     case TypeKind::Map: {
         TypeKind kk = types.kind(info.key);
-        bool pairs = kk == TypeKind::Struct || kk == TypeKind::Tuple || kk == TypeKind::Enum;
+        bool pairs = kk == TypeKind::Struct || kk == TypeKind::Tuple || kk == TypeKind::Enum || kk == TypeKind::List;
         Map* m = node.kind == (pairs ? Node::Kind::Arr : Node::Kind::Obj) ? newMap(type) : nullptr;
         if (m == nullptr) {
             return trapped_ ? false : bad(pairs ? "expected [key, value] pairs" : "expected a map");
