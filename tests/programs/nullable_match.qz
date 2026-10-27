@@ -1,0 +1,28 @@
+// expect: none none nf l
+// expect: f2.5 nl
+fn describe(p: Player?) -> str {
+    let a = if p is null { "none" } else { "some" }
+    let b = match p {
+        null => "none"
+        _ => "some"
+    }
+    return "{a} {b}"
+}
+
+fn other(f: float?, l: [int]?) -> str {
+    let x = match f {
+        null => "nf"
+        v => "f{v}"
+    }
+    let y = if l is null { "nl" } else { "l" }
+    return "{x} {y}"
+}
+
+fn main() -> int {
+    print("{describe(null)} {other(null, [1])}")
+    print(other(2.5, null))
+    return 0
+}
+// file: host.qzi
+@handle
+struct Player {}

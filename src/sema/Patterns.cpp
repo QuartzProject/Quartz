@@ -42,7 +42,7 @@ bool Checker::matchable(TypeId t) const {
     case ir::TypeKind::Tuple:
         return true;
     case ir::TypeKind::Nullable:
-        return matchable(info.elem);
+        return true; // `null` against a binding or `_` fits any element; other patterns are checked against it
     default:
         return types_->isInteger(t) || t == ir::kChar || t == ir::kStr || t == ir::kBool || t == ir::kError;
     }
