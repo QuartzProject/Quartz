@@ -27,9 +27,12 @@ target_link_libraries(quartz_state PRIVATE quartz::options quartz_doctest quartz
 target_compile_definitions(quartz_state PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
 # Without threads in this build, the one test that runs sandboxes on several threads is left out.
 add_test(NAME quartz_state COMMAND quartz_state --test-case-exclude=*threads* WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
-foreach(test quartz_programs quartz_state)
+quartz_test(quartz_deep SOURCES ${PROJECT_SOURCE_DIR}/tests/DeepValueTests.cpp DEPS quartz)
+foreach(test quartz_programs quartz_state quartz_deep)
     target_link_options(${test} PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=8MB -sEXIT_RUNTIME=1)
 endforeach()
+# A million-deep value needs more than the default 2 GiB ceiling of a growing memory.
+target_link_options(quartz_deep PRIVATE -sMAXIMUM_MEMORY=4GB)
 # The same programs through quartz.js, the way the playground calls it.
 add_test(NAME quartz_wasm_playground COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/check-programs.mjs
     $<TARGET_FILE:quartz-playground> tests/programs WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})

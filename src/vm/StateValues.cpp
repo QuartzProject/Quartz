@@ -244,8 +244,6 @@ bool Sandbox::importValue(ImportCtx& ctx, const void* nodePtr, TypeId type, Slot
     ctx.base = path;
     ctx.frames.clear();
     ctx.crumbs.clear();
-    const json::Doc& doc = *ctx.doc;
-    const Layouts& lay = *program_->layouts;
     return importNode(ctx, *static_cast<const Node*>(nodePtr), type, out) && importDrain(ctx, 0, 0);
 }
 
