@@ -19,6 +19,12 @@ public:
     [[nodiscard]] const ir::TypeTable& types() const { return types_; }
     [[nodiscard]] std::uint32_t stateSlots(ir::TypeId t) const { return stateSlots_[t]; }
 
+    /// The value holds a str, list, map or function in its slots.
+    [[nodiscard]] bool hasRefs(ir::TypeId t) const { return refs_[t] != 0; }
+
+    /// The value holds a list, map or function: copying it can go any depth, so walks queue it instead of recursing.
+    [[nodiscard]] bool holdsContainers(ir::TypeId t) const { return refs_[t] == 2; }
+
 private:
     std::uint32_t compute(ir::TypeId t);
 
@@ -28,6 +34,7 @@ private:
     std::vector<bool> pointerNullable_;
     std::vector<std::uint32_t> stateSlots_;
     std::vector<std::uint8_t> state_; // 0 unvisited, 1 visiting, 2 done
+    std::vector<std::uint8_t> refs_;  // 0 none, 1 only str or Bytes, 2 a container
 };
 
 } // namespace quartz::vm

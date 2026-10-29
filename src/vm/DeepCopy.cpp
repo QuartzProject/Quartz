@@ -27,31 +27,26 @@ inline std::uint32_t liveFrom(const Map* m, std::uint32_t pos, std::uint32_t end
 
 } // namespace
 
-bool Sandbox::walkPush(const WalkFrame& frame, bool force) {
-    if (walk_.size() == walk_.capacity()) {
-        std::size_t cap = walk_.capacity();
-        std::size_t want = std::max<std::size_t>(16, cap * 2);
-        std::size_t charge = (std::max(want, kWalkKept) - std::max(cap, kWalkKept)) * sizeof(WalkFrame);
-        if (charge != 0 && !quota_.take(charge)) {
-            if (!force) {
-                return fail(ir::TrapCode::OutOfMemory, "value nested too deeply for the memory limit");
-            }
-            quota_.used += charge; // releasing cannot fail; the stack is given back when the walk ends
+bool Sandbox::walkGrow(const WalkFrame& frame, bool force) {
+    std::size_t cap = walk_.capacity();
+    std::size_t want = std::max<std::size_t>(16, cap * 2);
+    std::size_t charge = (std::max(want, kWalkKept) - std::max(cap, kWalkKept)) * sizeof(WalkFrame);
+    if (charge != 0 && !quota_.take(charge)) {
+        if (!force) {
+            return fail(ir::TrapCode::OutOfMemory, "value nested too deeply for the memory limit");
         }
-        walkCharged_ += charge;
-        walk_.reserve(want);
+        quota_.used += charge; // releasing cannot fail; the stack is given back when the walk ends
     }
+    walkCharged_ += charge;
+    walk_.reserve(want);
     walk_.push_back(frame);
     return true;
 }
 
-void Sandbox::walkEnd(std::size_t base) {
-    walk_.resize(base);
-    if (base == 0 && walkCharged_ != 0) {
-        quota_.give(walkCharged_);
-        walkCharged_ = 0;
-        std::vector<WalkFrame>().swap(walk_);
-    }
+void Sandbox::walkShrink() {
+    quota_.give(walkCharged_);
+    walkCharged_ = 0;
+    std::vector<WalkFrame>().swap(walk_);
 }
 
 // Takes the next value of the top frame; a frame is popped before its last value, so a chain keeps the stack flat.
@@ -108,7 +103,73 @@ bool Sandbox::walkStep(Visit&& visit) {
     }
 }
 
+// Every entry of a frame at once: for keys and values that hold no container, so the copy cannot nest.
+template <class Visit>
+bool Sandbox::entriesInline(const WalkFrame& f, Visit&& visit) {
+    const auto* m = static_cast<const Map*>(f.from);
+    auto* out = static_cast<Map*>(f.to);
+    std::size_t es = entrySlots(m);
+    std::uint32_t ks = m->keySlots;
+    std::uint32_t at = 0;
+    for (std::uint32_t p = 0; p < m->ordered; ++p) {
+        if (m->order[p] == 0) {
+            continue;
+        }
+        const Slot* s = m->entries + static_cast<std::size_t>(m->order[p] - 1) * es;
+        Slot* d = out == m ? const_cast<Slot*>(s) : out->entries + static_cast<std::size_t>(out->order[at++] - 1) * es;
+        if ((m->keyHasRefs && !visit(m->keyType, s, d)) || (m->valueHasRefs && !visit(m->valueType, s + ks, d + ks))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Sandbox::copyElements(const WalkFrame& f, Copy mode, std::uint32_t level) {
+    if (program_->layouts->holdsContainers(f.type)) {
+        return walkPush(f);
+    }
+    for (std::uint32_t i = 0; i < f.end; ++i) {
+        std::size_t off = static_cast<std::size_t>(i) * f.stride;
+        if (!copyNode(f.type, f.src + off, f.dst + off, mode, level)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Sandbox::copyEntries(const WalkFrame& f, Copy mode, std::uint32_t level) {
+    const auto* m = static_cast<const Map*>(f.from);
+    const Layouts& lay = *program_->layouts;
+    if (lay.holdsContainers(m->keyType) || lay.holdsContainers(m->valueType)) {
+        return walkPush(f);
+    }
+    return entriesInline(f, [&](TypeId t, const Slot* s, Slot* d) { return copyNode(t, s, d, mode, level); });
+}
+
+inline bool Sandbox::copyStrSlot(const Slot* src, Slot* dst, Copy mode, std::uint32_t level) {
+    const auto* s = static_cast<const Str*>(src->p);
+    if (s == nullptr || s->owner == Owner::Static || (mode == Copy::StateOnly && s->owner != Owner::State) ||
+        (mode == Copy::NewerThan && (s->owner != Owner::Arena || s->level <= level))) {
+        dst->p = src->p;
+        return true;
+    }
+    Str* out = allocStr(s->len);
+    if (out == nullptr) {
+        return false;
+    }
+    std::memcpy(out->data, s->data, s->len);
+    out->hash = s->hash;
+    dst->p = out;
+    return true;
+}
+
 bool Sandbox::copyToArena(TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level) {
+    if (type == ir::kStr || type == ir::kBytes) {
+        return copyStrSlot(src, dst, mode, level); // the common relocation at a `wait`, without a call
+    }
+    if (!program_->layouts->holdsContainers(type)) {
+        return copyNode(type, src, dst, mode, level);
+    }
     std::size_t base = walk_.size();
     bool ok = copyNode(type, src, dst, mode, level);
     while (ok && walk_.size() > base) {
@@ -125,22 +186,8 @@ bool Sandbox::copyNode(TypeId type, const Slot* src, Slot* dst, Copy mode, std::
     const ir::TypeInfo& info = types.info(type);
     switch (info.kind) {
     case TypeKind::Str:
-    case TypeKind::Bytes: {
-        const auto* s = static_cast<const Str*>(src->p);
-        if (s == nullptr || s->owner == Owner::Static || (mode == Copy::StateOnly && s->owner != Owner::State) ||
-            (mode == Copy::NewerThan && (s->owner != Owner::Arena || s->level <= level))) {
-            dst->p = src->p;
-            return true;
-        }
-        Str* out = allocStr(s->len);
-        if (out == nullptr) {
-            return false;
-        }
-        std::memcpy(out->data, s->data, s->len);
-        out->hash = s->hash;
-        dst->p = out;
-        return true;
-    }
+    case TypeKind::Bytes:
+        return copyStrSlot(src, dst, mode, level);
     case TypeKind::List: {
         auto* l = static_cast<List*>(src->p);
         if (l == nullptr || (mode == Copy::NewerThan && (l->owner != Owner::Arena || l->level <= level))) {
@@ -151,7 +198,7 @@ bool Sandbox::copyNode(TypeId type, const Slot* src, Slot* dst, Copy mode, std::
         if (mode == Copy::StateOnly && l->owner != Owner::State) {
             dst->p = l;
             f.src = f.dst = l->data;
-            return !l->elemHasRefs || l->len == 0 || walkPush(f);
+            return !l->elemHasRefs || l->len == 0 || copyElements(f, mode, level);
         }
         List* out = newList(l->elemType);
         if (out == nullptr || (l->len > 0 && !growList(out, l->len, true))) {
@@ -168,7 +215,7 @@ bool Sandbox::copyNode(TypeId type, const Slot* src, Slot* dst, Copy mode, std::
         out->len = l->len;
         f.src = l->data;
         f.dst = out->data;
-        return l->len == 0 || walkPush(f);
+        return l->len == 0 || copyElements(f, mode, level);
     }
     case TypeKind::Map: {
         auto* m = static_cast<Map*>(src->p);
@@ -180,7 +227,7 @@ bool Sandbox::copyNode(TypeId type, const Slot* src, Slot* dst, Copy mode, std::
         WalkFrame f{.from = m, .to = m, .end = m->ordered, .kind = kEntries};
         if (mode == Copy::StateOnly && m->owner != Owner::State) {
             dst->p = m;
-            return !refs || m->count == 0 || walkPush(f);
+            return !refs || m->count == 0 || copyEntries(f, mode, level);
         }
         Map* out = newMap(type);
         if (out == nullptr || !mapCopyEntries(out, m, false)) {
@@ -188,7 +235,7 @@ bool Sandbox::copyNode(TypeId type, const Slot* src, Slot* dst, Copy mode, std::
         }
         dst->p = out;
         f.to = out;
-        return !refs || m->count == 0 || walkPush(f);
+        return !refs || m->count == 0 || copyEntries(f, mode, level);
     }
     case TypeKind::Fn: {
         auto* c = static_cast<Closure*>(src->p);
@@ -309,9 +356,28 @@ bool Sandbox::mapCopyEntries(Map* out, const Map* m, bool zeroRefs) {
     return true;
 }
 
+inline bool Sandbox::stateStr(const Slot* src, Slot* dst) {
+    const auto* s = static_cast<const Str*>(src->p);
+    if (s == nullptr || s->owner == Owner::Static) {
+        dst->p = src->p; // lives as long as the program, which the sandbox keeps alive
+        return true;
+    }
+    auto* out = static_cast<Str*>(heap_.allocate(kStrHeader + s->len + 1));
+    if (out == nullptr) {
+        return fail(ir::TrapCode::OutOfMemory);
+    }
+    out->len = s->len;
+    out->hash = s->hash;
+    out->owner = Owner::State;
+    std::memcpy(out->data, s->data, s->len + 1);
+    dst->p = out;
+    return true;
+}
+
+// `dst` starts zeroed when the caller releases it after a failure (storeState); the copy keeps that invariant.
 bool Sandbox::copyIntoState(TypeId type, const Slot* src, Slot* dst) {
-    if (src != dst) {
-        std::memset(dst, 0, program_->layouts->slots(type) * sizeof(Slot));
+    if (!program_->layouts->holdsContainers(type)) {
+        return stateNode(type, src, dst);
     }
     std::size_t base = walk_.size();
     bool ok = stateNode(type, src, dst);
@@ -329,23 +395,8 @@ bool Sandbox::stateNode(TypeId type, const Slot* src, Slot* dst) {
     const ir::TypeInfo& info = types.info(type);
     switch (info.kind) {
     case TypeKind::Str:
-    case TypeKind::Bytes: {
-        const auto* s = static_cast<const Str*>(src->p);
-        if (s == nullptr || s->owner == Owner::Static) {
-            dst->p = src->p; // lives as long as the program, which the sandbox keeps alive
-            return true;
-        }
-        auto* out = static_cast<Str*>(heap_.allocate(kStrHeader + s->len + 1));
-        if (out == nullptr) {
-            return fail(ir::TrapCode::OutOfMemory);
-        }
-        out->len = s->len;
-        out->hash = s->hash;
-        out->owner = Owner::State;
-        std::memcpy(out->data, s->data, s->len + 1);
-        dst->p = out;
-        return true;
-    }
+    case TypeKind::Bytes:
+        return stateStr(src, dst);
     case TypeKind::List: {
         const auto* l = static_cast<const List*>(src->p);
         if (l == nullptr) {
@@ -371,6 +422,19 @@ bool Sandbox::stateNode(TypeId type, const Slot* src, Slot* dst) {
         if (!l->elemHasRefs) {
             std::memcpy(out->data, l->data, static_cast<std::size_t>(l->len) * l->stride());
             out->len = l->len;
+            return true;
+        }
+        if (!lay.holdsContainers(l->elemType)) {
+            // Counted as they are copied: a failure leaves a list that releases only what it holds.
+            bool str = l->elemType == ir::kStr || l->elemType == ir::kBytes;
+            for (std::uint32_t i = 0; i < l->len; ++i) {
+                std::size_t off = static_cast<std::size_t>(i) * l->elemSlots;
+                if (!(str ? stateStr(l->data + off, out->data + off)
+                          : stateNode(l->elemType, l->data + off, out->data + off))) {
+                    return false;
+                }
+                out->len = i + 1;
+            }
             return true;
         }
         std::memset(out->data, 0, static_cast<std::size_t>(l->len) * l->elemSlots * sizeof(Slot));
@@ -407,7 +471,14 @@ bool Sandbox::stateNode(TypeId type, const Slot* src, Slot* dst) {
             return false;
         }
         bool refs = m->keyHasRefs || m->valueHasRefs;
-        return !refs || m->count == 0 || walkPush(WalkFrame{.from = m, .to = out, .end = m->ordered, .kind = kEntries});
+        WalkFrame f{.from = m, .to = out, .end = m->ordered, .kind = kEntries};
+        if (!refs || m->count == 0) {
+            return true;
+        }
+        if (lay.holdsContainers(m->keyType) || lay.holdsContainers(m->valueType)) {
+            return walkPush(f);
+        }
+        return entriesInline(f, [&](TypeId t, const Slot* s, Slot* d) { return stateNode(t, s, d); });
     }
     case TypeKind::Nullable:
         if (lay.nullableIsPointer(type)) {
@@ -458,6 +529,10 @@ bool Sandbox::stateNode(TypeId type, const Slot* src, Slot* dst) {
 }
 
 void Sandbox::releaseState(TypeId type, Slot* slots) {
+    if (!program_->layouts->holdsContainers(type)) {
+        releaseNode(type, slots);
+        return;
+    }
     std::size_t base = walk_.size();
     releaseNode(type, slots);
     while (walk_.size() > base) {
@@ -521,7 +596,18 @@ void Sandbox::releaseNode(TypeId type, Slot* slots) {
         if (l == nullptr || l->owner != Owner::State) {
             return;
         }
-        if (l->elemHasRefs && l->len > 0) {
+        if (l->elemHasRefs && l->len > 0 && (l->elemType == ir::kStr || l->elemType == ir::kBytes)) {
+            for (std::uint32_t i = 0; i < l->len; ++i) {
+                auto* e = static_cast<Str*>(l->data[i].p);
+                if (e != nullptr && e->owner == Owner::State) {
+                    heap_.release(e);
+                }
+            }
+        } else if (l->elemHasRefs && l->len > 0 && !lay.holdsContainers(l->elemType)) {
+            for (std::uint32_t i = 0; i < l->len; ++i) {
+                releaseNode(l->elemType, l->data + static_cast<std::size_t>(i) * l->elemSlots);
+            }
+        } else if (l->elemHasRefs && l->len > 0) {
             walkPush(WalkFrame{.dst = l->data,
                                .to = l,
                                .type = l->elemType,
@@ -564,7 +650,7 @@ void Sandbox::releaseNode(TypeId type, Slot* slots) {
         std::size_t count = info.kind == TypeKind::Struct ? info.fields.size() : info.elems.size();
         for (std::uint32_t i = 0; i < count; ++i) {
             TypeId ft = info.kind == TypeKind::Struct ? info.fields[i].type : info.elems[i];
-            if (types.hasRefs(ft)) {
+            if (lay.hasRefs(ft)) {
                 releaseNode(ft, slots + lay.fieldOffset(type, i));
             }
         }

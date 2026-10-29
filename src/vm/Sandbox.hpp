@@ -439,12 +439,36 @@ private:
 
     std::vector<WalkFrame> walk_;
     std::size_t walkCharged_ = 0;
-    bool walkPush(const WalkFrame& frame, bool force = false);
-    void walkEnd(std::size_t base);
+
+    bool walkPush(const WalkFrame& frame, bool force = false) {
+        if (walk_.size() == walk_.capacity()) {
+            return walkGrow(frame, force);
+        }
+        walk_.push_back(frame);
+        return true;
+    }
+
+    void walkEnd(std::size_t base) {
+        if (walk_.size() != base) {
+            walk_.erase(walk_.begin() + static_cast<std::ptrdiff_t>(base), walk_.end());
+        }
+        if (base == 0 && walkCharged_ != 0) {
+            walkShrink();
+        }
+    }
+
+    bool walkGrow(const WalkFrame& frame, bool force);
+    void walkShrink();
+    template <class Visit>
+    bool entriesInline(const WalkFrame& f, Visit&& visit);
+    bool copyElements(const WalkFrame& f, Copy mode, std::uint32_t level);
+    bool copyEntries(const WalkFrame& f, Copy mode, std::uint32_t level);
     template <class Visit>
     bool walkStep(Visit&& visit);
     bool copyNode(ir::TypeId type, const Slot* src, Slot* dst, Copy mode, std::uint32_t level);
+    bool copyStrSlot(const Slot* src, Slot* dst, Copy mode, std::uint32_t level);
     bool stateNode(ir::TypeId type, const Slot* src, Slot* dst);
+    bool stateStr(const Slot* src, Slot* dst);
     void releaseNode(ir::TypeId type, Slot* slots);
     bool acrossNode(const Sandbox& from, ir::TypeId fromType, const Slot* src, ir::TypeId toType, Slot* dst);
     bool acrossDrain(const Sandbox& from, std::size_t base, std::uint32_t keys);
