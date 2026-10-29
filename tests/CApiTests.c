@@ -264,6 +264,9 @@ static bool echo(qz_call* call, const qz_slot* args, qz_slot* result, void* user
     size_t len = 0;
     const char* text = qz_str(args[0], &len);
     *result = len == 3 && memcmp(text, "bad", 3) == 0 ? qz_call_str(call, "\xc3\x28", 2) : args[0];
+    if (len == 5 && memcmp(text, "lossy", 5) == 0) {
+        qz_call_str_lossy_into(call, "a\xe2\x82(\xff", 5, result);
+    }
     return true;
 }
 
@@ -291,7 +294,64 @@ static void utf8(void) {
     const uint8_t raw[] = {0xff, 0x00, 0xfe};
     arg = qz_sandbox_bytes(sb, raw, 3);
     CHECK(qz_sandbox_call(sb, qz_program_function(program, "size"), &arg, 1, &result) == QZ_OK && result.i == 3);
+    size_t len = 0;
+    arg = qz_sandbox_str_lossy(sb, "\xed\xa0\x80", 3);
+    CHECK(qz_sandbox_call(sb, run, &arg, 1, &result) == QZ_OK);
+    CHECK(memcmp(qz_str(result, &len), "\xef\xbf\xbd\xef\xbf\xbd\xef\xbf\xbd", 9) == 0 && len == 9);
+    arg = qz_sandbox_str(sb, "lossy", 5);
+    CHECK(qz_sandbox_call(sb, run, &arg, 1, &result) == QZ_OK);
+    CHECK(memcmp(qz_str(result, &len), "a\xef\xbf\xbd(\xef\xbf\xbd", 8) == 0 && len == 8);
     qz_sandbox_free(sb);
+    qz_program_free(program);
+}
+
+static void levelFive(void) {
+    uint8_t text[1000];
+    size_t size = sizeof text;
+    for (size_t i = 0; i < size; ++i) {
+        text[i] = (uint8_t)("level five "[i % 11]);
+    }
+    for (int framing = QZ_FRAMING_RAW; framing <= QZ_FRAMING_GZIP; ++framing) {
+        size_t packedSize = 0;
+        uint8_t* packed = qz_deflate(text, size, 6, (qz_framing)framing, &packedSize);
+        CHECK(packed != NULL && packedSize > 0 && packedSize < size);
+        size_t outSize = 0;
+        char* error = NULL;
+        uint8_t* out = qz_inflate(packed, packedSize, (qz_framing)framing, 1024, &outSize, &error);
+        CHECK(out != NULL && outSize == size && memcmp(out, text, size) == 0 && error == NULL);
+        qz_free(out);
+        CHECK(qz_inflate(packed, packedSize, (qz_framing)framing, 8, &outSize, &error) == NULL && error != NULL);
+        qz_free(error);
+        if (framing == QZ_FRAMING_GZIP) {
+            packed[packedSize - 5] ^= 1;
+            CHECK(qz_inflate(packed, packedSize, QZ_FRAMING_GZIP, 1024, &outSize, &error) == NULL);
+            CHECK(error != NULL && strstr(error, "checksum") != NULL);
+            qz_free(error);
+        }
+        qz_free(packed);
+    }
+    CHECK(qz_crc32(0, (const uint8_t*)"123456789", 9) == 0xCBF43926u);
+    CHECK(qz_crc32(qz_crc32(0, (const uint8_t*)"123", 3), (const uint8_t*)"456789", 6) == 0xCBF43926u);
+
+    static const char kDocs[] = "/// A point.\nstruct Pt {\n    /// Across.\n    x: int\n}\n"
+                                "enum Chain {\n    Nil\n    Cons(int, Chain)\n}\n"
+                                "/// Moves `p` right.\nfn right(p: Pt) -> Pt {\n    return Pt(p.x + 1)\n}\n"
+                                "fn first(c: Chain) -> int {\n    return 0\n}\n";
+    qz_source source = {"docs.qz", kDocs, sizeof kDocs - 1};
+    qz_program* program = qz_compile(&source, 1, NULL, NULL);
+    CHECK(program != NULL);
+    if (program == NULL) {
+        return;
+    }
+    uint32_t right = qz_program_function(program, "right");
+    uint32_t pt = qz_program_function_param_type(program, right, 0);
+    CHECK(strcmp(qz_program_function_doc(program, right), "Moves `p` right.") == 0);
+    CHECK(strcmp(qz_type_doc(program, pt), "A point.") == 0 &&
+          strcmp(qz_type_member_doc(program, pt, 0), "Across.") == 0);
+    uint32_t chain = qz_program_function_param_type(program, qz_program_function(program, "first"), 0);
+    CHECK(strcmp(qz_type_doc(program, chain), "") == 0);
+    CHECK(qz_type_variant_boxed(program, chain, 1, 1) && !qz_type_variant_boxed(program, chain, 1, 0));
+    CHECK(qz_type_kind(program, qz_type_variant_payload(program, chain, 1, 1, NULL), NULL) == QZ_KIND_LIST);
     qz_program_free(program);
 }
 
@@ -381,6 +441,7 @@ int main(void) {
     diagnosticTests();
     packages();
     utf8();
+    levelFive();
     if (failures == 0) {
         printf("C interface: all checks passed\n");
     }

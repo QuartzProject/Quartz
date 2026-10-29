@@ -77,6 +77,8 @@ struct HostCall {
     Str* string(std::string_view text);
     /// A `Bytes` value of any bytes.
     Str* bytes(std::string_view data);
+    /// A str of `text` with each ill-formed UTF-8 sequence replaced by U+FFFD; never traps for its content.
+    Str* stringLossy(std::string_view text);
     /// Charges fuel for work done natively (spec 9.2); false when the budget is gone.
     bool charge(std::int64_t units);
 };
@@ -172,6 +174,8 @@ public:
     Str* newStr(std::string_view text);
     /// Like `newStr` for a `Bytes` argument: any bytes.
     Str* newBytes(std::string_view data);
+    /// Like `newStr` for text from outside (process output, HTTP headers): ill-formed UTF-8 becomes U+FFFD.
+    Str* newStrLossy(std::string_view text);
     /// Copies text the runtime and its natives know to be valid UTF-8 (or the bytes of a `Bytes`), unchecked.
     Str* copyStr(std::string_view text);
 

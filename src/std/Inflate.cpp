@@ -313,7 +313,7 @@ bool inflate(std::span<const std::uint8_t> in, std::vector<std::uint8_t>& out, s
     return ok;
 }
 
-std::uint32_t crc32(std::span<const std::uint8_t> data) {
+std::uint32_t crc32(std::span<const std::uint8_t> data, std::uint32_t crc) {
     static const std::array<std::uint32_t, 256> kTable = [] {
         std::array<std::uint32_t, 256> t{};
         for (std::uint32_t i = 0; i < 256; ++i) {
@@ -325,7 +325,7 @@ std::uint32_t crc32(std::span<const std::uint8_t> data) {
         }
         return t;
     }();
-    std::uint32_t c = 0xFFFFFFFFU;
+    std::uint32_t c = crc ^ 0xFFFFFFFFU;
     for (std::uint8_t b : data) {
         c = kTable[(c ^ b) & 0xFF] ^ (c >> 8);
     }

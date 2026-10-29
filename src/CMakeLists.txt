@@ -1,4 +1,4 @@
-quartz_module(quartz_support SOURCES support/Source.cpp support/Diagnostics.cpp support/Platform.cpp)
+quartz_module(quartz_support SOURCES support/Source.cpp support/Diagnostics.cpp support/Platform.cpp support/Utf8.cpp)
 quartz_module(quartz_syntax SOURCES syntax/Lexer.cpp syntax/Parser.cpp syntax/ParserExpr.cpp syntax/ParserPattern.cpp syntax/DocComment.cpp
     DEPS quartz_support)
 quartz_module(quartz_format SOURCES format/Format.cpp format/AstDump.cpp format/Printer.cpp format/PrintDecl.cpp
@@ -8,7 +8,7 @@ quartz_module(quartz_sema SOURCES ir/Types.cpp ir/Recursive.cpp sema/Declare.cpp
 quartz_module(quartz_ir SOURCES ir/Print.cpp ir/Lower.cpp ir/LowerExpr.cpp ir/LowerLambda.cpp ir/LowerBuiltins.cpp ir/LowerTraits.cpp ir/LowerCodec.cpp ir/LowerCodecTypes.cpp ir/LowerPattern.cpp ir/LowerFor.cpp ir/LowerValue.cpp ir/Optimize.cpp ir/Validator.cpp
     ir/TypeGraph.cpp ir/ValidateModule.cpp ir/Encode.cpp ir/Decode.cpp ir/Container.cpp ir/Builtins.cpp ir/ValidateLanguage.cpp ir/Prune.cpp DEPS quartz_sema quartz_monocypher)
 quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Bytecode.cpp vm/Compile.cpp vm/Heap.cpp vm/Runtime.cpp vm/MapRuntime.cpp vm/TextRuntime.cpp vm/Sandbox.cpp vm/Tasks.cpp vm/DeepCopy.cpp vm/HostValues.cpp vm/Link.cpp vm/Trace.cpp vm/Probe.cpp vm/Inspect.cpp vm/Profiler.cpp vm/Migrate.cpp vm/StateJson.cpp vm/StateValues.cpp vm/Math.cpp vm/ReprC.cpp vm/Interp.cpp vm/StrBuiltins.cpp vm/ListBuiltins.cpp vm/IntBuiltins.cpp
-    std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Binary.cpp
+    std/Sources.cpp std/Json.cpp std/Toml.cpp std/Yaml.cpp std/Inflate.cpp std/Deflate.cpp std/Framing.cpp std/Binary.cpp
     std/Sha.cpp std/Crypto.cpp std/Encoding.cpp std/lib/Sources.cpp std/lib/CryptoQz.cpp std/lib/EncodingQz.cpp std/lib/TimeQz.cpp std/lib/DecimalQz.cpp std/Decimal.cpp std/lib/TextQz.cpp std/Text.cpp std/Message.cpp std/lib/FormatsQz.cpp std/Formats.cpp std/MsgPack.cpp std/lib/BytesQz.cpp std/Bits.cpp std/lib/GeometryQz.cpp std/lib/SemverQz.cpp std/Semver.cpp std/lib/HttpQz.cpp std/Http.cpp
     std/lib/RegexQz.cpp std/Regex.cpp std/regex/Parse.cpp std/regex/Compile.cpp std/regex/Pike.cpp std/lib/CollectionsQz.cpp std/lib/QueuesQz.cpp std/lib/SortedQz.cpp std/lib/CodecQz.cpp std/Codec.cpp
     DEPS quartz_ir quartz_zstd quartz_monocypher)
@@ -20,13 +20,13 @@ if(NOT EMSCRIPTEN)
     target_link_libraries(quartz_vm PUBLIC ${CMAKE_DL_LIBS} Threads::Threads)
 endif()
 quartz_module(quartz SOURCES driver/Compiler.cpp driver/Package.cpp driver/Bind.cpp DEPS quartz_vm)
-target_sources(quartz PRIVATE driver/Docs.cpp driver/Interface.cpp)
+target_sources(quartz PRIVATE driver/Docs.cpp driver/Interface.cpp driver/Host.cpp)
 # Duplicate the dispatch jump into every handler; without it clang shares one indirect jump (D29).
 set_source_files_properties(vm/Interp.cpp PROPERTIES COMPILE_OPTIONS "-mllvm;-tail-dup-indirect-size=200;-mllvm;-tail-dup-size=200")
 # The C interface (include/quartz/quartz.h), static; QUARTZ_SHARED also builds libquartz exporting only qz_*.
-quartz_module(quartz_c SOURCES capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp DEPS quartz)
+quartz_module(quartz_c SOURCES capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp capi/CApiHost.cpp DEPS quartz)
 if(QUARTZ_SHARED OR QUARTZ_JVM_ENABLED)
-    add_library(quartz_shared SHARED capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp)
+    add_library(quartz_shared SHARED capi/CApi.cpp capi/CApiValues.cpp capi/CApiProgram.cpp capi/CApiHost.cpp)
     set_target_properties(quartz_shared PROPERTIES OUTPUT_NAME quartz CXX_VISIBILITY_PRESET hidden
         VERSION ${PROJECT_VERSION} SOVERSION 0)
     target_compile_definitions(quartz_shared PRIVATE QZ_BUILDING_SHARED)

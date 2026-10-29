@@ -168,6 +168,13 @@ const wide = `fn counts(words: [str]) -> Map<str, int> {
 fn echo(p: Pt, m: Mood, o: int?) -> (Pt, Mood, int?) {
     return (p, m, o)
 }
+enum Chain {
+    Nil
+    Cons(int, Chain)
+}
+fn grow(c: Chain) -> Chain {
+    return Chain.Cons(9, c)
+}
 fn viaHost() -> int {
     var m: Map<str, int> = Map()
     m["a"] = 1
@@ -196,6 +203,8 @@ assert.deepEqual(values.call("echo", { x: 1, y: 2 }, { variant: "Loud", values: 
 assert.deepEqual(values.call("echo", { x: 0, y: 0 }, "Calm", 7)[1], { variant: "Calm", values: [] });
 assert.throws(() => values.call("echo", { x: 0, y: 0 }, "Sad", 7), TypeError);
 assert.equal(values.call("viaHost"), 20n);
+assert.deepEqual(values.call("grow", { variant: "Cons", values: [1, "Nil"] }),
+    { variant: "Cons", values: [9n, { variant: "Cons", values: [1n, { variant: "Nil", values: [] }] }] });
 const asking = values.spawn("gather");
 const next = values.resume(asking.task, { x: 3, y: 4 });
 assert.equal(next.kind, "wait");

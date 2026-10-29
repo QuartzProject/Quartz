@@ -175,124 +175,34 @@ bool crc(vm::HostCall& call, void*) {
 
 int clampLevel(std::int64_t level) { return static_cast<int>(level < 0 ? 0 : level > 9 ? 9 : level); }
 
-bool compressRaw(vm::HostCall& call, void*) {
+bool compressWith(vm::HostCall& call, Framing framing) {
     auto in = bytesOf(call.args[0]);
     if (!call.charge(static_cast<std::int64_t>(in.size() / 2 + 1))) {
         return false;
     }
-    return returnBytes(call, deflate(in, clampLevel(call.args[1].i)), &call.result);
+    return returnBytes(call, compress(in, clampLevel(call.args[1].i), framing), &call.result);
 }
 
-bool decompressRaw(vm::HostCall& call, void*) {
+bool decompressWith(vm::HostCall& call, Framing framing) {
     std::vector<std::uint8_t> out;
     std::string error;
-    if (!inflate(bytesOf(call.args[0]), out, kMaxInflate, error)) {
-        return errText(call, "inflate: " + error);
+    if (!decompress(bytesOf(call.args[0]), framing, out, kMaxInflate, error)) {
+        return errText(call, error);
     }
     return okBytes(call, out);
 }
 
-bool compressZlib(vm::HostCall& call, void*) {
-    auto in = bytesOf(call.args[0]);
-    if (!call.charge(static_cast<std::int64_t>(in.size() / 2 + 1))) {
-        return false;
-    }
-    std::vector<std::uint8_t> out = {0x78, 0x9C};
-    std::vector<std::uint8_t> body = deflate(in, clampLevel(call.args[1].i));
-    out.insert(out.end(), body.begin(), body.end());
-    std::uint32_t a = adler32(in);
-    for (int s = 24; s >= 0; s -= 8) {
-        out.push_back(static_cast<std::uint8_t>(a >> s));
-    }
-    return returnBytes(call, out, &call.result);
-}
+bool compressRaw(vm::HostCall& call, void*) { return compressWith(call, Framing::Raw); }
 
-bool decompressZlib(vm::HostCall& call, void*) {
-    auto in = bytesOf(call.args[0]);
-    if (in.size() < 6 || (in[0] & 0x0F) != 8 || ((in[0] << 8) | in[1]) % 31 != 0 || (in[1] & 0x20) != 0) {
-        return errText(call, "zlib: bad header");
-    }
-    std::vector<std::uint8_t> out;
-    std::string error;
-    std::size_t used = 0;
-    if (!inflate(in.subspan(2), out, kMaxInflate, error, &used)) {
-        return errText(call, "zlib: " + error);
-    }
-    if (2 + used + 4 > in.size()) {
-        return errText(call, "zlib: missing checksum");
-    }
-    std::uint32_t want = 0;
-    for (std::size_t k = 0; k < 4; ++k) {
-        want = (want << 8) | in[2 + used + k];
-    }
-    if (want != adler32(out)) {
-        return errText(call, "zlib: checksum mismatch");
-    }
-    return okBytes(call, out);
-}
+bool decompressRaw(vm::HostCall& call, void*) { return decompressWith(call, Framing::Raw); }
 
-bool compressGzip(vm::HostCall& call, void*) {
-    auto in = bytesOf(call.args[0]);
-    if (!call.charge(static_cast<std::int64_t>(in.size() / 2 + 1))) {
-        return false;
-    }
-    std::vector<std::uint8_t> out = {0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255};
-    std::vector<std::uint8_t> body = deflate(in, clampLevel(call.args[1].i));
-    out.insert(out.end(), body.begin(), body.end());
-    std::uint32_t c = crc32(in);
-    auto size = static_cast<std::uint32_t>(in.size());
-    for (int s = 0; s < 32; s += 8) {
-        out.push_back(static_cast<std::uint8_t>(c >> s));
-    }
-    for (int s = 0; s < 32; s += 8) {
-        out.push_back(static_cast<std::uint8_t>(size >> s));
-    }
-    return returnBytes(call, out, &call.result);
-}
+bool compressZlib(vm::HostCall& call, void*) { return compressWith(call, Framing::Zlib); }
 
-bool decompressGzip(vm::HostCall& call, void*) {
-    auto in = bytesOf(call.args[0]);
-    if (in.size() < 18 || in[0] != 0x1f || in[1] != 0x8b || in[2] != 8) {
-        return errText(call, "gzip: bad header");
-    }
-    std::uint8_t flags = in[3];
-    std::size_t pos = 10;
-    if ((flags & 4) != 0) {
-        if (pos + 2 > in.size()) {
-            return errText(call, "gzip: truncated");
-        }
-        pos += 2 + static_cast<std::size_t>(in[pos] | (in[pos + 1] << 8));
-    }
-    for (std::uint8_t f : {std::uint8_t{8}, std::uint8_t{16}}) {
-        if ((flags & f) != 0) {
-            while (pos < in.size() && in[pos] != 0) {
-                ++pos;
-            }
-            ++pos;
-        }
-    }
-    if ((flags & 2) != 0) {
-        pos += 2;
-    }
-    if (pos > in.size()) {
-        return errText(call, "gzip: truncated");
-    }
-    std::vector<std::uint8_t> out;
-    std::string error;
-    std::size_t used = 0;
-    if (!inflate(in.subspan(pos), out, kMaxInflate, error, &used)) {
-        return errText(call, "gzip: " + error);
-    }
-    std::size_t tail = pos + used;
-    if (tail + 8 > in.size()) {
-        return errText(call, "gzip: missing trailer");
-    }
-    std::uint32_t want = in[tail] | (in[tail + 1] << 8) | (in[tail + 2] << 16) | (static_cast<std::uint32_t>(in[tail + 3]) << 24);
-    if (want != crc32(out)) {
-        return errText(call, "gzip: checksum mismatch");
-    }
-    return okBytes(call, out);
-}
+bool decompressZlib(vm::HostCall& call, void*) { return decompressWith(call, Framing::Zlib); }
+
+bool compressGzip(vm::HostCall& call, void*) { return compressWith(call, Framing::Gzip); }
+
+bool decompressGzip(vm::HostCall& call, void*) { return decompressWith(call, Framing::Gzip); }
 
 bool compressZstd(vm::HostCall& call, void*) {
     auto in = bytesOf(call.args[0]);

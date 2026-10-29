@@ -23,7 +23,7 @@ extern "C" {
 /* Bumped on any incompatible change to this header; compare with qz_abi_version() at run time. */
 #define QZ_ABI_VERSION 1
 /* Raised when functions are added; a host needing newer ones checks qz_api_level() before looking them up. */
-#define QZ_API_LEVEL 4
+#define QZ_API_LEVEL 5
 
 typedef struct qz_program qz_program;
 typedef struct qz_sandbox qz_sandbox;
@@ -389,6 +389,34 @@ QZ_API qz_slot qz_sandbox_bytes(qz_sandbox* sandbox, const uint8_t* data, size_t
 QZ_API qz_slot qz_call_bytes(qz_call* call, const uint8_t* data, size_t length);
 QZ_API void qz_sandbox_bytes_into(qz_sandbox* sandbox, const uint8_t* data, size_t length, qz_slot* out);
 QZ_API void qz_call_bytes_into(qz_call* call, const uint8_t* data, size_t length, qz_slot* out);
+
+/* Level 5. Text from outside (process output, HTTP headers) as a str: each ill-formed UTF-8 sequence becomes U+FFFD
+ * (one per maximal subpart, as JavaScript, Python and Rust decode), so these never fail for the content. */
+QZ_API qz_slot qz_sandbox_str_lossy(qz_sandbox* sandbox, const char* text, size_t length);
+QZ_API qz_slot qz_call_str_lossy(qz_call* call, const char* text, size_t length);
+QZ_API void qz_sandbox_str_lossy_into(qz_sandbox* sandbox, const char* text, size_t length, qz_slot* out);
+QZ_API void qz_call_str_lossy_into(qz_call* call, const char* text, size_t length, qz_slot* out);
+
+/* DEFLATE, the same code the standard library uses: raw (RFC 1951), zlib (RFC 1950) or gzip (RFC 1952). */
+typedef enum qz_framing { QZ_FRAMING_RAW = 0, QZ_FRAMING_ZLIB, QZ_FRAMING_GZIP } qz_framing;
+
+/* Compresses at `level` (0 stores, 1 to 9, clamped); the buffer is freed with qz_free, NULL only without memory. */
+QZ_API uint8_t* qz_deflate(const uint8_t* data, size_t length, int level, qz_framing framing, size_t* out_length);
+/* Decompresses at most `max_length` bytes; NULL with *error (free it with qz_free) on a bad header, damaged data, a
+ * checksum mismatch or more output than allowed. */
+QZ_API uint8_t* qz_inflate(const uint8_t* data, size_t length, qz_framing framing, size_t max_length,
+                           size_t* out_length, char** error);
+/* CRC-32 as zip and gzip use it; pass 0 to start and the previous result to continue over more data. */
+QZ_API uint32_t qz_crc32(uint32_t crc, const uint8_t* data, size_t length);
+
+/* The `///` text of an exported function, of a struct or enum, and of a field or variant (by index), as the generated
+ * interfaces carry it; "" when there is none. Strings live as long as the program. */
+QZ_API const char* qz_program_function_doc(const qz_program* program, uint32_t function);
+QZ_API const char* qz_type_doc(const qz_program* program, uint32_t type);
+QZ_API const char* qz_type_member_doc(const qz_program* program, uint32_t type, uint32_t index);
+/* True when payload `index` of `variant` is a recursive one: its slot holds a list of one element, the value itself
+ * (its type is qz_type_elem of the payload type). Hosts show and take that element in its place. */
+QZ_API bool qz_type_variant_boxed(const qz_program* program, uint32_t type, uint32_t variant, uint32_t index);
 
 #ifdef __cplusplus
 }

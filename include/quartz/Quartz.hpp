@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ir/Serialize.hpp"
+#include "std/Deflate.hpp"
 #include "support/Diagnostics.hpp"
 #include "vm/Sandbox.hpp"
 
@@ -60,5 +61,18 @@ std::vector<const ir::Annotation*> attributesOf(const vm::Program& program, std:
 /// Checks a `.qzb` module's hash and signatures, decodes and validates it, and generates its bytecode.
 std::expected<std::shared_ptr<const vm::Program>, std::string>
 load(std::span<const std::uint8_t> bytes, const ir::ReadOptions& options = {}, vm::Probes probes = {});
+
+using stdlib::crc32;
+using stdlib::Framing;
+
+/// DEFLATE at `level` (0 stores, 1 to 9) in raw, zlib or gzip framing: what `qz_deflate` and the library use.
+std::vector<std::uint8_t> deflate(std::span<const std::uint8_t> data, int level, Framing framing);
+/// The reverse, up to `maxLength` bytes; the error names the framing and what failed (`gzip: checksum mismatch`).
+std::expected<std::vector<std::uint8_t>, std::string> inflate(std::span<const std::uint8_t> data, Framing framing,
+                                                              std::size_t maxLength);
+
+/// The `///` text of an exported function and of a struct or enum ("" when none), as generated interfaces carry it.
+std::string_view functionDoc(const vm::Program& program, std::uint32_t function);
+std::string_view typeDoc(const vm::Program& program, ir::TypeId type);
 
 } // namespace quartz

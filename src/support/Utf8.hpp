@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <string_view>
 
 namespace quartz {
@@ -52,5 +53,8 @@ inline bool validUtf8(std::string_view text) {
     }
     return true;
 }
+
+/// `text` with each ill-formed sequence replaced by U+FFFD; for text from the outside world, never for checking it.
+std::string toValidUtf8(std::string_view text);
 
 } // namespace quartz

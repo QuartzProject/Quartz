@@ -41,8 +41,9 @@ export class Values {
             }
             this.#zero(ptr, type.slots);
             q.setSlot(ptr, BigInt(index));
-            type.variants[index].payload.forEach((p, i) => this.encodeInto(p.type, values[i], call,
-                ptr + 8 * p.offset));
+            // A recursive payload is held in a list of one (D177): JavaScript sees the value itself.
+            type.variants[index].payload.forEach((p, i) => this.encodeInto(p.type, p.boxed ? [values[i]] : values[i],
+                call, ptr + 8 * p.offset));
             return;
         }
         case "nullable":
@@ -80,7 +81,10 @@ export class Values {
             if (variant === undefined) {
                 throw new QuartzError(`enum value with an unknown variant ${q.slot(ptr)}`);
             }
-            const values = variant.payload.map((p) => this.decodeAt(p.type, ptr + 8 * p.offset));
+            const values = variant.payload.map((p) => {
+                const v = this.decodeAt(p.type, ptr + 8 * p.offset);
+                return p.boxed && Array.isArray(v) && v.length === 1 ? v[0] : v;
+            });
             return { variant: variant.name, values };
         }
         case "nullable":

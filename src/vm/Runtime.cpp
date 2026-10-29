@@ -188,6 +188,12 @@ Str* HostCall::string(std::string_view text) { return sandbox.newStr(text); }
 
 Str* HostCall::bytes(std::string_view data) { return sandbox.newBytes(data); }
 
+Str* HostCall::stringLossy(std::string_view text) { return sandbox.newStrLossy(text); }
+
+Str* Sandbox::newStrLossy(std::string_view text) {
+    return validUtf8(text) ? newBytes(text) : newBytes(toValidUtf8(text));
+}
+
 // `@repr(C)` structs reach the host as one slot holding a pointer to a C struct (D66).
 bool Sandbox::callHostC(std::uint32_t import, const Slot* args, Slot* result) {
     const ir::HostImport& imp = program_->module->imports[import];

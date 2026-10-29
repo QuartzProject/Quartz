@@ -272,7 +272,8 @@ class Quartz {
                 const payload = [];
                 for (let k = 0; k < m._qz_type_variant_payload_count(program, id, v); ++k) {
                     const p = m._qz_type_variant_payload(program, id, v, k, this.scratch);
-                    payload.push({ offset: this.u32(this.scratch), type: this.type(program, p, cache) });
+                    const boxed = !!m._qz_type_variant_boxed(program, id, v, k);
+                    payload.push({ offset: this.u32(this.scratch), type: this.type(program, p, cache), boxed });
                 }
                 type.variants.push({ name: m.UTF8ToString(m._qz_type_variant_name(program, id, v)), payload });
             }
