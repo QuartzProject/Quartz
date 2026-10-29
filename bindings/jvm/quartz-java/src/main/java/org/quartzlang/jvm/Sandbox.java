@@ -214,6 +214,22 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
+    /**
+     * {@code text} as a {@code str} of this sandbox, each ill-formed UTF-8 sequence becoming U+FFFD; it can be passed
+     * to a call and read until the next one. {@link LossyText} does the same inside lists, structs and results.
+     */
+    public Value strLossy(byte[] text) {
+        Objects.requireNonNull(text, "text");
+        Confinement c = enter();
+        try {
+            return new Value(newLossyString(text), this, c.generation, new Type(Kind.STR, 1));
+        } catch (Throwable t) {
+            throw Native.rethrow(t);
+        } finally {
+            c.exit();
+        }
+    }
+
     /** Every state as JSON, with field names and versions, for persistence or a reload. */
     public String exportState() {
         Confinement c = begin();
@@ -556,6 +572,11 @@ public final class Sandbox implements AutoCloseable {
         }
 
         @Override
+        public long stringLossy(byte[] text) throws Throwable {
+            return newLossyString(text);
+        }
+
+        @Override
         public long list(Type type, List<?> elements) throws Throwable {
             return newList(type, elements, this);
         }
@@ -571,6 +592,15 @@ public final class Sandbox implements AutoCloseable {
             wide = scratch.allocate(JAVA_LONG, Math.max(slots, 4));
         }
         return wide;
+    }
+
+    private long newLossyString(byte[] text) throws Throwable {
+        long slot = (long) Native.SANDBOX_STR_LOSSY.invokeExact(address, MemorySegment.ofArray(text),
+                (long) text.length);
+        if (slot == 0) {
+            throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory passing a string");
+        }
+        return slot;
     }
 
     private long newString(byte[] utf8) throws Throwable {

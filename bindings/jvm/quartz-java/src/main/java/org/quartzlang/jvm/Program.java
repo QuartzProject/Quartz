@@ -179,7 +179,8 @@ public final class Program implements AutoCloseable {
                     new Signature(params, result), names,
                     Visibility.of((int) Native.FUNCTION_VISIBILITY.invokeExact(p, index)),
                     (boolean) Native.FUNCTION_IS_SUSPEND.invokeExact(p, index),
-                    (boolean) Native.FUNCTION_IS_EXPORTED.invokeExact(p, index));
+                    (boolean) Native.FUNCTION_IS_EXPORTED.invokeExact(p, index),
+                    Native.borrowString((MemorySegment) Native.FUNCTION_DOC.invokeExact(p, index)));
         } catch (Throwable t) {
             throw Native.rethrow(t);
         }
@@ -285,6 +286,7 @@ public final class Program implements AutoCloseable {
             Type t = new Type(kind, cell.get(JAVA_INT, 0), id, null);
             t.named(Native.borrowString((MemorySegment) Native.TYPE_NAME.invokeExact(p, id)),
                     Native.borrowString((MemorySegment) Native.TYPE_PACKAGE.invokeExact(p, id)));
+            t.documented(Native.borrowString((MemorySegment) Native.TYPE_DOC.invokeExact(p, id)));
             resolving.put(id, t);
             int elementId = (int) Native.TYPE_ELEM.invokeExact(p, id);
             Type element = elementId == 0 ? null : resolve(elementId, resolving);
@@ -305,7 +307,8 @@ public final class Program implements AutoCloseable {
                         String name = kind == Kind.STRUCT
                                 ? Native.takeString((MemorySegment) Native.TYPE_FIELD_NAME.invokeExact(p, id, i), false)
                                 : "";
-                        fields.add(new Type.Field(name, resolve(fieldId, resolving), offset));
+                        String doc = Native.borrowString((MemorySegment) Native.TYPE_MEMBER_DOC.invokeExact(p, id, i));
+                        fields.add(new Type.Field(name, resolve(fieldId, resolving), offset, null, doc));
                     }
                 }
                 case ENUM -> {
@@ -317,9 +320,17 @@ public final class Program implements AutoCloseable {
                         List<Type.Field> payload = new ArrayList<>(n);
                         for (int i = 0; i < n; ++i) {
                             int valueId = (int) Native.TYPE_VARIANT_PAYLOAD.invokeExact(p, id, v, i, cell);
-                            payload.add(new Type.Field("", resolve(valueId, resolving), cell.get(JAVA_INT, 0)));
+                            int offset = cell.get(JAVA_INT, 0);
+                            Type value = resolve(valueId, resolving);
+                            Type box = null;
+                            if ((boolean) Native.TYPE_VARIANT_BOXED.invokeExact(p, id, v, i)) {
+                                box = value;
+                                value = resolve((int) Native.TYPE_ELEM.invokeExact(p, valueId), resolving);
+                            }
+                            payload.add(new Type.Field("", value, offset, box, ""));
                         }
-                        cases.add(new Type.Case(name, v, payload));
+                        String doc = Native.borrowString((MemorySegment) Native.TYPE_MEMBER_DOC.invokeExact(p, id, v));
+                        cases.add(new Type.Case(name, v, payload, doc));
                     }
                 }
                 case NULLABLE -> pointer = (boolean) Native.TYPE_NULLABLE_IS_POINTER.invokeExact(p, id);

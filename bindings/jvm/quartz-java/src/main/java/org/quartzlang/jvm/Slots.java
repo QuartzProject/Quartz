@@ -15,6 +15,8 @@ final class Slots {
 
         long bytes(byte[] data) throws Throwable;
 
+        long stringLossy(byte[] text) throws Throwable;
+
         long list(Type type, List<?> elements) throws Throwable;
 
         long map(Type type, Map<?, ?> entries) throws Throwable;
@@ -152,7 +154,7 @@ final class Slots {
             case NULLABLE -> type.element() == null || holdsReferences(type.element());
             case STRUCT, TUPLE -> type.fields().stream().anyMatch(f -> holdsReferences(f.type()));
             case ENUM -> type.cases().stream().anyMatch(c -> c.payload().stream()
-                    .anyMatch(f -> holdsReferences(f.type())));
+                    .anyMatch(f -> f.boxed() || holdsReferences(f.type())));
             default -> false;
         };
     }
@@ -169,7 +171,11 @@ final class Slots {
             Makers makers) throws Throwable {
         for (int i = 0; i < values.length; ++i) {
             Type.Field f = fields.get(i);
-            encode(f.type(), values[i], out, at + f.offset(), owner, makers);
+            if (f.boxed()) {
+                out[at + f.offset()] = makers.list(f.box(), Collections.singletonList(values[i]));
+            } else {
+                encode(f.type(), values[i], out, at + f.offset(), owner, makers);
+            }
         }
     }
 
@@ -177,9 +183,17 @@ final class Slots {
         Object[] values = new Object[fields.size()];
         for (int i = 0; i < values.length; ++i) {
             Type.Field f = fields.get(i);
-            values[i] = decode(f.type(), slots, at + f.offset(), readers);
+            values[i] = f.boxed() ? unbox(readers.list(f.box(), slots[at + f.offset()]))
+                    : decode(f.type(), slots, at + f.offset(), readers);
         }
         return values;
+    }
+
+    private static Object unbox(List<Object> box) {
+        if (box.size() != 1) {
+            throw new QuartzException("a recursive payload holds " + box.size() + " values instead of one");
+        }
+        return box.get(0);
     }
 
     private static long scalar(Type type, Object value, Sandbox owner, Makers makers) throws Throwable {
@@ -204,6 +218,9 @@ final class Slots {
             case F32 -> Float.floatToRawIntBits((float) floating(type, value)) & 0xFFFF_FFFFL;
             case CHAR -> codePoint(type, value);
             case STR -> {
+                if (value instanceof LossyText t) {
+                    yield makers.stringLossy(t.raw());
+                }
                 if (!(value instanceof String s)) {
                     throw mismatch(type, value);
                 }

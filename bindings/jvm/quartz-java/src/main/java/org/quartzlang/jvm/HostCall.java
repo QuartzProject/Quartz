@@ -148,6 +148,14 @@ public final class HostCall {
         return Native.ALL.get(JAVA_LONG, args + (long) s.offset(index) * Long.BYTES);
     }
 
+    /**
+     * {@code text} as a {@code str} result, each ill-formed UTF-8 sequence becoming U+FFFD: return it, or put it in
+     * a list, struct or variant the function returns.
+     */
+    public LossyText stringLossy(byte[] text) {
+        return new LossyText(text);
+    }
+
     /** Charges fuel for native work; false when the budget is gone, and the call then traps whatever is returned. */
     public boolean charge(long units) {
         check();
@@ -201,6 +209,16 @@ public final class HostCall {
             long slot = (long) Native.CALL_BYTES.invokeExact(call, MemorySegment.ofArray(data), (long) data.length);
             if (slot == 0) {
                 throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning Bytes");
+            }
+            return slot;
+        }
+
+        @Override
+        public long stringLossy(byte[] text) throws Throwable {
+            long slot = (long) Native.CALL_STR_LOSSY.invokeExact(call, MemorySegment.ofArray(text),
+                    (long) text.length);
+            if (slot == 0) {
+                throw new TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning a string");
             }
             return slot;
         }

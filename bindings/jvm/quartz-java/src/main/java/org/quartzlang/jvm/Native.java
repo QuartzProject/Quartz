@@ -18,7 +18,7 @@ import java.lang.invoke.MethodHandle;
 /** quartz.h as method handles; a qz_slot or an opaque pointer travels as a long, as every 64-bit ABI passes it. */
 final class Native {
     static final int ABI_VERSION = 1;
-    static final int API_LEVEL_NEEDED = 4;
+    static final int API_LEVEL_NEEDED = 5;
     static final int LOOKUP_FOUND = 0;
     static final int LOOKUP_AMBIGUOUS = 2;
     static final int OK = 0;
@@ -148,6 +148,15 @@ final class Native {
     static final MethodHandle ATTRIBUTE_ARG_COUNT;
     static final MethodHandle ATTRIBUTE_ARG_READ;
     static final MethodHandle SANDBOX_TASK_RESULT;
+    static final MethodHandle SANDBOX_STR_LOSSY;
+    static final MethodHandle CALL_STR_LOSSY;
+    static final MethodHandle DEFLATE;
+    static final MethodHandle INFLATE;
+    static final MethodHandle CRC32;
+    static final MethodHandle FUNCTION_DOC;
+    static final MethodHandle TYPE_DOC;
+    static final MethodHandle TYPE_MEMBER_DOC;
+    static final MethodHandle TYPE_VARIANT_BOXED;
 
     static {
         if (ADDRESS.byteSize() != 8) {
@@ -293,14 +302,28 @@ final class Native {
                 FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, ADDRESS), CRITICAL);
         SANDBOX_TASK_RESULT = fn("qz_sandbox_task_result",
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, SIZE_T), CRITICAL);
-        int abi = abiVersion();
-        if (abi != ABI_VERSION) {
-            throw new UnsatisfiedLinkError("libquartz has ABI " + abi + ", quartz-jvm needs " + ABI_VERSION);
-        }
         int level = apiLevel();
         if (level < API_LEVEL_NEEDED) {
             throw new UnsatisfiedLinkError("libquartz has API level " + level + ", quartz-jvm needs "
                     + API_LEVEL_NEEDED);
+        }
+        SANDBOX_STR_LOSSY = fn("qz_sandbox_str_lossy", FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS, SIZE_T),
+                CRITICAL_HEAP);
+        CALL_STR_LOSSY = fn("qz_call_str_lossy", FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS, SIZE_T),
+                CRITICAL_HEAP);
+        DEFLATE = fn("qz_deflate", FunctionDescriptor.of(ADDRESS, ADDRESS, SIZE_T, JAVA_INT, JAVA_INT, ADDRESS));
+        INFLATE = fn("qz_inflate",
+                FunctionDescriptor.of(ADDRESS, ADDRESS, SIZE_T, JAVA_INT, SIZE_T, ADDRESS, ADDRESS));
+        CRC32 = fn("qz_crc32", FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, SIZE_T), CRITICAL_HEAP);
+        FUNCTION_DOC = fn("qz_program_function_doc", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+        TYPE_DOC = fn("qz_type_doc", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);
+        TYPE_MEMBER_DOC = fn("qz_type_member_doc", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT, JAVA_INT),
+                CRITICAL);
+        TYPE_VARIANT_BOXED = fn("qz_type_variant_boxed",
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT), CRITICAL);
+        int abi = abiVersion();
+        if (abi != ABI_VERSION) {
+            throw new UnsatisfiedLinkError("libquartz has ABI " + abi + ", quartz-jvm needs " + ABI_VERSION);
         }
     }
 

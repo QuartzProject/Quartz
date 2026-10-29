@@ -21,6 +21,25 @@ public final class Quartz {
         return Compiler.warningRules();
     }
 
+    /** {@code data} compressed with DEFLATE at {@code level} (0 stores, 1 to 9, clamped) in {@code framing}. */
+    public static byte[] deflate(byte[] data, int level, Framing framing) {
+        return Compression.deflate(data, level, framing);
+    }
+
+    /**
+     * {@code data} decompressed, at most {@code maxLength} bytes.
+     *
+     * @throws QuartzException on a bad header, damaged data, a checksum mismatch or more output than allowed
+     */
+    public static byte[] inflate(byte[] data, Framing framing, long maxLength) {
+        return Compression.inflate(data, framing, maxLength);
+    }
+
+    /** CRC-32 as zip and gzip use it, from 0 or continuing a previous result over more data. */
+    public static long crc32(long crc, byte[] data) {
+        return Compression.crc32(crc, data);
+    }
+
     public static Program compile(Source... sources) {
         return compile(List.of(sources), CompileOptions.DEFAULT);
     }

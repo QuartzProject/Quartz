@@ -13,13 +13,14 @@ public final class Export {
     private final Visibility visibility;
     private final boolean suspend;
     private final boolean exported;
+    private final String doc;
     private final int[] offsets;
     private final int argSlots;
     private final boolean simple;
     private volatile List<Attribute> attributes;
 
     Export(Program program, int index, String name, String packageName, Signature signature,
-            List<String> parameterNames, Visibility visibility, boolean suspend, boolean exported) {
+            List<String> parameterNames, Visibility visibility, boolean suspend, boolean exported, String doc) {
         this.program = program;
         this.index = index;
         this.name = name;
@@ -29,6 +30,7 @@ public final class Export {
         this.visibility = visibility;
         this.suspend = suspend;
         this.exported = exported;
+        this.doc = doc == null ? "" : doc;
         this.offsets = new int[signature.arity()];
         int at = 0;
         boolean scalar = true;
@@ -85,6 +87,11 @@ public final class Export {
     /** True when the program offers it to the host ({@link Program#exports()}). */
     public boolean isExported() {
         return exported;
+    }
+
+    /** The {@code ///} text of its declaration, as the generated interfaces carry it; empty when it has none. */
+    public String doc() {
+        return doc;
     }
 
     /** Its attributes as written ({@code @on}, {@code @command}...), in source order. */

@@ -71,7 +71,7 @@ final class TypedValues {
             case F32 -> (float) Slots.floating(quartz, value);
             case CHAR -> (int) Slots.codePoint(quartz, value);
             case STR -> {
-                if (!(value instanceof String)) {
+                if (!(value instanceof String) && !(value instanceof LossyText)) {
                     throw Slots.mismatch(quartz, value);
                 }
                 yield value;

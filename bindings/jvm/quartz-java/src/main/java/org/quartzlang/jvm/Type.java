@@ -10,10 +10,25 @@ public final class Type {
      * A field of a struct, an element of a tuple or a value of an enum variant.
      *
      * @param name the field name; empty for tuple elements and variant payloads
-     * @param type its type
+     * @param type its type; for a recursive payload, the type of the value itself
      * @param offset its first slot, counted from the start of the enclosing value
+     * @param box for a recursive payload, the list of one element its slot holds; null otherwise
+     * @param doc the field's {@code ///} text; empty when it has none
      */
-    public record Field(String name, Type type, int offset) {}
+    public record Field(String name, Type type, int offset, Type box, String doc) {
+        public Field {
+            doc = doc == null ? "" : doc;
+        }
+
+        public Field(String name, Type type, int offset) {
+            this(name, type, offset, null, "");
+        }
+
+        /** True for a recursive payload, which the slot holds in a list of one; values read and take it unboxed. */
+        public boolean boxed() {
+            return box != null;
+        }
+    }
 
     /**
      * A variant of an enum type.
@@ -21,8 +36,18 @@ public final class Type {
      * @param name as the program spells it
      * @param index the value of slot 0 for this variant
      * @param payload the values it carries, positional
+     * @param doc the variant's {@code ///} text; empty when it has none
      */
-    public record Case(String name, int index, List<Field> payload) {}
+    public record Case(String name, int index, List<Field> payload, String doc) {
+        public Case {
+            payload = List.copyOf(payload);
+            doc = doc == null ? "" : doc;
+        }
+
+        public Case(String name, int index, List<Field> payload) {
+            this(name, index, payload, "");
+        }
+    }
 
     private final Kind kind;
     private final int slots;
@@ -34,6 +59,7 @@ public final class Type {
     private boolean pointerNullable;
     private String name = "";
     private String packageName = "";
+    private String doc = "";
     private volatile Boolean handles;
 
     public Type(Kind kind, int slots) {
@@ -64,6 +90,15 @@ public final class Type {
     void named(String typeName, String typePackage) {
         named(typeName);
         packageName = typePackage == null ? "" : typePackage;
+    }
+
+    void documented(String text) {
+        doc = text == null ? "" : text;
+    }
+
+    /** The {@code ///} text of a struct or enum declaration; empty for other types and when it has none. */
+    public String doc() {
+        return doc;
     }
 
     /** How the source writes it ({@code Point}, {@code [int]}, {@code Box<int>}); empty when unknown. */
