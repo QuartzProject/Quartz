@@ -65,6 +65,9 @@ void exercise(std::shared_ptr<const vm::Program> program) {
             (void)sb.call(f, args);
         }
     }
+    if (auto saved = sb.exportState()) {
+        (void)sb.importState(*saved);
+    }
 }
 
 } // namespace
