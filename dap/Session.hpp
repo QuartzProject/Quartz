@@ -38,6 +38,13 @@ Json adapterCapabilities();
 /// The exception filter of a trap kind (`divideByZero`, `panic`...).
 std::string_view trapFilterOf(ir::TrapCode code);
 
+/// The sourceReference of an embedded standard library file (`<std>/text.qz`), or 0.
+std::int64_t librarySource(std::string_view file);
+/// The name of the library file a sourceReference stands for, or empty.
+std::string_view librarySourceName(std::int64_t ref);
+/// The body of a `source` request: the text of a standard library file.
+std::expected<Json, std::string> librarySourceText(const Json& args);
+
 /// Speaks the Debug Adapter Protocol over standard input and output until the client disconnects.
 int runDebugAdapter(const DebugLoader& load);
 

@@ -1,4 +1,5 @@
 #include "Session.hpp"
+#include "std/Std.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -65,10 +66,42 @@ Json Session::sourceOf(std::uint32_t function) {
     Json source = Json::object().set("name", std::filesystem::path(fn.file).filename().string());
     if (fn.file.starts_with("<")) {
         source.set("presentationHint", "deemphasize");
+        if (std::int64_t ref = librarySource(fn.file); ref != 0) {
+            const auto& [name, text] = stdlib::sources()[static_cast<std::size_t>(ref - 1)];
+            source.set("sourceReference", ref).set("origin", stdlib::packageOf(text));
+        }
     } else {
         source.set("path", fn.file);
     }
     return source;
+}
+
+std::int64_t librarySource(std::string_view file) {
+    const auto& all = stdlib::sources();
+    for (std::size_t i = 0; i < all.size(); ++i) {
+        if (all[i].first == file) {
+            return static_cast<std::int64_t>(i + 1);
+        }
+    }
+    return 0;
+}
+
+std::expected<Json, std::string> librarySourceText(const Json& args) {
+    std::int64_t ref =
+        args.has("sourceReference") ? args["sourceReference"].integer() : args["source"]["sourceReference"].integer();
+    const auto& all = stdlib::sources();
+    if (ref < 1 || static_cast<std::size_t>(ref) > all.size()) {
+        return std::unexpected("no such source");
+    }
+    return Json::object()
+        .set("content", all[static_cast<std::size_t>(ref - 1)].second)
+        .set("mimeType", "text/x-quartz");
+}
+
+std::string_view librarySourceName(std::int64_t ref) {
+    const auto& all = stdlib::sources();
+    return ref >= 1 && static_cast<std::size_t>(ref) <= all.size() ? all[static_cast<std::size_t>(ref - 1)].first
+                                                                   : std::string_view{};
 }
 
 std::int64_t Session::refFor(const Ref& ref) {

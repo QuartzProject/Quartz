@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "lsp/Json.hpp"
 #include "quartz/Quartz.hpp"
+#include "std/Std.hpp"
 #include "vm/Profiler.hpp"
 
 #include <doctest/doctest.h>
@@ -284,6 +285,11 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
     functions.push(Json::object().set("name", "nowhere"));
     Json filters = Json::array();
     filters.push("divideByZero");
+    Json path = Json::object().set("path", source.string());
+    std::int64_t textRef = 0;
+    for (std::size_t i = 0; i < quartz::stdlib::sources().size(); ++i) {
+        textRef = quartz::stdlib::sources()[i].first == "<std>/text.qz" ? static_cast<std::int64_t>(i + 1) : textRef;
+    }
     std::string in;
     in += request("initialize", Json::object().set("adapterID", "quartz"));
     in += request("launch", Json::object().set("program", source.string()).set("tests", true));
@@ -296,6 +302,14 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
                   Json::object().set("variablesReference", 2).set("name", "word").set("value", "\"help\""));
     in += request("setExpression", Json::object().set("expression", "n").set("value", "20").set("frameId", 1));
     in += request("setVariable", Json::object().set("variablesReference", 2).set("name", "word").set("value", "12"));
+    Json line = Json::array();
+    line.push(Json::object().set("line", 12));
+    in += request("setBreakpoints", Json::object().set("source", path).set("breakpoints", line));
+    in += request("continue", Json::object().set("threadId", 1));
+    in += request("stepIn", Json::object().set("threadId", 1));
+    in += request("stackTrace", Json::object().set("threadId", 1));
+    in += request("source", Json::object().set("sourceReference", textRef));
+    in += request("setBreakpoints", Json::object().set("source", path).set("breakpoints", Json::array()));
     in += request("continue", Json::object().set("threadId", 1));
     in += request("exceptionInfo", Json::object().set("threadId", 3));
     in += request("continue", Json::object().set("threadId", 3));
@@ -314,17 +328,22 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
     CHECK(response(msgs, 8)["body"]["value"].str() == "\"help\"");
     CHECK(response(msgs, 9)["body"]["value"].str() == "20");
     CHECK_FALSE(response(msgs, 10)["success"].boolean());
-    CHECK(response(msgs, 12)["body"]["exceptionId"].str() == "divideByZero");
+    const Json& library = response(msgs, 14)["body"]["stackFrames"][0];
+    CHECK(library["name"].str() == "closest");
+    CHECK(library["source"]["sourceReference"].integer() == textRef);
+    CHECK(response(msgs, 15)["body"]["content"].str().find("pub fn closest") != std::string_view::npos);
+    CHECK(response(msgs, 18)["body"]["exceptionId"].str() == "divideByZero");
     bool printed = false;
     for (const Json* o : events(msgs, "output")) {
         printed = printed || (*o)["body"]["output"].str() == "10 help help\n";
     }
     CHECK(printed);
     std::vector<const Json*> stops = events(msgs, "stopped");
-    REQUIRE(stops.size() == 2);
+    REQUIRE(stops.size() == 4);
     CHECK((*stops[0])["body"]["reason"].str() == "function breakpoint");
-    CHECK((*stops[1])["body"]["reason"].str() == "exception");
-    CHECK((*stops[1])["body"]["threadId"].integer() == 3);
+    CHECK((*stops[2])["body"]["reason"].str() == "step");
+    CHECK((*stops[3])["body"]["reason"].str() == "exception");
+    CHECK((*stops[3])["body"]["threadId"].integer() == 3);
 }
 
 TEST_CASE("the profiler counts calls and fuel exactly") {

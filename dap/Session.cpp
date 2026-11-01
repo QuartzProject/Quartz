@@ -9,6 +9,9 @@ namespace quartz::dap {
 namespace {
 
 std::string canonical(const std::string& path) {
+    if (path.starts_with("<")) {
+        return path;
+    }
     std::error_code ec;
     std::filesystem::path p = std::filesystem::weakly_canonical(path, ec);
     return ec ? path : p.string();
@@ -81,6 +84,9 @@ void Session::handle(const Json& msg) {
         setExceptionBreakpoints(msg);
     } else if (cmd == "setFunctionBreakpoints") {
         setFunctionBreakpoints(msg);
+    } else if (cmd == "source") {
+        auto r = librarySourceText(args);
+        respond(msg, r ? std::move(*r) : Json::object(), r.has_value(), r ? "" : r.error());
     } else if (cmd == "configurationDone") {
         respond(msg, Json::object());
         std::lock_guard lock(mutex_);
@@ -199,7 +205,7 @@ void Session::launch(const Json& request) {
         const vm::Program& p = *target_->program;
         fnFile_.clear();
         for (const vm::CompiledFunction& f : p.functions) {
-            fnFile_.push_back(f.file.empty() || f.file.starts_with("<") ? std::string() : canonical(f.file));
+            fnFile_.push_back(f.file.empty() ? std::string() : canonical(f.file));
         }
         resolveBreakpoints(lock);
         resolveFunctions();
@@ -247,7 +253,11 @@ Json Session::resolve(const Requested& req) {
                 list.push_back({best, condition, id});
             }
         }
-        out.push(std::move(bp.set("line", best).set("source", Json::object().set("path", req.path))));
+        Json source = Json::object().set("path", req.path);
+        if (std::int64_t ref = librarySource(req.path); ref != 0) {
+            source = Json::object().set("name", req.path.substr(req.path.rfind('/') + 1)).set("sourceReference", ref);
+        }
+        out.push(std::move(bp.set("line", best).set("source", std::move(source))));
     }
     return out;
 }
@@ -266,6 +276,9 @@ void Session::setBreakpoints(const Json& request) {
     const Json& args = request["arguments"];
     Requested req;
     req.path = std::string(args["source"]["path"].str());
+    if (req.path.empty()) {
+        req.path = std::string(librarySourceName(args["source"]["sourceReference"].integer()));
+    }
     for (const Json& b : args["breakpoints"].items()) {
         std::int64_t line = b["line"].integer();
         if (line > 0 && line <= 0xFFFFFFFF) {
