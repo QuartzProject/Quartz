@@ -125,6 +125,7 @@ struct ProbeSite {
     std::uint32_t pc = 0; // of the LoadI
     std::uint32_t line = 0;
     ProbeKind kind = ProbeKind::Line;
+    std::uint16_t column = 0; // of the statement or match arm; 0 when the IR has no columns (a .qzb)
 };
 
 struct CompiledFunction {

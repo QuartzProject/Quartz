@@ -30,7 +30,9 @@ void Lowerer::closeLocals(std::size_t mark) {
 
 void Lowerer::setLine(Span span) {
     if (span.file < sources_.size()) {
-        line_ = sources_.file(span.file).lineCol(span.begin).line;
+        LineCol at = sources_.file(span.file).lineCol(span.begin);
+        line_ = at.line;
+        column_ = at.column <= 0xFFFF ? static_cast<std::uint16_t>(at.column) : 0;
         if (fn_ != nullptr && fn_->file.empty()) {
             fn_->file = sources_.file(span.file).name();
         }
@@ -50,6 +52,7 @@ Inst& Lowerer::emit(Op op, Reg dst, Reg a, Reg b, std::uint32_t imm) {
     in.b = b;
     in.imm = imm;
     in.line = line_;
+    in.column = column_;
     fn_->code.push_back(in);
     return fn_->code.back();
 }

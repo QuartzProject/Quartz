@@ -184,6 +184,7 @@ public:
     Function* fn_ = nullptr;
     sema::FnInfo* info_ = nullptr;
     std::uint32_t line_ = 0;
+    std::uint16_t column_ = 0;
     std::size_t depth_ = 0; // open structured frames
     struct LoopTarget {
         std::size_t breakFrame;

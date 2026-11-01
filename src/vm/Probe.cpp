@@ -113,7 +113,7 @@ bool Sandbox::probeHit(const Slot* R, std::uint32_t site) {
     probeFn_ = &program_->functions[s.function];
     probePc_ = s.pc;
     probeR_ = R;
-    ProbeEvent e{static_cast<ProbeEvent::Kind>(s.kind), s.function, s.line, calls_.size()};
+    ProbeEvent e{static_cast<ProbeEvent::Kind>(s.kind), s.function, s.line, calls_.size(), s.column};
     bool go = probe_(*this, e, probeUser_);
     probeFn_ = nullptr;
     return go || fail(ir::TrapCode::HostError, "stopped by the debugger");

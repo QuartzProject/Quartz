@@ -272,6 +272,13 @@ fn divides() {
     let z = half(1)
     print("{1 / z}")
 }
+
+@test
+fn arms() {
+    let k = half(4)
+    let s = match k { 1 => "one", 2 => "two", _ => "many" }
+    print(s)
+}
 )";
 
 TEST_CASE("scripted debug session: function breakpoints and trap filters") {
@@ -309,10 +316,15 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
     in += request("stepIn", Json::object().set("threadId", 1));
     in += request("stackTrace", Json::object().set("threadId", 1));
     in += request("source", Json::object().set("sourceReference", textRef));
-    in += request("setBreakpoints", Json::object().set("source", path).set("breakpoints", Json::array()));
+    Json arm = Json::array();
+    arm.push(Json::object().set("line", 30).set("column", 35));
+    in += request("setBreakpoints", Json::object().set("source", path).set("breakpoints", arm));
     in += request("continue", Json::object().set("threadId", 1));
     in += request("exceptionInfo", Json::object().set("threadId", 3));
     in += request("continue", Json::object().set("threadId", 3));
+    in += request("stackTrace", Json::object().set("threadId", 4));
+    in += request("breakpointLocations", Json::object().set("source", path).set("line", 30));
+    in += request("continue", Json::object().set("threadId", 4));
     std::vector<Json> msgs = runSession(dir, in);
 
     CHECK(response(msgs, 1)["body"]["supportsFunctionBreakpoints"].boolean());
@@ -339,7 +351,13 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
     }
     CHECK(printed);
     std::vector<const Json*> stops = events(msgs, "stopped");
-    REQUIRE(stops.size() == 4);
+    CHECK(response(msgs, 16)["body"]["breakpoints"][0]["column"].integer() == 40);
+    const Json& inArm = response(msgs, 20)["body"]["stackFrames"][0];
+    CHECK(inArm["line"].integer() == 30);
+    CHECK(inArm["column"].integer() == 40);
+    CHECK(response(msgs, 21)["body"]["breakpoints"].size() == 4);
+    REQUIRE(stops.size() == 5);
+    CHECK((*stops[4])["body"]["reason"].str() == "breakpoint");
     CHECK((*stops[0])["body"]["reason"].str() == "function breakpoint");
     CHECK((*stops[2])["body"]["reason"].str() == "step");
     CHECK((*stops[3])["body"]["reason"].str() == "exception");

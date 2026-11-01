@@ -183,6 +183,7 @@ const char* intrinsicName(Intrinsic in);
 
 struct Inst {
     Op op;
+    std::uint16_t column = 0; // where the statement or match arm starts, for debug probes; not serialized
     Reg dst = kNoReg;
     Reg a = kNoReg;
     Reg b = kNoReg;

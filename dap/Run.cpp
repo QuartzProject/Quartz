@@ -173,7 +173,7 @@ bool Session::breakpointAt(const vm::ProbeEvent& event) {
         return false;
     }
     for (const Breakpoint& b : fnBreakpoints_[event.function]) {
-        if (b.line == event.line && (b.condition.empty() || conditionHolds(b.condition))) {
+        if (b.line == event.line && b.column == event.column && (b.condition.empty() || conditionHolds(b.condition))) {
             return true;
         }
     }

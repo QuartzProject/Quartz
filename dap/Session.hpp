@@ -66,6 +66,13 @@ private:
         std::uint32_t line = 0;
         std::string condition;
         std::int64_t id = 0;
+        std::uint16_t column = 0;
+    };
+
+    struct LineRequest {
+        std::uint32_t line = 0;
+        std::uint32_t column = 0; // 0: the line's first statement
+        std::string condition;
     };
 
     // A DAP thread: one task of a sandbox, or a plain call (a test that does not suspend).
@@ -98,7 +105,7 @@ private:
 
     struct Requested {
         std::string path;
-        std::vector<std::pair<std::uint32_t, std::string>> lines;
+        std::vector<LineRequest> lines;
     };
 
     // A variablesReference: a frame's scope, or a value with children.
@@ -116,6 +123,7 @@ private:
     void launch(const Json& request);
     void setBreakpoints(const Json& request);
     void resolveBreakpoints(std::unique_lock<std::mutex>& lock);
+    Json breakpointLocations(const Json& args);
     Json resolve(const Requested& req);
     void maybeStart();
     bool waitForStop(std::unique_lock<std::mutex>& lock);

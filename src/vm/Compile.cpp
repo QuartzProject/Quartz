@@ -59,6 +59,7 @@ public:
         analyze();
         irPc_.assign(fn_.code.size() + 1, 0);
         std::uint32_t probedLine = 0;
+        std::uint16_t probedColumn = 0;
         for (pc_ = 0; pc_ < fn_.code.size(); ++pc_) {
             irPc_[pc_] = static_cast<std::uint32_t>(code_.size());
             if (skip_ > 0) {
@@ -69,9 +70,12 @@ public:
             const Inst& in = fn_.code[pc_];
             // After a block or loop label, so a jump back to it passes the probe.
             bool label = in.op == Op::Block || in.op == Op::Loop || in.op == Op::End || in.op == Op::Else;
-            if (prog_.probes.lines && !label && line_ != 0 && line_ != probedLine) {
-                probe(ProbeKind::Line, line_);
+            // A later statement or arm on the same line gets its own probe; coming back to the line's start does not.
+            if (prog_.probes.lines && !label && line_ != 0 &&
+                (line_ != probedLine || (in.column != 0 && in.column > probedColumn))) {
+                probe(ProbeKind::Line, line_, in.column);
                 probedLine = line_;
+                probedColumn = in.column;
             }
             retarget_ = ir::kNoReg;
             retargetFrom_ = ir::kNoReg;
@@ -218,10 +222,10 @@ private:
     }
 
     // A runtime builtin rather than an opcode: a handler of its own made the dispatch loop 7 to 15% slower.
-    void probe(ProbeKind kind, std::uint32_t line) {
+    void probe(ProbeKind kind, std::uint32_t line, std::uint16_t column = 0) {
         auto site = static_cast<std::uint32_t>(prog_.probeSites.size());
         auto function = static_cast<std::uint32_t>(prog_.functions.size());
-        prog_.probeSites.push_back({function, static_cast<std::uint32_t>(code_.size()), line, kind});
+        prog_.probeSites.push_back({function, static_cast<std::uint32_t>(code_.size()), line, kind, column});
         std::size_t at = put(Opc::LoadI, regSlots_);
         code_[at].setBc(static_cast<std::int32_t>(site));
         put(Opc::Builtin, regSlots_, 0, kProbeBuiltin);

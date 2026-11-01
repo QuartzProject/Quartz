@@ -232,7 +232,13 @@ Reg Lowerer::lowerMatch(MatchExpr* m, TypeId want, bool wantValue) {
             emit(Op::Not, miss, g);
             brIf(miss, next);
         }
+        // Each arm gets a debug probe of its own, even on the match's line.
+        std::uint32_t line = line_;
+        std::uint16_t column = column_;
+        setLine(arm.body->span);
         Reg v = lowerArmBody(arm.body, rt, wantValue);
+        line_ = line;
+        column_ = column;
         if (result != kNoReg && v != kNoReg && T(arm.body->type) != kNever) {
             emit(Op::Move, result, v);
         }

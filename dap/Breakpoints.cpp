@@ -55,6 +55,7 @@ Json adapterCapabilities() {
         .set("supportsConfigurationDoneRequest", true)
         .set("supportsConditionalBreakpoints", true)
         .set("supportsFunctionBreakpoints", true)
+        .set("supportsBreakpointLocationsRequest", true)
         .set("supportsEvaluateForHovers", true)
         .set("supportsSetVariable", true)
         .set("supportsSetExpression", true)

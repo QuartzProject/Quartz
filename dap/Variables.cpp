@@ -45,11 +45,19 @@ Json Session::stackTrace(const Json& args) {
     for (std::size_t i = start; i < total && (levels <= 0 || i < start + static_cast<std::size_t>(levels)); ++i) {
         const vm::FrameView& f = frames_[shown->begin + i];
         const vm::CompiledFunction& fn = p.functions[f.function];
+        std::int64_t column = 1;
+        for (std::size_t k = 0; i == 0 && k < p.probeSites.size(); ++k) {
+            const vm::ProbeSite& site = p.probeSites[k];
+            if (site.function == f.function && site.pc == f.pc && site.kind == vm::ProbeKind::Line &&
+                site.column != 0) {
+                column = site.column;
+            }
+        }
         Json frame = Json::object()
                          .set("id", static_cast<std::int64_t>(shown->begin + i + 1))
                          .set("name", fn.name)
                          .set("line", f.line)
-                         .set("column", 1);
+                         .set("column", column);
         if (Json source = sourceOf(f.function); !source.isNull()) {
             frame.set("source", std::move(source));
         }

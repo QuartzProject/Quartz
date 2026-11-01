@@ -93,6 +93,7 @@ struct ProbeEvent {
     std::uint32_t function = 0;
     std::uint32_t line = 0;
     std::size_t depth = 0; // calls below the running function
+    std::uint16_t column = 0;
 };
 
 /// Returning false stops the program with a HostError trap ("stopped by the debugger").

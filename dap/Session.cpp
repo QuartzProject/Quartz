@@ -84,6 +84,9 @@ void Session::handle(const Json& msg) {
         setExceptionBreakpoints(msg);
     } else if (cmd == "setFunctionBreakpoints") {
         setFunctionBreakpoints(msg);
+    } else if (cmd == "breakpointLocations") {
+        std::lock_guard lock(mutex_);
+        respond(msg, breakpointLocations(args));
     } else if (cmd == "source") {
         auto r = librarySourceText(args);
         respond(msg, r ? std::move(*r) : Json::object(), r.has_value(), r ? "" : r.error());
@@ -233,7 +236,7 @@ Json Session::resolve(const Requested& req) {
     auto inFile = [&](const vm::ProbeSite& site) {
         return site.kind == vm::ProbeKind::Line && site.function < fnFile_.size() && fnFile_[site.function] == file;
     };
-    for (const auto& [line, condition] : req.lines) {
+    for (const auto& [line, column, condition] : req.lines) {
         std::uint32_t best = 0;
         for (const vm::ProbeSite& site : p.probeSites) {
             if (inFile(site) && site.line >= line && (best == 0 || site.line < best)) {
@@ -246,20 +249,67 @@ Json Session::resolve(const Requested& req) {
             out.push(std::move(bp.set("line", line).set("message", "no code on or after this line")));
             continue;
         }
-        for (const vm::ProbeSite& site : p.probeSites) {
-            std::vector<Breakpoint>& list = fnBreakpoints_[site.function < fnBreakpoints_.size() ? site.function : 0];
-            bool known = std::any_of(list.begin(), list.end(), [&](const Breakpoint& b) { return b.id == id; });
-            if (inFile(site) && site.line == best && !known) {
-                list.push_back({best, condition, id});
+        // Per function: the statement or arm at or after the requested column, else the line's first one.
+        std::optional<std::uint16_t> shown;
+        for (std::uint32_t f = 0; f < fnBreakpoints_.size(); ++f) {
+            std::optional<std::uint16_t> first;
+            std::optional<std::uint16_t> at;
+            for (const vm::ProbeSite& site : p.probeSites) {
+                if (site.function == f && inFile(site) && site.line == best) {
+                    first = std::min(first.value_or(site.column), site.column);
+                    if (column != 0 && site.column >= column) {
+                        at = std::min(at.value_or(site.column), site.column);
+                    }
+                }
+            }
+            if (first) {
+                std::uint16_t target = best == line ? at.value_or(*first) : *first;
+                fnBreakpoints_[f].push_back({best, condition, id, target});
+                shown = shown.value_or(target);
             }
         }
         Json source = Json::object().set("path", req.path);
         if (std::int64_t ref = librarySource(req.path); ref != 0) {
             source = Json::object().set("name", req.path.substr(req.path.rfind('/') + 1)).set("sourceReference", ref);
         }
-        out.push(std::move(bp.set("line", best).set("source", std::move(source))));
+        bp.set("line", best).set("source", std::move(source));
+        if (column != 0 && shown && *shown != 0) {
+            bp.set("column", *shown);
+        }
+        out.push(std::move(bp));
     }
     return out;
+}
+
+Json Session::breakpointLocations(const Json& args) {
+    Json out = Json::array();
+    std::string path(args["source"]["path"].str());
+    if (path.empty()) {
+        path = librarySourceName(args["source"]["sourceReference"].integer());
+    }
+    std::int64_t from = args["line"].integer();
+    std::int64_t to = args.has("endLine") ? args["endLine"].integer() : from;
+    if (!target_ || path.empty()) {
+        return Json::object().set("breakpoints", std::move(out));
+    }
+    std::string file = canonical(path);
+    std::vector<std::pair<std::uint32_t, std::uint16_t>> found;
+    for (const vm::ProbeSite& site : target_->program->probeSites) {
+        if (site.kind == vm::ProbeKind::Line && site.function < fnFile_.size() && fnFile_[site.function] == file &&
+            site.line >= from && site.line <= to) {
+            found.emplace_back(site.line, site.column);
+        }
+    }
+    std::sort(found.begin(), found.end());
+    found.erase(std::unique(found.begin(), found.end()), found.end());
+    for (const auto& [line, column] : found) {
+        Json loc = Json::object().set("line", line);
+        if (column != 0) {
+            loc.set("column", column);
+        }
+        out.push(std::move(loc));
+    }
+    return Json::object().set("breakpoints", std::move(out));
 }
 
 void Session::resolveBreakpoints(std::unique_lock<std::mutex>&) {
@@ -281,8 +331,11 @@ void Session::setBreakpoints(const Json& request) {
     }
     for (const Json& b : args["breakpoints"].items()) {
         std::int64_t line = b["line"].integer();
+        std::int64_t column = b["column"].integer();
         if (line > 0 && line <= 0xFFFFFFFF) {
-            req.lines.emplace_back(static_cast<std::uint32_t>(line), std::string(b["condition"].str()));
+            req.lines.push_back({static_cast<std::uint32_t>(line),
+                                 static_cast<std::uint32_t>(std::clamp<std::int64_t>(column, 0, 0xFFFF)),
+                                 std::string(b["condition"].str())});
         }
     }
     Json result = Json::array();
@@ -299,7 +352,7 @@ void Session::setBreakpoints(const Json& request) {
                 }
             }
         } else {
-            for (const auto& [line, condition] : req.lines) {
+            for (const auto& [line, column, condition] : req.lines) {
                 result.push(Json::object().set("verified", false).set("line", line).set("message", "not loaded yet"));
             }
         }
