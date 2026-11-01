@@ -56,6 +56,8 @@ Json adapterCapabilities() {
         .set("supportsConditionalBreakpoints", true)
         .set("supportsFunctionBreakpoints", true)
         .set("supportsEvaluateForHovers", true)
+        .set("supportsSetVariable", true)
+        .set("supportsSetExpression", true)
         .set("supportsExceptionInfoRequest", true)
         .set("supportsTerminateRequest", true)
         .set("exceptionBreakpointFilters", std::move(filters));

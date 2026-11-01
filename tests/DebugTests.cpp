@@ -291,6 +291,11 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
     in += request("setExceptionBreakpoints", Json::object().set("filters", filters));
     in += request("configurationDone", Json::object());
     in += request("stackTrace", Json::object().set("threadId", 1));
+    in += request("scopes", Json::object().set("frameId", 2));
+    in += request("setVariable",
+                  Json::object().set("variablesReference", 2).set("name", "word").set("value", "\"help\""));
+    in += request("setExpression", Json::object().set("expression", "n").set("value", "20").set("frameId", 1));
+    in += request("setVariable", Json::object().set("variablesReference", 2).set("name", "word").set("value", "12"));
     in += request("continue", Json::object().set("threadId", 1));
     in += request("exceptionInfo", Json::object().set("threadId", 3));
     in += request("continue", Json::object().set("threadId", 3));
@@ -306,7 +311,15 @@ TEST_CASE("scripted debug session: function breakpoints and trap filters") {
     REQUIRE(top.size() == 2);
     CHECK(top[0]["name"].str() == "half");
     CHECK(top[0]["line"].integer() == 4);
-    CHECK(response(msgs, 8)["body"]["exceptionId"].str() == "divideByZero");
+    CHECK(response(msgs, 8)["body"]["value"].str() == "\"help\"");
+    CHECK(response(msgs, 9)["body"]["value"].str() == "20");
+    CHECK_FALSE(response(msgs, 10)["success"].boolean());
+    CHECK(response(msgs, 12)["body"]["exceptionId"].str() == "divideByZero");
+    bool printed = false;
+    for (const Json* o : events(msgs, "output")) {
+        printed = printed || (*o)["body"]["output"].str() == "10 help help\n";
+    }
+    CHECK(printed);
     std::vector<const Json*> stops = events(msgs, "stopped");
     REQUIRE(stops.size() == 2);
     CHECK((*stops[0])["body"]["reason"].str() == "function breakpoint");

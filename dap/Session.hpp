@@ -133,6 +133,11 @@ private:
     std::optional<std::string> functionEntry(vm::Sandbox& sandbox, const vm::ProbeEvent& event, std::int64_t thread);
     Json sourceOf(std::uint32_t function);
 
+    // Assign.cpp: setVariable and setExpression
+    std::expected<void, std::string> assign(const vm::ValueRef& v, std::size_t frame, std::string_view text);
+    std::expected<Json, std::string> setVariable(const Json& args);
+    std::expected<Json, std::string> setExpression(const Json& args);
+
     // Threads.cpp: tasks as threads
     std::int64_t threadOf(const vm::Sandbox& sandbox, std::optional<std::uint32_t> task);
     void endThread(const vm::Sandbox& sandbox, std::optional<std::uint32_t> task);

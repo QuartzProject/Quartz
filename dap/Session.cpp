@@ -107,7 +107,7 @@ void Session::handle(const Json& msg) {
         respond(msg, cmd == "continue" ? Json::object().set("allThreadsContinued", true) : Json::object());
         resume(step, thread);
     } else if (cmd == "stackTrace" || cmd == "scopes" || cmd == "variables" || cmd == "evaluate" ||
-               cmd == "exceptionInfo") {
+               cmd == "exceptionInfo" || cmd == "setVariable" || cmd == "setExpression") {
         std::unique_lock lock(mutex_);
         if (!waitForStop(lock)) {
             lock.unlock();
@@ -126,8 +126,10 @@ void Session::handle(const Json& msg) {
             Json body = variables(args);
             lock.unlock();
             respond(msg, std::move(body));
-        } else if (cmd == "evaluate") {
-            auto r = evaluate(args);
+        } else if (cmd == "evaluate" || cmd == "setVariable" || cmd == "setExpression") {
+            auto r = cmd == "evaluate"      ? evaluate(args)
+                     : cmd == "setVariable" ? setVariable(args)
+                                            : setExpression(args);
             lock.unlock();
             respond(msg, r ? std::move(*r) : Json::object(), r.has_value(), r ? "" : r.error());
         } else {
