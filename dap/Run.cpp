@@ -186,17 +186,30 @@ bool Session::onProbe(vm::Sandbox& sandbox, const vm::ProbeEvent& event) {
     }
     if (event.kind == vm::ProbeEvent::Kind::Trap) {
         std::unique_lock lock(mutex_);
-        if (stopOnTrap_ && !terminate_) {
+        if (stopsOnTrap(sandbox.trap_.code) && !terminate_) {
+            stopTrap_ = sandbox.trap_.code;
             stop(sandbox, "exception", sandbox.trap_.describe(), lock);
         }
         return true;
     }
-    if (event.kind != vm::ProbeEvent::Kind::Line) {
+    if (event.kind != vm::ProbeEvent::Kind::Line && event.kind != vm::ProbeEvent::Kind::Enter) {
         return true;
     }
     std::unique_lock lock(mutex_);
+    std::int64_t thread = threadOf(sandbox, sandbox.probeTask());
+    if (event.kind == vm::ProbeEvent::Kind::Enter || !armed_.empty()) {
+        std::optional<std::string> entry = functionEntry(sandbox, event, thread);
+        if (entry) {
+            step_ = Step::None;
+            stop(sandbox, std::move(*entry), {}, lock);
+            return !terminate_;
+        }
+        if (event.kind == vm::ProbeEvent::Kind::Enter) {
+            return true;
+        }
+    }
     std::string reason;
-    bool stepping = step_ != Step::None && threadOf(sandbox, sandbox.probeTask()) == stepThread_;
+    bool stepping = step_ != Step::None && thread == stepThread_;
     if (pause_.exchange(false)) {
         reason = "pause";
     } else if (stepping && (step_ == Step::In || (step_ == Step::Over && event.depth <= stepDepth_) ||

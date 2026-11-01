@@ -49,18 +49,26 @@ Json Session::stackTrace(const Json& args) {
                          .set("name", fn.name)
                          .set("line", f.line)
                          .set("column", 1);
-        if (!fn.file.empty()) {
-            Json source = Json::object().set("name", std::filesystem::path(fn.file).filename().string());
-            if (fn.file.starts_with("<")) {
-                source.set("presentationHint", "deemphasize");
-            } else {
-                source.set("path", fn.file);
-            }
+        if (Json source = sourceOf(f.function); !source.isNull()) {
             frame.set("source", std::move(source));
         }
         frames.push(std::move(frame));
     }
     return Json::object().set("stackFrames", std::move(frames)).set("totalFrames", static_cast<std::int64_t>(total));
+}
+
+Json Session::sourceOf(std::uint32_t function) {
+    const vm::CompiledFunction& fn = target_->program->functions[function];
+    if (fn.file.empty()) {
+        return Json();
+    }
+    Json source = Json::object().set("name", std::filesystem::path(fn.file).filename().string());
+    if (fn.file.starts_with("<")) {
+        source.set("presentationHint", "deemphasize");
+    } else {
+        source.set("path", fn.file);
+    }
+    return source;
 }
 
 std::int64_t Session::refFor(const Ref& ref) {

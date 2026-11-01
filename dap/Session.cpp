@@ -14,22 +14,6 @@ std::string canonical(const std::string& path) {
     return ec ? path : p.string();
 }
 
-Json capabilities() {
-    Json filters = Json::array();
-    filters.push(Json::object()
-                     .set("filter", "trap")
-                     .set("label", "Traps")
-                     .set("description", "Stop where a trap (panic, failed check, out of fuel...) ends the program")
-                     .set("default", true));
-    return Json::object()
-        .set("supportsConfigurationDoneRequest", true)
-        .set("supportsConditionalBreakpoints", true)
-        .set("supportsEvaluateForHovers", true)
-        .set("supportsExceptionInfoRequest", true)
-        .set("supportsTerminateRequest", true)
-        .set("exceptionBreakpointFilters", std::move(filters));
-}
-
 } // namespace
 
 int runDebugAdapter(const DebugLoader& load) { return Session(load).run(); }
@@ -88,23 +72,15 @@ void Session::handle(const Json& msg) {
     std::string_view cmd = msg["command"].str();
     const Json& args = msg["arguments"];
     if (cmd == "initialize") {
-        respond(msg, capabilities());
+        respond(msg, adapterCapabilities());
     } else if (cmd == "launch") {
         launch(msg);
     } else if (cmd == "setBreakpoints") {
         setBreakpoints(msg);
     } else if (cmd == "setExceptionBreakpoints") {
-        bool trap = false;
-        for (const Json& f : args["filters"].items()) {
-            trap = trap || f.str() == "trap";
-        }
-        {
-            std::lock_guard lock(mutex_);
-            stopOnTrap_ = trap;
-        }
-        respond(msg, Json::object().set("breakpoints", Json::array()));
+        setExceptionBreakpoints(msg);
     } else if (cmd == "setFunctionBreakpoints") {
-        respond(msg, Json::object().set("breakpoints", Json::array()));
+        setFunctionBreakpoints(msg);
     } else if (cmd == "configurationDone") {
         respond(msg, Json::object());
         std::lock_guard lock(mutex_);
@@ -155,10 +131,11 @@ void Session::handle(const Json& msg) {
             lock.unlock();
             respond(msg, r ? std::move(*r) : Json::object(), r.has_value(), r ? "" : r.error());
         } else {
-            Json body = Json::object()
-                            .set("exceptionId", stopReason_ == "exception" ? "trap" : stopReason_)
-                            .set("description", stopText_)
-                            .set("breakMode", "always");
+            Json body =
+                Json::object()
+                    .set("exceptionId", stopReason_ == "exception" ? std::string(trapFilterOf(stopTrap_)) : stopReason_)
+                    .set("description", stopText_)
+                    .set("breakMode", "always");
             lock.unlock();
             respond(msg, std::move(body));
         }
@@ -223,6 +200,7 @@ void Session::launch(const Json& request) {
             fnFile_.push_back(f.file.empty() || f.file.starts_with("<") ? std::string() : canonical(f.file));
         }
         resolveBreakpoints(lock);
+        resolveFunctions();
         launched_ = true;
     }
     respond(request, Json::object());

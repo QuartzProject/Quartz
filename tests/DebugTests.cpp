@@ -246,6 +246,74 @@ TEST_CASE("scripted debug session: tasks as threads") {
     CHECK(events(msgs, "thread").size() == 4);
 }
 
+constexpr std::string_view kTests = R"(import org.quartzlang.text.*
+
+fn half(n: int) -> int {
+    let h = n / 2
+    return h
+}
+
+@test
+fn first() {
+    var word = "hepl"
+    let n = half(10)
+    let near = closest(word, ["help", "warp"]) ?? "none"
+    print("{n} {word} {near}")
+}
+
+@test
+fn panics() {
+    panic("boom")
+}
+
+@test
+fn divides() {
+    let z = half(1)
+    print("{1 / z}")
+}
+)";
+
+TEST_CASE("scripted debug session: function breakpoints and trap filters") {
+    fs::path dir = fs::path(QUARTZ_TEST_DIR) / "dap-tests";
+    fs::create_directories(dir);
+    fs::path source = fs::absolute(dir / "main.qz");
+    std::ofstream(source, std::ios::binary) << kTests;
+    seq = 0;
+    Json functions = Json::array();
+    functions.push(Json::object().set("name", "half").set("condition", "n == 10"));
+    functions.push(Json::object().set("name", "nowhere"));
+    Json filters = Json::array();
+    filters.push("divideByZero");
+    std::string in;
+    in += request("initialize", Json::object().set("adapterID", "quartz"));
+    in += request("launch", Json::object().set("program", source.string()).set("tests", true));
+    in += request("setFunctionBreakpoints", Json::object().set("breakpoints", functions));
+    in += request("setExceptionBreakpoints", Json::object().set("filters", filters));
+    in += request("configurationDone", Json::object());
+    in += request("stackTrace", Json::object().set("threadId", 1));
+    in += request("continue", Json::object().set("threadId", 1));
+    in += request("exceptionInfo", Json::object().set("threadId", 3));
+    in += request("continue", Json::object().set("threadId", 3));
+    std::vector<Json> msgs = runSession(dir, in);
+
+    CHECK(response(msgs, 1)["body"]["supportsFunctionBreakpoints"].boolean());
+    const Json& set = response(msgs, 3)["body"]["breakpoints"];
+    REQUIRE(set.size() == 2);
+    CHECK(set[0]["verified"].boolean());
+    CHECK(set[0]["line"].integer() == 4);
+    CHECK_FALSE(set[1]["verified"].boolean());
+    const Json& top = response(msgs, 6)["body"]["stackFrames"];
+    REQUIRE(top.size() == 2);
+    CHECK(top[0]["name"].str() == "half");
+    CHECK(top[0]["line"].integer() == 4);
+    CHECK(response(msgs, 8)["body"]["exceptionId"].str() == "divideByZero");
+    std::vector<const Json*> stops = events(msgs, "stopped");
+    REQUIRE(stops.size() == 2);
+    CHECK((*stops[0])["body"]["reason"].str() == "function breakpoint");
+    CHECK((*stops[1])["body"]["reason"].str() == "exception");
+    CHECK((*stops[1])["body"]["threadId"].integer() == 3);
+}
+
 TEST_CASE("the profiler counts calls and fuel exactly") {
     quartz::SourceInput src[] = {{"p.qz", R"(fn fib(n: int) -> int {
     if n < 2 {

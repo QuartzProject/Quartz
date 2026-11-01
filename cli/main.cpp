@@ -415,7 +415,7 @@ int build(Args& a) {
     return writeFile(a.output, out.binary) ? 0 : 2;
 }
 
-// `quartz debug --dap`: the program the client launches, compiled with line probes.
+// `quartz debug --dap`: the program the client launches, compiled with line and call probes.
 std::expected<quartz::dap::DebugTarget, std::string> loadForDebug(const std::string& path) {
     std::string tool = "quartz";
     std::string cmd = "debug";
@@ -428,7 +428,7 @@ std::expected<quartz::dap::DebugTarget, std::string> loadForDebug(const std::str
     quartz::dap::DebugTarget out;
     if (!a->binaryPath.empty()) {
         auto bytes = readFile(a->binaryPath);
-        auto loaded = bytes ? quartz::load(asBytes(*bytes), {}, {.lines = true, .calls = false})
+        auto loaded = bytes ? quartz::load(asBytes(*bytes), {}, {.lines = true, .calls = true})
                             : std::unexpected(std::string("cannot read the module"));
         if (!loaded) {
             return std::unexpected(a->binaryPath + ": " + loaded.error());
@@ -438,6 +438,7 @@ std::expected<quartz::dap::DebugTarget, std::string> loadForDebug(const std::str
         a->inputs.push_back({std::string(quartz::cli::kHostInterfaceName), std::string(quartz::cli::kHostInterface)});
         quartz::CompileOptions opts;
         opts.probes.lines = true;
+        opts.probes.calls = true;
         quartz::CompileOutput compiled = quartz::compile(a->inputs, opts);
         if (!compiled.program) {
             return std::unexpected(compiled.diagnostics);

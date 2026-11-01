@@ -30,8 +30,13 @@ struct DebugTarget {
         link;
 };
 
-/// Compiles the files or package folder at `path` with line probes (vm::Probes::lines).
+/// Compiles the files or package folder at `path` with line and call probes (vm::Probes).
 using DebugLoader = std::function<std::expected<DebugTarget, std::string>(const std::string& path)>;
+
+/// The capabilities the adapter answers `initialize` with, including one exception filter per trap kind.
+Json adapterCapabilities();
+/// The exception filter of a trap kind (`divideByZero`, `panic`...).
+std::string_view trapFilterOf(ir::TrapCode code);
 
 /// Speaks the Debug Adapter Protocol over standard input and output until the client disconnects.
 int runDebugAdapter(const DebugLoader& load);
@@ -71,6 +76,19 @@ private:
         std::size_t count = 0;
     };
 
+    struct FunctionBreakpoint {
+        std::string name;
+        std::string condition;
+        std::int64_t id = 0;
+    };
+
+    // A call to a function with a function breakpoint, waiting for its first line.
+    struct Armed {
+        std::int64_t thread = 0;
+        std::size_t depth = 0;
+        std::uint32_t function = 0;
+    };
+
     struct Requested {
         std::string path;
         std::vector<std::pair<std::uint32_t, std::string>> lines;
@@ -107,6 +125,14 @@ private:
     std::int64_t refFor(const Ref& ref);
     bool conditionHolds(const std::string& condition);
 
+    // Breakpoints.cpp: function breakpoints and trap filters
+    void setExceptionBreakpoints(const Json& request);
+    void setFunctionBreakpoints(const Json& request);
+    Json resolveFunctions();
+    [[nodiscard]] bool stopsOnTrap(ir::TrapCode code) const;
+    std::optional<std::string> functionEntry(vm::Sandbox& sandbox, const vm::ProbeEvent& event, std::int64_t thread);
+    Json sourceOf(std::uint32_t function);
+
     // Threads.cpp: tasks as threads
     std::int64_t threadOf(const vm::Sandbox& sandbox, std::optional<std::uint32_t> task);
     void endThread(const vm::Sandbox& sandbox, std::optional<std::uint32_t> task);
@@ -139,7 +165,10 @@ private:
     std::atomic<bool> terminate_{false};
     Step step_ = Step::None;
     std::size_t stepDepth_ = 0;
-    bool stopOnTrap_ = true;
+    std::uint32_t trapMask_ = ~0U; // bit per ir::TrapCode
+    std::vector<FunctionBreakpoint> functionBreakpoints_;
+    std::vector<std::vector<std::size_t>> entryBreakpoints_; // per function: indices into functionBreakpoints_
+    std::vector<Armed> armed_;
     std::optional<DebugTarget> target_;
     std::string entry_ = "main";
     bool tests_ = false;
@@ -165,6 +194,7 @@ private:
     std::vector<Shown> shown_;
     std::string stopReason_;
     std::string stopText_;
+    ir::TrapCode stopTrap_ = ir::TrapCode::Unreachable;
     std::vector<Ref> refs_;
 };
 
