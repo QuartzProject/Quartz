@@ -321,6 +321,7 @@ static void levelFive(void) {
         CHECK(out != NULL && outSize == size && memcmp(out, text, size) == 0 && error == NULL);
         qz_free(out);
         CHECK(qz_inflate(packed, packedSize, (qz_framing)framing, 8, &outSize, &error) == NULL && error != NULL);
+        CHECK(error != NULL && strstr(error, "unknown framing") == NULL);
         qz_free(error);
         if (framing == QZ_FRAMING_GZIP) {
             packed[packedSize - 5] ^= 1;

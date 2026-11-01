@@ -262,7 +262,7 @@ void Checker::checkMapKey(TypeId key, Span span) {
     }
     if (!implements(key, langTrait(LangTrait::Hash))) {
         diags_.error(span, std::format("map keys must implement Hash, and '{}' does not; integers, bool, char, str, "
-                                       "handles, tuples of them and types with @derive(Eq, Hash) do",
+                                       "handles, tuples and lists of them and types with @derive(Eq, Hash) do",
                                        typeName(key)));
     }
 }

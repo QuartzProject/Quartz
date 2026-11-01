@@ -87,12 +87,13 @@ uint8_t* qz_inflate(const uint8_t* data, size_t length, qz_framing framing, size
     if (out_length != nullptr) {
         *out_length = 0;
     }
-    std::string why = "unknown framing";
+    std::string why;
     try {
         std::vector<std::uint8_t> out;
-        if (framing <= QZ_FRAMING_GZIP &&
-            quartz::stdlib::decompress(bytesIn(data, length), static_cast<quartz::stdlib::Framing>(framing), out,
-                                       max_length, why)) {
+        if (framing > QZ_FRAMING_GZIP) {
+            why = "unknown framing";
+        } else if (quartz::stdlib::decompress(bytesIn(data, length), static_cast<quartz::stdlib::Framing>(framing),
+                                              out, max_length, why)) {
             return copyBytes(out, out_length);
         }
     } catch (const std::bad_alloc&) {
