@@ -38,8 +38,14 @@ std::expected<TaskOutcome, Trap> Sandbox::runTask(std::uint32_t id, const Compil
     cur_ = regions_.back();
     curLevel_ = static_cast<std::uint32_t>(regions_.size() - 1);
     inCall_ = true;
-    Status st = probe_ == nullptr ? execute(fn, pc, R, stack_.data(), entryDepth)
-                                  : probedExecute(fn, pc, R, stack_.data(), entryDepth);
+    Status st = Status::Done;
+    if (probe_ == nullptr) {
+        st = execute(fn, pc, R, stack_.data(), entryDepth);
+    } else {
+        probeTask_ = id;
+        st = probedExecute(fn, pc, R, stack_.data(), entryDepth);
+        probeTask_ = kNoTask;
+    }
     inCall_ = false;
     InvocationArena* savedCur = cur_;
     std::uint32_t savedLevel = curLevel_;

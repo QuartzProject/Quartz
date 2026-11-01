@@ -1,4 +1,5 @@
 #include "Commands.hpp"
+#include "dap/Scheduler.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -37,8 +38,15 @@ int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::str
         sb.bind("int.ticks", hostTicks);
         auto start = std::chrono::steady_clock::now();
         auto started = sb.start();
-        auto r = started ? sb.call(a.function, {})
-                         : std::expected<quartz::vm::Slot, quartz::vm::Trap>(std::unexpected(started.error()));
+        std::expected<quartz::vm::TaskOutcome, quartz::vm::Trap> r =
+            std::unexpected(started ? quartz::vm::Trap{} : started.error());
+        if (started) {
+            quartz::dap::TickScheduler scheduler(sb);
+            r = scheduler.spawn(a.function);
+            while (r && r->kind != quartz::vm::TaskOutcome::Kind::Done) {
+                r = *scheduler.next();
+            }
+        }
         double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         if (r) {
             ++passed;

@@ -16,6 +16,7 @@ class Doc;
 
 #include <expected>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -201,6 +202,12 @@ public:
     void setProbe(ProbeFn fn, void* user = nullptr);
     /// Inside a probe: the interpreter frames of the running call or task, innermost first.
     [[nodiscard]] std::vector<FrameView> frames() const;
+    /// Inside a probe: the task running, or nothing for a plain call.
+    [[nodiscard]] std::optional<std::uint32_t> probeTask() const;
+    /// The frames of a suspended interpreted task, innermost first; empty for a running, native or finished one.
+    [[nodiscard]] std::vector<FrameView> taskFrames(std::uint32_t task) const;
+    /// Inside a probe: a str of valid UTF-8 `text` in the running call's or task's own arena; null otherwise.
+    Str* probeStr(std::string_view text);
 
     // Runtime.cpp and MapRuntime.cpp (used by the interpreter)
     Str* allocStr(std::size_t len);
@@ -419,6 +426,7 @@ private:
     std::uint32_t finishedTask_ = kNoTask; // finished by the last spawn or resume; its result is at stack_[0]
     std::uint32_t finishedSlots_ = 0;
     static constexpr std::uint32_t kNoTask = 0xFFFFFFFF;
+    std::uint32_t probeTask_ = kNoTask; // the task a probed run belongs to
     void finishTask(std::uint32_t id, std::uint32_t slots);
 
     // DeepCopy.cpp: walks over values keep their pending containers here, never on the native stack.

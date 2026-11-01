@@ -39,12 +39,13 @@ Json Session::stackTrace(const Json& args) {
     auto start = static_cast<std::size_t>(std::max<std::int64_t>(args["startFrame"].integer(), 0));
     std::int64_t levels = args["levels"].integer();
     Json frames = Json::array();
-    for (std::size_t i = start; i < frames_.size() && (levels <= 0 || i < start + static_cast<std::size_t>(levels));
-         ++i) {
-        const vm::FrameView& f = frames_[i];
+    std::optional<Shown> shown = framesOf(args.has("threadId") ? args["threadId"].integer() : current_);
+    std::size_t total = shown ? shown->count : 0;
+    for (std::size_t i = start; i < total && (levels <= 0 || i < start + static_cast<std::size_t>(levels)); ++i) {
+        const vm::FrameView& f = frames_[shown->begin + i];
         const vm::CompiledFunction& fn = p.functions[f.function];
         Json frame = Json::object()
-                         .set("id", static_cast<std::int64_t>(i + 1))
+                         .set("id", static_cast<std::int64_t>(shown->begin + i + 1))
                          .set("name", fn.name)
                          .set("line", f.line)
                          .set("column", 1);
@@ -59,9 +60,7 @@ Json Session::stackTrace(const Json& args) {
         }
         frames.push(std::move(frame));
     }
-    return Json::object()
-        .set("stackFrames", std::move(frames))
-        .set("totalFrames", static_cast<std::int64_t>(frames_.size()));
+    return Json::object().set("stackFrames", std::move(frames)).set("totalFrames", static_cast<std::int64_t>(total));
 }
 
 std::int64_t Session::refFor(const Ref& ref) {
@@ -119,14 +118,14 @@ std::vector<std::pair<std::string, vm::ValueRef>> Session::visibleLocals(std::si
     return out;
 }
 
-Json Session::variable(std::string name, const vm::ValueRef& v) {
+Json Session::variable(std::string name, const vm::ValueRef& v, std::size_t frame) {
     const vm::Program& p = *target_->program;
     std::size_t kids = vm::childCount(p, v);
     Json out = Json::object()
                    .set("name", std::move(name))
                    .set("value", vm::showValue(p, v))
                    .set("type", p.module->types.name(v.type))
-                   .set("variablesReference", kids > 0 ? refFor({0, -1, v}) : std::int64_t{0});
+                   .set("variablesReference", kids > 0 ? refFor({frame, -1, v}) : std::int64_t{0});
     if (kids > 0 && p.module->types.kind(v.type) == ir::TypeKind::List) {
         out.set("indexedVariables", static_cast<std::int64_t>(kids));
     }
@@ -142,14 +141,14 @@ Json Session::variables(const Json& args) {
     Ref ref = refs_[static_cast<std::size_t>(id - 1)];
     if (ref.scope >= 0) {
         for (auto& [name, value] : visibleLocals(ref.frame, ref.scope)) {
-            out.push(variable(name, value));
+            out.push(variable(name, value, ref.frame));
         }
     } else {
         auto start = static_cast<std::size_t>(std::max<std::int64_t>(args["start"].integer(), 0));
         std::int64_t count = args["count"].integer();
         std::size_t limit = count > 0 ? static_cast<std::size_t>(count) : 1000;
         for (vm::ValueChild& c : vm::childrenOf(*target_->program, ref.value, start, limit)) {
-            out.push(variable(std::move(c.name), c.value));
+            out.push(variable(std::move(c.name), c.value, ref.frame));
         }
     }
     return Json::object().set("variables", std::move(out));
@@ -225,7 +224,7 @@ std::expected<Json, std::string> Session::evaluate(const Json& args) {
     if (!v) {
         return std::unexpected(v.error());
     }
-    Json var = variable("", *v);
+    Json var = variable("", *v, f);
     return Json::object()
         .set("result", std::string(var["value"].str()))
         .set("type", std::string(var["type"].str()))

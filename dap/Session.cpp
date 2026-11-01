@@ -111,9 +111,9 @@ void Session::handle(const Json& msg) {
         configured_ = true;
         maybeStart();
     } else if (cmd == "threads") {
-        std::lock_guard lock(mutex_);
-        Json threads = Json::array();
-        threads.push(Json::object().set("id", 1).set("name", threadName_));
+        std::unique_lock lock(mutex_);
+        Json threads = threadList();
+        lock.unlock();
         respond(msg, Json::object().set("threads", std::move(threads)));
     } else if (cmd == "pause") {
         pause_ = true;
@@ -126,9 +126,10 @@ void Session::handle(const Json& msg) {
             return;
         }
         Step step = cmd == "next" ? Step::Over : cmd == "stepIn" ? Step::In : cmd == "stepOut" ? Step::Out : Step::None;
+        std::int64_t thread = args.has("threadId") ? args["threadId"].integer() : current_;
         lock.unlock();
         respond(msg, cmd == "continue" ? Json::object().set("allThreadsContinued", true) : Json::object());
-        resume(step);
+        resume(step, thread);
     } else if (cmd == "stackTrace" || cmd == "scopes" || cmd == "variables" || cmd == "evaluate" ||
                cmd == "exceptionInfo") {
         std::unique_lock lock(mutex_);
@@ -169,6 +170,7 @@ void Session::handle(const Json& msg) {
                 state_ = State::Running;
                 stopped_ = nullptr;
                 frames_.clear();
+                shown_.clear();
                 refs_.clear();
             }
         }
@@ -208,7 +210,12 @@ void Session::launch(const Json& request) {
         tests_ = args["tests"].boolean();
         filter_ = std::string(args["filter"].str());
         noDebug_ = args["noDebug"].boolean();
-        threadName_ = tests_ ? "tests" : entry_;
+        tasks_.clear();
+        for (const Json& t : args["tasks"].items()) {
+            if (!t.str().empty()) {
+                tasks_.emplace_back(t.str());
+            }
+        }
         step_ = args["stopOnEntry"].boolean() && !noDebug_ ? Step::In : Step::None;
         const vm::Program& p = *target_->program;
         fnFile_.clear();
@@ -313,16 +320,19 @@ bool Session::waitForStop(std::unique_lock<std::mutex>& lock) {
     return state_ == State::Stopped;
 }
 
-void Session::resume(Step step) {
+void Session::resume(Step step, std::int64_t thread) {
     {
         std::lock_guard lock(mutex_);
         if (state_ != State::Stopped) {
             return;
         }
-        step_ = step;
-        stepDepth_ = frames_.empty() ? 0 : frames_.size() - 1;
+        std::optional<Shown> frames = framesOf(thread);
+        step_ = frames && frames->count > 0 ? step : Step::None;
+        stepThread_ = thread;
+        stepDepth_ = frames && frames->count > 0 ? frames->count - 1 : 0;
         stopped_ = nullptr;
         frames_.clear();
+        shown_.clear();
         refs_.clear();
         state_ = State::Running;
     }

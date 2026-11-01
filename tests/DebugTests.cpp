@@ -175,6 +175,77 @@ TEST_CASE("scripted debug session: breakpoints, steps, variables and a trap") {
     CHECK(printed);
 }
 
+constexpr std::string_view kTasks = R"(fn bump(n: int) -> int {
+    return n + 1
+}
+
+suspend fn ticker() {
+    var i = 0
+    while i < 2 {
+        wait 2.ticks
+        i = bump(i)
+    }
+}
+
+suspend fn main() {
+    var label = "start"
+    wait 3.ticks
+    print("{label}")
+}
+)";
+
+std::vector<Json> runSession(const fs::path& dir, const std::string& in) {
+    std::ofstream(dir / "in", std::ios::binary) << in;
+    std::string cmd = std::string("\"") + QUARTZ_CLI_PATH + "\" debug --dap < \"" + (dir / "in").string() + "\" > \"" +
+                      (dir / "out").string() + "\" 2> \"" + (dir / "err").string() + "\"";
+    REQUIRE(std::system(cmd.c_str()) == 0);
+    std::stringstream ss;
+    ss << std::ifstream(dir / "out", std::ios::binary).rdbuf();
+    return readFrames(ss.str());
+}
+
+TEST_CASE("scripted debug session: tasks as threads") {
+    fs::path dir = fs::path(QUARTZ_TEST_DIR) / "dap-tasks";
+    fs::create_directories(dir);
+    fs::path source = fs::absolute(dir / "main.qz");
+    std::ofstream(source, std::ios::binary) << kTasks;
+    Json path = Json::object().set("path", source.string());
+    Json tasks = Json::array();
+    tasks.push("ticker");
+    seq = 0;
+    Json bps = Json::array();
+    bps.push(Json::object().set("line", 9));
+    std::string in;
+    in += request("initialize", Json::object().set("adapterID", "quartz"));
+    in += request("launch", Json::object().set("program", source.string()).set("tasks", tasks));
+    in += request("setBreakpoints", Json::object().set("source", path).set("breakpoints", bps));
+    in += request("configurationDone", Json::object());
+    in += request("stackTrace", Json::object().set("threadId", 2));
+    in += request("threads", Json::object());
+    in += request("stackTrace", Json::object().set("threadId", 1));
+    in += request("setBreakpoints", Json::object().set("source", path).set("breakpoints", Json::array()));
+    in += request("next", Json::object().set("threadId", 2));
+    in += request("stackTrace", Json::object().set("threadId", 2));
+    in += request("continue", Json::object().set("threadId", 2));
+    std::vector<Json> msgs = runSession(dir, in);
+
+    const Json& threads = response(msgs, 6)["body"]["threads"];
+    REQUIRE(threads.size() == 2);
+    CHECK(threads[0]["name"].str() == "main");
+    CHECK(threads[1]["name"].str() == "ticker");
+    CHECK(response(msgs, 5)["body"]["stackFrames"][0]["line"].integer() == 9);
+    const Json& waiting = response(msgs, 7)["body"]["stackFrames"];
+    REQUIRE(waiting.size() == 1);
+    CHECK(waiting[0]["name"].str() == "main");
+    CHECK(waiting[0]["line"].integer() == 15);
+    CHECK(response(msgs, 10)["body"]["stackFrames"][0]["line"].integer() == 8);
+    std::vector<const Json*> stops = events(msgs, "stopped");
+    REQUIRE(stops.size() == 2);
+    CHECK((*stops[0])["body"]["threadId"].integer() == 2);
+    CHECK((*stops[1])["body"]["reason"].str() == "step");
+    CHECK(events(msgs, "thread").size() == 4);
+}
+
 TEST_CASE("the profiler counts calls and fuel exactly") {
     quartz::SourceInput src[] = {{"p.qz", R"(fn fib(n: int) -> int {
     if n < 2 {

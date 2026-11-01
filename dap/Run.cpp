@@ -1,3 +1,4 @@
+#include "Scheduler.hpp"
 #include "Session.hpp"
 
 #include <algorithm>
@@ -85,26 +86,20 @@ int Session::runMain() {
         output("stderr", *err + "\n");
         return 3;
     }
-    std::uint32_t fn = program->findFunction(entry_);
-    if (fn == ~0U) {
-        output("stderr", std::format("no function '{}'\n", entry_));
-        return 2;
+    std::vector<std::uint32_t> functions;
+    std::vector<std::string> names{entry_};
+    names.insert(names.end(), tasks_.begin(), tasks_.end());
+    for (const std::string& name : names) {
+        auto fn = program->lookupFunction(name);
+        if (!fn) {
+            output("stderr", fn.error() == vm::LookupError::Ambiguous
+                                 ? std::format("several functions are called '{}'; add their package\n", name)
+                                 : std::format("no function '{}'\n", name));
+            return 2;
+        }
+        functions.push_back(*fn);
     }
-    auto t = sb.spawn(fn, {});
-    while (t && t->kind != vm::TaskOutcome::Kind::Done && !terminate_) {
-        t = sb.resume(t->task);
-    }
-    if (terminate_) {
-        return 0;
-    }
-    if (!t) {
-        output("stderr", t.error().describe() + "\n");
-        return 3;
-    }
-    if (program->functions[fn].result == ir::kI64) {
-        output("stdout", std::format("{}\n", t->value.i));
-    }
-    return 0;
+    return runTasks(sb, functions);
 }
 
 int Session::runTests() {
@@ -116,16 +111,30 @@ int Session::runTests() {
         if (a.name != "test" || (!filter_.empty() && name.find(filter_) == std::string::npos) || terminate_) {
             continue;
         }
-        {
-            std::lock_guard lock(mutex_);
-            threadName_ = name;
-        }
         vm::Sandbox sb(program);
         std::shared_ptr<void> keep;
         std::optional<std::string> err = prepare(sb, keep);
-        auto r =
-            err ? std::expected<vm::Slot, vm::Trap>(std::unexpected(vm::Trap{ir::TrapCode::HostError, *err, {}, 0}))
-                : sb.call(a.function, {});
+        std::expected<void, vm::Trap> r;
+        if (err) {
+            r = std::unexpected(vm::Trap{ir::TrapCode::HostError, *err, {}, 0});
+        } else {
+            {
+                std::lock_guard lock(mutex_);
+                spawning_ = name;
+            }
+            TickScheduler scheduler(sb);
+            auto t = scheduler.spawn(a.function);
+            while (t && !terminate_ && t->kind != vm::TaskOutcome::Kind::Done) {
+                t = *scheduler.next();
+            }
+            scheduler.cancelAll();
+            std::lock_guard lock(mutex_);
+            spawning_.clear();
+            endThreads(sb);
+            if (!t) {
+                r = std::unexpected(t.error());
+            }
+        }
         if (terminate_) {
             break;
         }
@@ -148,7 +157,9 @@ void Session::stop(vm::Sandbox& sandbox, std::string reason, std::string text, s
     refs_.clear();
     stopReason_ = std::move(reason);
     stopText_ = std::move(text);
-    Json body = Json::object().set("reason", stopReason_).set("threadId", 1).set("allThreadsStopped", true);
+    current_ = threadOf(sandbox, sandbox.probeTask());
+    shown_.assign(1, Shown{current_, 0, frames_.size()});
+    Json body = Json::object().set("reason", stopReason_).set("threadId", current_).set("allThreadsStopped", true);
     if (!stopText_.empty()) {
         body.set("description", stopReason_ == "exception" ? "Trapped" : stopText_).set("text", stopText_);
     }
@@ -185,10 +196,11 @@ bool Session::onProbe(vm::Sandbox& sandbox, const vm::ProbeEvent& event) {
     }
     std::unique_lock lock(mutex_);
     std::string reason;
+    bool stepping = step_ != Step::None && threadOf(sandbox, sandbox.probeTask()) == stepThread_;
     if (pause_.exchange(false)) {
         reason = "pause";
-    } else if (step_ == Step::In || (step_ == Step::Over && event.depth <= stepDepth_) ||
-               (step_ == Step::Out && event.depth < stepDepth_)) {
+    } else if (stepping && (step_ == Step::In || (step_ == Step::Over && event.depth <= stepDepth_) ||
+                            (step_ == Step::Out && event.depth < stepDepth_))) {
         reason = "step";
     } else {
         // Conditions read the frame the probe stopped in.

@@ -112,7 +112,7 @@ void Checker::checkAttributes(FnInfo* fn) {
             diags_.error(a.span, "the command name must be a string");
         }
         if (name == "test") {
-            bool runnable = !fn->isSuspend && !fn->generic() && fn->result == ir::kVoid;
+            bool runnable = !fn->generic() && fn->result == ir::kVoid;
             for (TypeId p : fn->params) {
                 runnable = runnable && types_->kind(p) == ir::TypeKind::State;
             }

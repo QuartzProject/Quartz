@@ -56,6 +56,21 @@ private:
         std::int64_t id = 0;
     };
 
+    // A DAP thread: one task of a sandbox, or a plain call (a test that does not suspend).
+    struct Thread {
+        std::int64_t id = 0;
+        const vm::Sandbox* sandbox = nullptr;
+        std::optional<std::uint32_t> task;
+        std::string name;
+    };
+
+    // Frames handed out for one thread while stopped: frames_[begin, begin + count).
+    struct Shown {
+        std::int64_t thread = 0;
+        std::size_t begin = 0;
+        std::size_t count = 0;
+    };
+
     struct Requested {
         std::string path;
         std::vector<std::pair<std::uint32_t, std::string>> lines;
@@ -79,7 +94,7 @@ private:
     Json resolve(const Requested& req);
     void maybeStart();
     bool waitForStop(std::unique_lock<std::mutex>& lock);
-    void resume(Step step);
+    void resume(Step step, std::int64_t thread);
 
     // Variables.cpp: frames, scopes, values, evaluate and conditions
     Json stackTrace(const Json& args);
@@ -88,9 +103,17 @@ private:
     std::expected<Json, std::string> evaluate(const Json& args);
     std::expected<vm::ValueRef, std::string> lookup(std::size_t frame, std::string_view path);
     std::vector<std::pair<std::string, vm::ValueRef>> visibleLocals(std::size_t frame, int scope);
-    Json variable(std::string name, const vm::ValueRef& v);
+    Json variable(std::string name, const vm::ValueRef& v, std::size_t frame);
     std::int64_t refFor(const Ref& ref);
     bool conditionHolds(const std::string& condition);
+
+    // Threads.cpp: tasks as threads
+    std::int64_t threadOf(const vm::Sandbox& sandbox, std::optional<std::uint32_t> task);
+    void endThread(const vm::Sandbox& sandbox, std::optional<std::uint32_t> task);
+    void endThreads(const vm::Sandbox& sandbox);
+    Json threadList();
+    std::optional<Shown> framesOf(std::int64_t thread);
+    int runTasks(vm::Sandbox& sb, const std::vector<std::uint32_t>& functions);
 
     // Run.cpp
     void programThread();
@@ -121,7 +144,12 @@ private:
     std::string entry_ = "main";
     bool tests_ = false;
     std::string filter_;
-    std::string threadName_ = "main";
+    std::vector<std::string> tasks_;
+    std::vector<Thread> threads_;
+    std::int64_t nextThread_ = 1;
+    std::int64_t current_ = 0;    // the thread of the stop
+    std::int64_t stepThread_ = 0; // the thread a step waits for
+    std::string spawning_;        // the name of the next thread a probe meets
     std::vector<Requested> requested_;
     std::vector<std::vector<Breakpoint>> fnBreakpoints_; // per function
     std::vector<std::string> fnFile_;                    // per function: canonical source path
@@ -134,6 +162,7 @@ private:
     // Valid while stopped.
     vm::Sandbox* stopped_ = nullptr;
     std::vector<vm::FrameView> frames_;
+    std::vector<Shown> shown_;
     std::string stopReason_;
     std::string stopText_;
     std::vector<Ref> refs_;

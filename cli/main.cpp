@@ -1,6 +1,7 @@
 #include "Commands.hpp"
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
+#include "dap/Scheduler.hpp"
 #include "dap/Session.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
@@ -50,7 +51,7 @@ constexpr const char* kQilnDocs = "https://quartzlang.org/docs/qiln.html";
 int usage() {
     std::fprintf(stderr,
                  "usage: quartz check|ir|run|dis|test <file.qz|file.qzi|package dir>... | <file.qzb> [--entry name]\n"
-                 "                [--filter text] (test) [--profile] [--profile-out file.json] (run)\n"
+                 "                [--filter text] (test) [--task name]... [--profile] [--profile-out file.json] (run)\n"
                  "                [--deny-warnings] [--rule <warning rule|*>=ignore|warning|error]... (also build)\n"
                  "                [--trust <public key hex>]... [--require-signature] [--host-only]\n"
                  "                [--source-name <name>] <source>: the name traces and lines show for the next file "
@@ -150,7 +151,7 @@ void bindHost(quartz::vm::Sandbox& sb) {
 }
 
 int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const std::string& entry,
-               quartz::vm::Profiler* profiler) {
+               const std::vector<std::string>& tasks, quartz::vm::Profiler* profiler) {
     quartz::vm::Sandbox sb(program);
     bindHost(sb);
     if (profiler != nullptr) {
@@ -160,37 +161,52 @@ int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const 
         std::fprintf(stderr, "%s\n", s.error().describe().c_str());
         return 3;
     }
-    auto found = program->lookupFunction(entry);
-    if (!found) {
-        std::fprintf(stderr,
-                     found.error() == quartz::vm::LookupError::Ambiguous
-                         ? "several functions are called '%s'; add their package\n"
-                         : "no function '%s'\n",
-                     entry.c_str());
-        return 2;
-    }
-    std::uint32_t fn = *found;
-    auto t = sb.spawn(fn, {});
-    std::uint64_t ticks = 0;
-    std::uint64_t yields = 0;
-    while (t && t->kind != quartz::vm::TaskOutcome::Kind::Done) {
-        if (t->kind == quartz::vm::TaskOutcome::Kind::Wait) {
-            ticks += t->value.u;
-        } else if (t->kind == quartz::vm::TaskOutcome::Kind::Yield) {
-            ++yields;
+    std::vector<std::uint32_t> functions;
+    std::vector<std::string> names{entry};
+    names.insert(names.end(), tasks.begin(), tasks.end());
+    for (const std::string& name : names) {
+        auto found = program->lookupFunction(name);
+        if (!found) {
+            std::fprintf(stderr,
+                         found.error() == quartz::vm::LookupError::Ambiguous
+                             ? "several functions are called '%s'; add their package\n"
+                             : "no function '%s'\n",
+                         name.c_str());
+            return 2;
         }
-        t = sb.resume(t->task);
+        functions.push_back(*found);
+    }
+    quartz::dap::TickScheduler scheduler(sb);
+    auto t = scheduler.spawn(functions[0]);
+    std::optional<std::uint32_t> entryTask;
+    std::optional<quartz::vm::Slot> result;
+    if (t && t->kind == quartz::vm::TaskOutcome::Kind::Done) {
+        result = t->value;
+    } else if (t) {
+        entryTask = t->task;
+    }
+    for (std::size_t i = 1; t && i < functions.size(); ++i) {
+        t = scheduler.spawn(functions[i]);
+    }
+    while (t && !scheduler.pending().empty()) {
+        std::uint32_t task = scheduler.pending().front().task;
+        t = *scheduler.next();
+        if (t && t->kind == quartz::vm::TaskOutcome::Kind::Done && entryTask == task) {
+            result = t->value;
+        }
     }
     if (!t) {
+        scheduler.cancelAll();
         std::fprintf(stderr, "%s\n", t.error().describe().c_str());
         return 3;
     }
-    if (ticks > 0 || yields > 0) {
+    if (scheduler.ticksWaited() > 0 || scheduler.yields() > 0) {
         std::fprintf(stderr, "[%llu ticks waited, %llu fuel yields, %zu bytes in use]\n",
-                     static_cast<unsigned long long>(ticks), static_cast<unsigned long long>(yields), sb.memoryUsed());
+                     static_cast<unsigned long long>(scheduler.ticksWaited()),
+                     static_cast<unsigned long long>(scheduler.yields()), sb.memoryUsed());
     }
-    if (program->functions[fn].result == quartz::ir::kI64) {
-        std::printf("%lld\n", static_cast<long long>(t->value.i));
+    if (result && program->functions[functions[0]].result == quartz::ir::kI64) {
+        std::printf("%lld\n", static_cast<long long>(result->i));
     }
     return 0;
 }
@@ -199,6 +215,7 @@ struct Args {
     std::vector<quartz::SourceInput> inputs;
     std::string binaryPath;
     std::string entry = "main";
+    std::vector<std::string> tasks;
     std::string output;
     std::string seedPath;
     std::vector<quartz::ir::PublicKey> trusted;
@@ -284,6 +301,8 @@ std::optional<Args> parseArgs(int argc, char** argv) {
             a.rules.push_back(std::move(*setting));
         } else if (arg == "--entry" && hasValue) {
             a.entry = argv[++i];
+        } else if (arg == "--task" && hasValue) {
+            a.tasks.emplace_back(argv[++i]);
         } else if (arg == "-o" && hasValue) {
             a.output = argv[++i];
         } else if (arg == "--sign" && hasValue) {
@@ -562,10 +581,10 @@ int main(int argc, char** argv) {
         return usage();
     }
     if (!args->profile) {
-        return runProgram(program, args->entry, nullptr);
+        return runProgram(program, args->entry, args->tasks, nullptr);
     }
     quartz::vm::Profiler profiler;
-    int code = runProgram(program, args->entry, &profiler);
+    int code = runProgram(program, args->entry, args->tasks, &profiler);
     std::fputs(profiler.report(*program).c_str(), stderr);
     if (!args->profileOut.empty()) {
         std::string json = profiler.speedscope(*program);
