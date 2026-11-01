@@ -248,3 +248,21 @@ internal actual external fun qzAttributeArg(
 ): Boolean
 
 internal actual external fun qzTaskResult(sandbox: Long, task: Int, out: LongArray, slots: Int): Int
+
+internal actual external fun qzSandboxStrLossy(sandbox: Long, text: ByteArray): Long
+
+internal actual external fun qzCallStrLossy(call: Long, text: ByteArray): Long
+
+internal actual external fun qzDeflate(data: ByteArray, level: Int, framing: Int): ByteArray?
+
+internal actual external fun qzInflate(data: ByteArray, framing: Int, maxLength: Int, error: Array<String?>): ByteArray?
+
+internal actual external fun qzCrc32(crc: Int, data: ByteArray): Int
+
+internal actual external fun qzFunctionDoc(program: Long, function: Int): String
+
+internal actual external fun qzTypeDoc(program: Long, type: Int): String
+
+internal actual external fun qzTypeMemberDoc(program: Long, type: Int, index: Int): String
+
+internal actual external fun qzTypeVariantBoxed(program: Long, type: Int, variant: Int, index: Int): Boolean

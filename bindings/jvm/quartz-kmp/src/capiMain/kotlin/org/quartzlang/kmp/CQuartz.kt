@@ -36,7 +36,7 @@ internal actual fun platformCompile(sources: List<Source>, options: CompileOptio
     return CProgram(p, text, diagnostics)
 }
 
-private const val API_LEVEL_NEEDED = 4
+private const val API_LEVEL_NEEDED = 5
 
 private fun readDiagnostics(d: Long): List<Diagnostic> {
     val range = IntArray(4)
@@ -58,6 +58,18 @@ internal actual fun platformLoad(bytes: ByteArray, trustedKeys: List<ByteArray>,
     }
     return CProgram(p, "", emptyList())
 }
+
+internal actual fun platformDeflate(data: ByteArray, level: Int, framing: Framing): ByteArray =
+    qzDeflate(data, level, framing.ordinal) ?: throw QuartzException("out of memory compressing")
+
+internal actual fun platformInflate(data: ByteArray, framing: Framing, maxLength: Int): ByteArray {
+    val error = arrayOfNulls<String>(1)
+    return qzInflate(data, framing.ordinal, maxLength, error)
+        ?: throw QuartzException(error[0] ?: "cannot decompress the data")
+}
+
+internal actual fun platformCrc32(crc: Long, data: ByteArray): Long =
+    qzCrc32(crc.toInt(), data).toLong() and 0xFFFF_FFFFL
 
 internal actual fun platformSandbox(program: Program, limits: Limits): Sandbox {
     val p = program as? CProgram ?: throw IllegalArgumentException("a program of another runtime")
@@ -139,20 +151,26 @@ internal class CProgram(
             Kind.STRUCT, Kind.TUPLE -> fields = List(qzTypeFieldCount(p, id)) { i ->
                 val f = qzTypeField(p, id, i)
                 val name = if (t.kind == Kind.STRUCT) qzTypeFieldName(p, id, i) else ""
-                Type.Field(name, type((f ushr 32).toInt()), f.toInt())
+                Type.Field(name, type((f ushr 32).toInt()), f.toInt(), doc = qzTypeMemberDoc(p, id, i))
             }
             Kind.ENUM -> cases = List(qzTypeVariantCount(p, id)) { v ->
                 val payload = List(qzTypeVariantPayloadCount(p, id, v)) { i ->
                     val f = qzTypeVariantPayload(p, id, v, i)
-                    Type.Field("", type((f ushr 32).toInt()), f.toInt())
+                    val valueId = (f ushr 32).toInt()
+                    if (qzTypeVariantBoxed(p, id, v, i)) {
+                        Type.Field("", type(qzTypeElem(p, valueId)), f.toInt(), box = type(valueId))
+                    } else {
+                        Type.Field("", type(valueId), f.toInt())
+                    }
                 }
-                Type.Case(qzTypeVariantName(p, id, v), v, payload)
+                Type.Case(qzTypeVariantName(p, id, v), v, payload, qzTypeMemberDoc(p, id, v))
             }
             Kind.NULLABLE -> pointer = qzTypeNullableIsPointer(p, id)
             else -> {}
         }
         t.name = qzTypeName(p, id)
         t.packageName = qzTypePackage(p, id)
+        t.doc = qzTypeDoc(p, id)
         t.complete(element, key, fields, cases, pointer)
         t
     }
@@ -191,7 +209,7 @@ internal class CProgram(
             this, qzFunctionName(p, index), index, Signature(params, type(qzFunctionResultType(p, index))),
             qzFunctionPackage(p, index), List(arity) { qzFunctionParamName(p, index, it) },
             Visibility.of(qzFunctionVisibility(p, index)), qzFunctionIsSuspend(p, index),
-            qzFunctionIsExported(p, index),
+            qzFunctionIsExported(p, index), qzFunctionDoc(p, index),
         )
     }
 
@@ -243,6 +261,7 @@ internal class CExport(
     override val visibility: Visibility,
     override val isSuspend: Boolean,
     override val isExported: Boolean,
+    override val doc: String,
 ) : Export {
     override val attributes: List<Attribute> by lazy { program.attributesOf(index) }
 

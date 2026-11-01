@@ -35,11 +35,23 @@ public enum class TrapCode {
 
 /** A type: its kind, the slots it takes (a struct takes the sum of its fields), its id and its parts. */
 public class Type(public val kind: Kind, public val slots: Int = 1, public val id: Int = 0, element: Type? = null) {
-    /** A field of a struct, an element of a tuple ([name] empty) or a value of a variant, at slot [offset]. */
-    public data class Field(val name: String, val type: Type, val offset: Int)
+    /**
+     * A field of a struct, an element of a tuple ([name] empty) or a value of a variant, at slot [offset], with its
+     * `///` [doc]. A recursive payload has [box], the list of one element its slot holds, and [type] is the value's.
+     */
+    public data class Field(
+        val name: String,
+        val type: Type,
+        val offset: Int,
+        val box: Type? = null,
+        val doc: String = "",
+    ) {
+        /** True for a recursive payload, read and taken as the value itself. */
+        val boxed: Boolean get() = box != null
+    }
 
-    /** A variant of an enum: its [name], the value of slot 0 ([index]) and the values it carries. */
-    public data class Case(val name: String, val index: Int, val payload: List<Field>)
+    /** A variant of an enum: its [name], the value of slot 0 ([index]), the values it carries and its `///` [doc]. */
+    public data class Case(val name: String, val index: Int, val payload: List<Field>, val doc: String = "")
 
     /** The element of a list or nullable, the value of a map, or null. */
     public var element: Type? = element
@@ -65,6 +77,10 @@ public class Type(public val kind: Kind, public val slots: Int = 1, public val i
 
     /** The package of a struct, enum or handle type (`org.example`); empty for others and when unknown. */
     public var packageName: String = ""
+        internal set
+
+    /** The `///` text of a struct or enum declaration; empty for other types and when it has none. */
+    public var doc: String = ""
         internal set
 
     /** [name] with its package in front, when it has one. */

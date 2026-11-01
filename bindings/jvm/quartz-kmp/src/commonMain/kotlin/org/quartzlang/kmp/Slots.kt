@@ -8,6 +8,8 @@ internal object Slots {
 
         fun bytes(data: ByteArray): Long
 
+        fun stringLossy(text: ByteArray): Long
+
         fun list(type: Type, elements: List<*>): Long
 
         fun map(type: Type, entries: Map<*, *>): Long
@@ -126,7 +128,7 @@ internal object Slots {
         Kind.STR, Kind.BYTES, Kind.LIST, Kind.MAP, Kind.FUNCTION -> true
         Kind.NULLABLE -> type.element?.let(::holdsReferences) ?: true
         Kind.STRUCT, Kind.TUPLE -> type.fields.any { holdsReferences(it.type) }
-        Kind.ENUM -> type.cases.any { c -> c.payload.any { holdsReferences(it.type) } }
+        Kind.ENUM -> type.cases.any { c -> c.payload.any { it.boxed || holdsReferences(it.type) } }
         else -> false
     }
 
@@ -165,12 +167,28 @@ internal object Slots {
     private fun fill(fields: List<Type.Field>, values: List<Any?>, out: LongArray, at: Int, makers: Makers) {
         for (i in values.indices) {
             val f = fields[i]
-            encode(f.type, values[i], out, at + f.offset, makers)
+            val box = f.box
+            if (box != null) {
+                out[at + f.offset] = makers.list(box, listOf(values[i]))
+            } else {
+                encode(f.type, values[i], out, at + f.offset, makers)
+            }
         }
     }
 
     private fun read(fields: List<Type.Field>, slots: LongArray, at: Int, readers: Readers): List<Any?> =
-        fields.map { decode(it.type, slots, at + it.offset, readers) }
+        fields.map { f ->
+            val box = f.box
+            if (box == null) {
+                decode(f.type, slots, at + f.offset, readers)
+            } else {
+                val one = readers.list(box, slots[at + f.offset])
+                if (one.size != 1) {
+                    throw QuartzException("a recursive payload holds ${one.size} values instead of one")
+                }
+                one[0]
+            }
+        }
 
     private fun scalar(type: Type, value: Any?, makers: Makers): Long {
         val kind = type.kind
@@ -183,7 +201,11 @@ internal object Slots {
             Kind.F64 -> floating(type, value).toRawBits()
             Kind.F32 -> floating(type, value).toFloat().toRawBits().toLong() and 0xFFFF_FFFFL
             Kind.CHAR -> codePoint(type, value)
-            Kind.STR -> if (value is String) makers.string(value.encodeToByteArray()) else throw mismatch(type, value)
+            Kind.STR -> when (value) {
+                is String -> makers.string(value.encodeToByteArray())
+                is LossyText -> makers.stringLossy(value.raw)
+                else -> throw mismatch(type, value)
+            }
             Kind.BYTES -> if (value is ByteArray) makers.bytes(value) else throw mismatch(type, value)
             Kind.LIST -> when (value) {
                 is List<*> -> makers.list(type, value)

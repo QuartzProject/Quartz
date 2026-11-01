@@ -32,7 +32,7 @@ public fun QuartzValues.from(value: Any?, type: Type, handles: HandleMapper? = n
         Kind.F64 -> Slots.floating(type, v)
         Kind.F32 -> Slots.floating(type, v).toFloat()
         Kind.CHAR -> Slots.codePoint(type, v).toInt()
-        Kind.STR -> v as? String ?: throw Slots.mismatch(type, v)
+        Kind.STR -> if (v is String || v is LossyText) v else throw Slots.mismatch(type, v)
         Kind.BYTES -> v as? ByteArray ?: throw Slots.mismatch(type, v)
         Kind.HANDLE -> when {
             v is Long -> v

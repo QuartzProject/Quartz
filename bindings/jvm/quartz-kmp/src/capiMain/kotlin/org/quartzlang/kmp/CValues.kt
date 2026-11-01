@@ -176,6 +176,12 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
             }
         }
 
+        override fun stringLossy(text: ByteArray): Long = qzCallStrLossy(call, text).also {
+            if (it == 0L) {
+                throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory returning a string")
+            }
+        }
+
         override fun list(type: Type, elements: List<*>): Long = sandbox.newList(type, elements, this)
 
         override fun map(type: Type, entries: Map<*, *>): Long = sandbox.newMap(type, entries, this)

@@ -79,7 +79,7 @@ internal fun bytesIn(bytes: ByteArray, nul: Boolean = false): Int {
 
 internal fun cString(text: String): Int = bytesIn(text.encodeToByteArray(), nul = true)
 
-private fun bytesOut(address: Int, length: Int): ByteArray = ByteArray(length) { peekU8(address + it).toByte() }
+internal fun bytesOut(address: Int, length: Int): ByteArray = ByteArray(length) { peekU8(address + it).toByte() }
 
 internal fun stringAt(address: Int): String {
     var n = 0
@@ -90,7 +90,7 @@ internal fun stringAt(address: Int): String {
 }
 
 /** Copies a string the library allocated and frees it. */
-private fun take(address: Int): String? =
+internal fun take(address: Int): String? =
     if (address == 0) null else stringAt(address).also { wasm("qz_free", address) }
 
 internal inline fun <R> withBuffer(size: Int, use: (Int) -> R): R {

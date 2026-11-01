@@ -62,6 +62,9 @@ public interface Export {
     /** Its attributes as written (`@on`, `@command`...), in source order. */
     public val attributes: List<Attribute>
 
+    /** The `///` text of its declaration, as the generated interfaces carry it; empty when it has none. */
+    public val doc: String
+
     /** The first attribute called [name] (without the `@`), or null. */
     public fun attribute(name: String): Attribute? = attributes.firstOrNull { it.name == name }
 }
@@ -96,7 +99,29 @@ public interface HostCall {
 
     /** Charges fuel for native work; false when the budget is gone. */
     public fun charge(units: Long): Boolean
+
+    /** [text] as a `str` result, each ill-formed UTF-8 sequence as U+FFFD: return it or put it in what you return. */
+    public fun stringLossy(text: ByteArray): LossyText = LossyText(text)
 }
+
+/**
+ * Bytes passed where a `str` goes, each ill-formed UTF-8 sequence decoded as U+FFFD, so text from outside (process
+ * output, headers) never fails for its content; valid anywhere a String is, at any depth.
+ */
+public class LossyText(bytes: ByteArray) {
+    internal val raw: ByteArray = bytes.copyOf()
+
+    public val bytes: ByteArray get() = raw.copyOf()
+
+    override fun equals(other: Any?): Boolean = other is LossyText && other.raw.contentEquals(raw)
+
+    override fun hashCode(): Int = raw.contentHashCode()
+
+    override fun toString(): String = "LossyText[${raw.size} bytes]"
+}
+
+/** How [Quartz.deflate] wraps DEFLATE data: bare (RFC 1951), zlib (RFC 1950) or gzip (RFC 1952). */
+public enum class Framing { RAW, ZLIB, GZIP }
 
 /** A result of a known type; what points into the sandbox (str, lists, maps) is readable until its next call. */
 public interface Value {
@@ -193,6 +218,9 @@ public interface Sandbox : AutoCloseable {
     public fun exportState(): String
     public fun importState(json: String)
 
+    /** [text] as a `str` of this sandbox, ill-formed UTF-8 as U+FFFD, to pass to a call; valid until the next one. */
+    public fun strLossy(text: ByteArray): Value
+
     /** Replaces the program in place, keeping bindings and limits and migrating every state. */
     public fun reload(next: Program)
 
@@ -231,7 +259,34 @@ public object Quartz {
         Program = platformLoad(bytes, trustedKeys, requireSignature)
 
     public fun sandbox(program: Program, limits: Limits = Limits.DEFAULT): Sandbox = platformSandbox(program, limits)
+
+    /** [data] compressed with DEFLATE at [level] (0 stores, 1 to 9, clamped) in [framing]. */
+    public fun deflate(data: ByteArray, level: Int = 6, framing: Framing = Framing.RAW): ByteArray =
+        platformDeflate(data, level, framing)
+
+    /**
+     * [data] decompressed, at most [maxLength] bytes.
+     *
+     * @throws QuartzException on a bad header, damaged data, a checksum mismatch or more output than allowed
+     */
+    public fun inflate(
+        data: ByteArray,
+        framing: Framing = Framing.RAW,
+        maxLength: Int = Int.MAX_VALUE - 8,
+    ): ByteArray {
+        require(maxLength >= 0) { "maxLength cannot be negative" }
+        return platformInflate(data, framing, maxLength)
+    }
+
+    /** CRC-32 as zip and gzip use it (0 to 2^32 - 1), from 0 or continuing a previous result over more data. */
+    public fun crc32(data: ByteArray, crc: Long = 0): Long = platformCrc32(crc, data)
 }
+
+internal expect fun platformDeflate(data: ByteArray, level: Int, framing: Framing): ByteArray
+
+internal expect fun platformInflate(data: ByteArray, framing: Framing, maxLength: Int): ByteArray
+
+internal expect fun platformCrc32(crc: Long, data: ByteArray): Long
 
 internal expect suspend fun platformInitialize()
 

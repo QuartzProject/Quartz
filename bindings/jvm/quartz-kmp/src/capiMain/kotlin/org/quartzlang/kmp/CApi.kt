@@ -262,3 +262,25 @@ internal expect fun qzAttributeArg(
 
 /** Every slot of the result of a task the last spawn or resume finished, into [out]. */
 internal expect fun qzTaskResult(sandbox: Long, task: Int, out: LongArray, slots: Int): Int
+
+/** Text with ill-formed UTF-8 as U+FFFD, as an argument (`qz_sandbox_str_lossy`). */
+internal expect fun qzSandboxStrLossy(sandbox: Long, text: ByteArray): Long
+
+/** Text with ill-formed UTF-8 as U+FFFD, as a host function's result (`qz_call_str_lossy`). */
+internal expect fun qzCallStrLossy(call: Long, text: ByteArray): Long
+
+/** `qz_deflate`; null only without memory. */
+internal expect fun qzDeflate(data: ByteArray, level: Int, framing: Int): ByteArray?
+
+/** `qz_inflate`; null with the reason in `error[0]`. */
+internal expect fun qzInflate(data: ByteArray, framing: Int, maxLength: Int, error: Array<String?>): ByteArray?
+
+internal expect fun qzCrc32(crc: Int, data: ByteArray): Int
+
+internal expect fun qzFunctionDoc(program: Long, function: Int): String
+
+internal expect fun qzTypeDoc(program: Long, type: Int): String
+
+internal expect fun qzTypeMemberDoc(program: Long, type: Int, index: Int): String
+
+internal expect fun qzTypeVariantBoxed(program: Long, type: Int, variant: Int, index: Int): Boolean

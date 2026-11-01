@@ -35,6 +35,14 @@ internal actual fun platformCompile(sources: List<Source>, options: CompileOptio
 internal actual fun platformLoad(bytes: ByteArray, trustedKeys: List<ByteArray>, requireSignature: Boolean): Program =
     translated { JvmProgram(JProgram.load(bytes, trustedKeys, requireSignature)) }
 
+internal actual fun platformDeflate(data: ByteArray, level: Int, framing: Framing): ByteArray =
+    translated { JQuartz.deflate(data, level, org.quartzlang.jvm.Framing.entries[framing.ordinal]) }
+
+internal actual fun platformInflate(data: ByteArray, framing: Framing, maxLength: Int): ByteArray =
+    translated { JQuartz.inflate(data, org.quartzlang.jvm.Framing.entries[framing.ordinal], maxLength.toLong()) }
+
+internal actual fun platformCrc32(crc: Long, data: ByteArray): Long = JQuartz.crc32(crc, data)
+
 internal actual fun platformSandbox(program: Program, limits: Limits): Sandbox = translated {
     val tier = JLimits.Tier.entries[limits.tier.ordinal]
     val p = jvm(program)
@@ -71,14 +79,16 @@ private fun typeOf(t: org.quartzlang.jvm.Type, seen: IdentityHashMap<org.quartzl
     seen[t]?.let { return it }
     val out = Type(kindOf(t.kind()), t.slots(), t.id())
     seen[t] = out
-    fun field(f: org.quartzlang.jvm.Type.Field) = Type.Field(f.name(), typeOf(f.type(), seen), f.offset())
+    fun field(f: org.quartzlang.jvm.Type.Field) =
+        Type.Field(f.name(), typeOf(f.type(), seen), f.offset(), f.box()?.let { typeOf(it, seen) }, f.doc())
     out.name = t.name()
     out.packageName = t.packageName()
+    out.doc = t.doc()
     out.complete(
         t.element()?.let { typeOf(it, seen) },
         t.key()?.let { typeOf(it, seen) },
         t.fields().map(::field),
-        t.cases().map { c -> Type.Case(c.name(), c.index(), c.payload().map(::field)) },
+        t.cases().map { c -> Type.Case(c.name(), c.index(), c.payload().map(::field), c.doc()) },
         t.isPointerNullable,
     )
     return out
@@ -99,6 +109,7 @@ internal fun fromJava(value: Any?): Any? = when (value) {
 internal fun toJava(value: Any?): Any? = when (value) {
     null, is Boolean, is Number, is Char, is String, is ByteArray, is Enum<*> -> value
     is JvmValue -> value.java
+    is LossyText -> org.quartzlang.jvm.LossyText(value.raw)
     is Unit -> null
     is Struct -> JStruct.of(value.typeName, value.names.zip(value.values.map(::toJava)).toMap(LinkedHashMap()))
     is Variant -> JVariant(value.name, value.values.map(::toJava))
@@ -149,6 +160,7 @@ internal class JvmExport(val program: JvmProgram, val java: JExport) : Export {
     override val visibility: Visibility get() = Visibility.entries[java.visibility().ordinal]
     override val isSuspend: Boolean get() = java.isSuspend
     override val isExported: Boolean get() = java.isExported
+    override val doc: String get() = java.doc()
     override val attributes: List<Attribute> by lazy {
         java.attributes().map { a ->
             val args = a.arguments().map {
@@ -224,6 +236,7 @@ internal class JvmSandbox(val java: JSandbox, private var current: JvmProgram) :
     override fun cancel(task: Int) = translated { java.cancel(task) }
     override fun exportState(): String = translated { java.exportState() }
     override fun importState(json: String) = translated { java.importState(json) }
+    override fun strLossy(text: ByteArray): Value = translated { JvmValue(java.strLossy(text)) }
     override fun reload(next: Program) = translated { java.reload(jvm(next).java) }
     override fun exportHandle(handle: Long): String = translated { java.exportHandle(handle) }
     override fun importHandle(handle: Long, json: String) = translated { java.importHandle(handle, json) }

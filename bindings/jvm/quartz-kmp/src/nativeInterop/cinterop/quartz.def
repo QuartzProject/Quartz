@@ -21,6 +21,14 @@ static inline uint64_t qzk_call_str(qz_call* call, const char* utf8, size_t leng
     return qz_call_str(call, utf8, length).u;
 }
 
+static inline uint64_t qzk_sandbox_str_lossy(qz_sandbox* sandbox, const char* text, size_t length) {
+    return qz_sandbox_str_lossy(sandbox, text, length).u;
+}
+
+static inline uint64_t qzk_call_str_lossy(qz_call* call, const char* text, size_t length) {
+    return qz_call_str_lossy(call, text, length).u;
+}
+
 static inline uint64_t qzk_sandbox_bytes(qz_sandbox* sandbox, const uint8_t* data, size_t length) {
     return qz_sandbox_bytes(sandbox, data, length).u;
 }

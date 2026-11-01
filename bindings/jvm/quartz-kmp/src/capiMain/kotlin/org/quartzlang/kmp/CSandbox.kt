@@ -96,6 +96,10 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
         qzCancel(address, task)
     }
 
+    override fun strLossy(text: ByteArray): Value = open {
+        CValue(newLossyString(text), this, group.generation, Type(Kind.STR))
+    }
+
     override fun exportState(): String = begin {
         qzExportState(address) ?: throw TrapException(TrapCode.of(qzTrapCode(address)), error())
     }
@@ -329,12 +333,22 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
             }
         }
 
+        override fun stringLossy(text: ByteArray): Long = newLossyString(text)
+
         override fun list(type: Type, elements: List<*>): Long = newList(type, elements, this)
 
         override fun map(type: Type, entries: Map<*, *>): Long = newMap(type, entries, this)
 
         override fun passBack(type: Type, value: Value, out: LongArray, at: Int) =
             this@CSandbox.passBack(type, value, out, at)
+    }
+
+    private fun newLossyString(text: ByteArray): Long {
+        val slot = qzSandboxStrLossy(address, text)
+        if (slot == 0L) {
+            throw TrapException(TrapCode.OUT_OF_MEMORY, "out of memory passing a string")
+        }
+        return slot
     }
 
     private fun newString(utf8: ByteArray): Long {
