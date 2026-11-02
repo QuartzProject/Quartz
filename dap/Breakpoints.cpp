@@ -73,11 +73,11 @@ std::string_view trapFilterOf(ir::TrapCode code) {
     return "trap";
 }
 
-void Session::setExceptionBreakpoints(const Json& request) {
+std::uint32_t trapMaskOf(const Json& filters, std::uint32_t all) {
     std::uint32_t mask = 0;
-    for (const Json& f : request["arguments"]["filters"].items()) {
+    for (const Json& f : filters.items()) {
         if (f.str() == "trap") {
-            mask = ~0U;
+            mask |= all;
         }
         for (const TrapFilter& t : kTrapFilters) {
             if (f.str() == t.filter) {
@@ -85,9 +85,13 @@ void Session::setExceptionBreakpoints(const Json& request) {
             }
         }
     }
+    return mask;
+}
+
+void Session::setExceptionBreakpoints(const Json& request) {
     {
         std::lock_guard lock(mutex_);
-        trapMask_ = mask;
+        trapMask_ = trapMaskOf(request["arguments"]["filters"], trapKinds_);
     }
     respond(request, Json::object().set("breakpoints", Json::array()));
 }

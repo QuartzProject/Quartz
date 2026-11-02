@@ -198,6 +198,10 @@ void Session::launch(const Json& request) {
         tests_ = args["tests"].boolean();
         filter_ = std::string(args["filter"].str());
         noDebug_ = args["noDebug"].boolean();
+        if (args.has("trapFilters")) {
+            trapKinds_ = trapMaskOf(args["trapFilters"], ~0U);
+            trapMask_ = trapKinds_;
+        }
         tasks_.clear();
         for (const Json& t : args["tasks"].items()) {
             if (!t.str().empty()) {

@@ -45,6 +45,9 @@ std::string_view librarySourceName(std::int64_t ref);
 /// The body of a `source` request: the text of a standard library file.
 std::expected<Json, std::string> librarySourceText(const Json& args);
 
+/// The trap kinds (bit per ir::TrapCode) of exception filter ids; `trap` stands for `all`.
+std::uint32_t trapMaskOf(const Json& filters, std::uint32_t all);
+
 /// Speaks the Debug Adapter Protocol over standard input and output until the client disconnects.
 int runDebugAdapter(const DebugLoader& load);
 
@@ -185,7 +188,8 @@ private:
     std::atomic<bool> terminate_{false};
     Step step_ = Step::None;
     std::size_t stepDepth_ = 0;
-    std::uint32_t trapMask_ = ~0U; // bit per ir::TrapCode
+    std::uint32_t trapMask_ = ~0U;  // bit per ir::TrapCode
+    std::uint32_t trapKinds_ = ~0U; // what the `trap` filter covers: launch's `trapFilters`, else every kind
     std::vector<FunctionBreakpoint> functionBreakpoints_;
     std::vector<std::vector<std::size_t>> entryBreakpoints_; // per function: indices into functionBreakpoints_
     std::vector<Armed> armed_;
