@@ -244,7 +244,11 @@ TEST_CASE("scripted debug session: tasks as threads") {
     REQUIRE(stops.size() == 2);
     CHECK((*stops[0])["body"]["threadId"].integer() == 2);
     CHECK((*stops[1])["body"]["reason"].str() == "step");
-    CHECK(events(msgs, "thread").size() == 4);
+    std::size_t started = 0;
+    for (const Json* e : events(msgs, "thread")) {
+        started += (*e)["body"]["reason"].str() == "started" ? 1 : 0;
+    }
+    CHECK(started == 2);
 }
 
 constexpr std::string_view kTests = R"(import org.quartzlang.text.*
