@@ -3,6 +3,7 @@
 // expect: none none few many true false
 // expect: 42 -1 8
 // expect: 0 5 nothing circle 2 3
+// expect: 6 a1b2 round 2.0 none
 enum Chain {
     Nil
     Cons(int, Chain)
@@ -21,6 +22,24 @@ fn kind(s: Shape) -> str {
         Rect(w, 1) | Rect(1, w) => "strip {w}"
         Rect(_, _) => "rect"
         Empty => "empty"
+    }
+}
+
+fn chainSum(start: Chain) -> int {
+    var c = start
+    var sum = 0
+    while let Chain.Cons(v, rest) = c {
+        sum += v
+        c = rest
+    }
+    return sum
+}
+
+fn roundOf(s: Shape?) -> str {
+    if let Circle(r) | Square(r) = s {
+        return "round {r}"
+    } else {
+        return "none"
     }
 }
 
@@ -101,5 +120,11 @@ fn main() -> int {
     print("{small(null)} {small(0)} {small(2)} {small(9)} {s is Circle(_) | Square(_)} {s is Empty | Rect(_, _)}")
     print("{parse("21")} {parse("x")} {firstEven([null, 3, null, 8, 10])}")
     print("{bump(null)} {bump(4)} {describe(null)} {describe(Shape.Circle(2.0))} {length("abc")}")
+    let pairs = [("b", 2), ("a", 1)]
+    var text = ""
+    while let (k, n) = pairs.pop() {
+        text += "{k}{n}"
+    }
+    print("{chainSum(Chain.Cons(1, Chain.Cons(2, Chain.Cons(3, Chain.Nil))))} {text} {roundOf(Shape.Square(2.0))} {roundOf(null)}")
     return 0
 }

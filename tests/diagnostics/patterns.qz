@@ -6,6 +6,7 @@
 // error: match is not exhaustive; add a '_' arm
 // error: 'r' is a 'str' here but a 'float' in the first alternative
 // error: 'x' is not bound by the first alternative
+// error: this pattern always matches; bind it with a plain 'let'
 
 enum Shape {
     Circle(float)
@@ -57,4 +58,10 @@ fn f(s: Shape, t: (str, float)) -> int {
         (_, r) | (r, _) => 1
     }
     return n + m
+}
+fn g(pair: (int, int)) -> int {
+    while let (x, _) = pair {
+        return x
+    }
+    return 0
 }

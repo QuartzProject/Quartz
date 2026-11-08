@@ -559,7 +559,11 @@ TypeId Checker::checkIs(IsExpr* e) {
     }
     checkPattern(e->pattern, t);
     if (patternBinds(e->pattern) && !isBindOk_.contains(e)) {
+    std::size_t errors = diags_.errorCount();
         diags_.error(e->pattern->span, "names bound by 'is' can only be used in an 'if' or 'while' condition, alone "
+    if (e->letForm && t != ir::kError && diags_.errorCount() == errors && missingCases({e->pattern}, t).empty()) {
+        diags_.error(e->pattern->span, "this pattern always matches; bind it with a plain 'let'");
+    }
                                        "or joined with '&&'");
     }
     return ir::kBool;

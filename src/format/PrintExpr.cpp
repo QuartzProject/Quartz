@@ -90,8 +90,11 @@ Extent Printer::extent(const Expr* e) const {
         return {outer(static_cast<const RangeExpr*>(e)->lo).begin, e->span.end, 0};
     case ExprKind::Cast:
         return {outer(static_cast<const CastExpr*>(e)->value).begin, e->span.end, 0};
-    case ExprKind::Is:
-        return {outer(static_cast<const IsExpr*>(e)->value).begin, e->span.end, 0};
+    case ExprKind::Is: {
+        const auto* is = static_cast<const IsExpr*>(e);
+        return is->letForm ? Extent{e->span.begin, outer(is->value).end, 0}
+                           : Extent{outer(is->value).begin, e->span.end, 0};
+    }
     case ExprKind::With:
         return {outer(static_cast<const WithExpr*>(e)->value).begin, e->span.end, 0};
     case ExprKind::Member:
@@ -412,13 +415,25 @@ void Printer::exprInner(const Expr* e) {
         space();
         type(static_cast<const CastExpr*>(e)->target);
         return;
-    case ExprKind::Is:
-        expr(static_cast<const IsExpr*>(e)->value, kPrecCast);
+    case ExprKind::Is: {
+        const auto* is = static_cast<const IsExpr*>(e);
+        if (is->letForm) {
+            text("let");
+            space();
+            pattern(is->pattern);
+            space();
+            text("=");
+            space();
+            expr(is->value);
+            return;
+        }
+        expr(is->value, kPrecCast);
         space();
         text("is");
         space();
-        pattern(static_cast<const IsExpr*>(e)->pattern);
+        pattern(is->pattern);
         return;
+    }
     case ExprKind::With:
         with(static_cast<const WithExpr*>(e));
         return;

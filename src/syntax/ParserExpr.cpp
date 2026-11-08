@@ -422,7 +422,9 @@ Expr* Parser::parseIf() {
     e->kind = ExprKind::If;
     bool saved = noBraceExpr_;
     noBraceExpr_ = true;
-    if (accept(Tok::KwLet)) {
+    if (at(Tok::KwLet) && !(peekTok().kind == Tok::Ident && peekTok(2).kind == Tok::Eq)) {
+        e->cond = parseLetPattern(advance().span, "in 'if let'");
+    } else if (accept(Tok::KwLet)) {
         e->bindName = expectIdent("binding name");
         expect(Tok::Eq, "in 'if let'");
         e->bindValue = parseExpr();
@@ -437,6 +439,19 @@ Expr* Parser::parseIf() {
     }
     e->span = begin.to(prevSpan());
     return e;
+}
+
+// `let Pattern(...) = value` is the condition `value is Pattern(...)`; `let name = value` stays a nullable binding.
+Expr* Parser::parseLetPattern(Span begin, const char* where) {
+    Pattern* pattern = parsePattern();
+    expect(Tok::Eq, where);
+    auto* c = node<IsExpr>(begin);
+    c->kind = ExprKind::Is;
+    c->letForm = true;
+    c->pattern = pattern;
+    c->value = parseExpr();
+    c->span = begin.to(prevSpan());
+    return c;
 }
 
 Expr* Parser::parseArmBody() {

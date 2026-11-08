@@ -63,6 +63,9 @@ pub suspend fn handle(event: PlayerJoinEvent, hub: HubData = 3) -> int {
     while i < 10 {
         i += 1
     }
+    while let Route.Step(_, rest) = r {
+        r = rest
+    }
     let lst = [1, 2, 3]
     let rep = [0; n + 1]
     let tup = (1,)

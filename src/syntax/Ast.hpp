@@ -275,6 +275,7 @@ struct IsExpr : Expr {
     Expr* value;
     struct Pattern* pattern;
 };
+    bool letForm = false; // written `let pattern = value` after `if` or `while`
 
 /// `value with { field = expr, ... }`: a copy of a struct with some fields replaced.
 struct WithExpr : Expr {
@@ -300,7 +301,7 @@ struct BlockExpr : Expr {
 };
 
 struct IfExpr : Expr {
-    Expr* cond;           // null for `if let`
+    Expr* cond;           // null for `if let name = value`; an IsExpr for `if let Pattern(...) = value`
     Symbol bindName;      // `if let name = value`
     Expr* bindValue;
     sema::Local* bindLocal = nullptr;
@@ -382,7 +383,7 @@ struct AssignStmt : Stmt {
 };
 
 struct WhileStmt : Stmt {
-    Expr* cond; // with `bindName`, the nullable value of `while let name = value`
+    Expr* cond; // with `bindName`, the nullable value of `while let name = value`; else an IsExpr for a pattern
     BlockExpr* body;
     Symbol bindName;
     sema::Local* bindLocal = nullptr;

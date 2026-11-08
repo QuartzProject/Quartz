@@ -42,6 +42,7 @@ public:
     Expr* parseParenOrLambda();
     Expr* parseLambda();
     Expr* parseIf();
+    Expr* parseLetPattern(Span begin, const char* where);
     Expr* parseMatch();
     Pattern* parsePattern();
     Pattern* parsePrimaryPattern();

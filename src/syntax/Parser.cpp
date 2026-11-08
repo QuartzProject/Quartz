@@ -551,11 +551,15 @@ Stmt* Parser::parseStmt() {
         auto* w = node<WhileStmt>(begin);
         w->kind = StmtKind::While;
         noBraceExpr_ = true;
-        if (accept(Tok::KwLet)) {
-            w->bindName = expectIdent("binding name");
-            expect(Tok::Eq, "in 'while let'");
+        if (at(Tok::KwLet) && !(peekTok().kind == Tok::Ident && peekTok(2).kind == Tok::Eq)) {
+            w->cond = parseLetPattern(advance().span, "in 'while let'");
+        } else {
+            if (accept(Tok::KwLet)) {
+                w->bindName = expectIdent("binding name");
+                expect(Tok::Eq, "in 'while let'");
+            }
+            w->cond = parseExpr();
         }
-        w->cond = parseExpr();
         noBraceExpr_ = false;
         w->body = parseBlock();
         w->span = begin.to(prevSpan());
