@@ -152,7 +152,7 @@ TypeId Checker::checkInner(Expr* e, TypeId expected) {
     case ExprKind::Index: return checkIndex(static_cast<IndexExpr*>(e));
     case ExprKind::Propagate: {
         auto* p = static_cast<PropagateExpr*>(e);
-        TypeId inner = checkValue(p->inner, ir::kError);
+        TypeId inner = checkNullableOperand(p->inner, ir::kError);
         if (inner == ir::kError) {
             return inner;
         }
@@ -283,7 +283,8 @@ TypeId Checker::checkIdent(IdentExpr* e, TypeId expected) {
                                                   str(e->name)));
             }
         }
-        return l->type;
+        e->narrowed = e != keepNullable_ && assignTarget_ != e && narrowed(l);
+        return e->narrowed ? types_->info(l->type).elem : l->type;
     }
     if (GlobalInfo* g = findGlobal(e->name)) {
         e->ref = IdentRef::Const;
@@ -355,7 +356,7 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
             jumpOk_.insert(e->rhs);
         }
         TypeId hint = expected != ir::kError ? types_->nullable(expected) : ir::kError;
-        TypeId lt = checkValue(e->lhs, hint);
+        TypeId lt = checkNullableOperand(e->lhs, hint);
         if (lt == ir::kError) {
             check(e->rhs, expected);
             return ir::kError;
@@ -393,6 +394,12 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
         }
         return lt;
     }
+    const Expr* savedKeep = keepNullable_;
+    if (op == BinaryOp::Eq || op == BinaryOp::Ne) {
+        keepNullable_ = e->lhs->kind == ExprKind::NullLit   ? e->rhs
+                        : e->rhs->kind == ExprKind::NullLit ? e->lhs
+                                                            : keepNullable_;
+    }
     if (isUntypedLiteral(e->lhs) && !isUntypedLiteral(e->rhs)) {
         rt = checkValue(e->rhs, hint);
         lt = checkValue(e->lhs, rt);
@@ -400,6 +407,7 @@ TypeId Checker::checkBinary(BinaryExpr* e, TypeId expected) {
         lt = checkValue(e->lhs, hint);
         rt = checkValue(e->rhs, lt);
     }
+    keepNullable_ = savedKeep;
     if (lt == ir::kError || rt == ir::kError) {
         return compare ? ir::kBool : ir::kError;
     }
@@ -463,7 +471,7 @@ TypeId Checker::checkIf(IfExpr* e, TypeId expected, bool wantValue) {
 TypeId Checker::checkIfBranches(IfExpr* e, TypeId expected, bool wantValue, bool holes) {
     pushScope();
     if (e->bindValue != nullptr) {
-        TypeId bt = checkValue(e->bindValue, ir::kError);
+        TypeId bt = checkNullableOperand(e->bindValue, ir::kError);
         TypeId inner = ir::kError;
         if (bt != ir::kError) {
             if (types_->kind(bt) != ir::TypeKind::Nullable) {

@@ -1,0 +1,18 @@
+// error: expected 'int', found 'int?'
+
+fn c(seed: int?) -> int {
+    var y = seed
+    if y is null {
+        return 0
+    }
+    let z: int = y
+    y = null
+    return z
+}
+fn d(seed: int?) -> int {
+    if seed is null {
+        print("none")
+    }
+    let z: int = seed
+    return z
+}

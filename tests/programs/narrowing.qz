@@ -1,0 +1,54 @@
+// expect: -1 6 0 7 skip
+// expect: 4 true 4 6 9 cell cell false
+struct Cell {
+    name: str
+}
+
+fn total(xs: [int]?) -> int {
+    if xs is null {
+        return -1
+    }
+    var sum = 0
+    for x in xs {
+        sum += x
+    }
+    return sum
+}
+
+fn add(a: int?, b: int?) -> int {
+    if a == null || b is null {
+        return 0
+    }
+    return a + b
+}
+
+fn label(c: Cell?) -> str {
+    let f = () => c
+    if c == null {
+        return "skip"
+    }
+    let g = () => c.name
+    return match c {
+        Cell(name) => "{name} {g()} {f() == null}"
+    }
+}
+
+fn main() -> int {
+    print("{total(null)} {total([1, 2, 3])} {add(null, 1)} {add(3, 4)} {label(null)}")
+    var found: int? = null
+    for v in [1, 4, 9] {
+        let w: int? = if v > 2 { v } else { null }
+        if w == null {
+            continue
+        }
+        found = w
+        break
+    }
+    var m: int? = found
+    if m is null {
+        return 1
+    }
+    let k: int = m
+    print("{k} {m != null} {m ?? 0} {m.unwrap() + 2} {m + 5} {label(Cell("cell"))}")
+    return 0
+}

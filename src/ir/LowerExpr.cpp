@@ -479,6 +479,11 @@ Reg Lowerer::lowerInner(Expr* e) {
     case ExprKind::Interp: return lowerInterp(static_cast<InterpExpr*>(e));
     case ExprKind::Ident: {
         auto* id = static_cast<IdentExpr*>(e);
+        if (id->ref == IdentRef::Local && id->narrowed) {
+            Reg r = newReg(T(e->type));
+            emit(Op::Unwrap, r, id->local->reg); // sema proved it non-null, so this never traps
+            return r;
+        }
         if (id->ref == IdentRef::Local) {
             return id->local->reg;
         }

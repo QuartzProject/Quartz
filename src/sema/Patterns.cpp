@@ -465,7 +465,9 @@ std::vector<std::string> Checker::missingCases(const std::vector<const Pattern*>
 }
 
 TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
-    TypeId subject = checkValue(m->subject, ir::kError);
+    bool nullArm =
+        std::any_of(m->arms.begin(), m->arms.end(), [](const MatchArm& a) { return matchesNull(a.pattern); });
+    TypeId subject = nullArm ? checkNullableOperand(m->subject, ir::kError) : checkValue(m->subject, ir::kError);
     if (!matchable(subject)) {
         diags_.error(m->subject->span, std::format("cannot match on '{}'", typeName(subject)));
         subject = ir::kError;
@@ -543,7 +545,7 @@ TypeId Checker::checkMatch(MatchExpr* m, TypeId expected, bool wantValue) {
 }
 
 TypeId Checker::checkIs(IsExpr* e) {
-    TypeId t = checkValue(e->value, ir::kError);
+    TypeId t = checkNullableOperand(e->value, ir::kError);
     if (!matchable(t)) {
         diags_.error(e->value->span, std::format("cannot match on '{}'", typeName(t)));
         t = ir::kError;
@@ -557,13 +559,13 @@ TypeId Checker::checkIs(IsExpr* e) {
             diags_.error(e->pattern->span, std::format("'{}' has no variant '{}'", typeName(t), str(e->pattern->name)));
         }
     }
-    checkPattern(e->pattern, t);
-    if (patternBinds(e->pattern) && !isBindOk_.contains(e)) {
     std::size_t errors = diags_.errorCount();
-        diags_.error(e->pattern->span, "names bound by 'is' can only be used in an 'if' or 'while' condition, alone "
+    checkPattern(e->pattern, t);
     if (e->letForm && t != ir::kError && diags_.errorCount() == errors && missingCases({e->pattern}, t).empty()) {
         diags_.error(e->pattern->span, "this pattern always matches; bind it with a plain 'let'");
     }
+    if (patternBinds(e->pattern) && !isBindOk_.contains(e)) {
+        diags_.error(e->pattern->span, "names bound by 'is' can only be used in an 'if' or 'while' condition, alone "
                                        "or joined with '&&'");
     }
     return ir::kBool;

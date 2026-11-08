@@ -487,8 +487,10 @@ TypeId Checker::checkMethodCall(CallExpr* call, MemberExpr* callee, TypeId expec
             return ir::kError;
         }
     }
+    bool nullableRecv = callee->safe || str(callee->name) == "unwrap" || str(callee->name) == "unwrapOr";
     TypeId recv = call->safeCall && !callee->safe ? types_->info(callee->object->type).elem
-                                                   : checkValue(callee->object, ir::kError);
+                  : nullableRecv                  ? checkNullableOperand(callee->object, ir::kError)
+                                                  : checkValue(callee->object, ir::kError);
     callee->type = ir::kError;
     if (callee->safe && recv != ir::kError) {
         if (types_->kind(recv) != ir::TypeKind::Nullable) {
@@ -691,7 +693,7 @@ TypeId Checker::checkMember(MemberExpr* e, TypeId expected) {
             return ir::kError;
         }
     }
-    TypeId ot = checkValue(e->object, ir::kError);
+    TypeId ot = e->safe ? checkNullableOperand(e->object, ir::kError) : checkValue(e->object, ir::kError);
     if (ot == ir::kError) {
         return ot;
     }

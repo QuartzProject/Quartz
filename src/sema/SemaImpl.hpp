@@ -149,6 +149,14 @@ public:
     TypeId checkIs(IsExpr* e);
     void allowIsBindings(Expr* cond);
 
+    // Narrowing.cpp: after `if x is null { return }`, reads of `x` in the rest of the block have the non-null type.
+    void nullTests(const Expr* cond, std::vector<Local*>& out) const;
+    void narrowAfterExit(const IfExpr* e, std::span<Stmt* const> rest);
+    [[nodiscard]] bool narrowed(const Local* l) const;
+    TypeId checkNullableOperand(Expr* e, TypeId expected);
+    std::vector<Local*> narrowed_;
+    const Expr* keepNullable_ = nullptr; // an operand that wants the nullable value (`x ?? y`, `x?.a`, `x == null`)
+
     // Or-patterns: later alternatives bind the names of the first, with the same types.
     struct OrFrame {
         std::map<std::uint32_t, Local*> names;

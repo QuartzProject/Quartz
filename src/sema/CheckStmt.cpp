@@ -162,6 +162,7 @@ void Checker::checkFunction(FnInfo* fn) {
     selfType_ = fn->owner;
     loopDepth_ = 0;
     scopes_.clear();
+    narrowed_.clear();
     pushScope();
     FnDecl* decl = fn->decl;
     bool lint = lintable(currentFile_);
@@ -198,6 +199,7 @@ void Checker::checkFunction(FnInfo* fn) {
 
 TypeId Checker::checkBlock(BlockExpr* block, TypeId expected, bool wantValue) {
     pushScope();
+    std::size_t narrowMark = narrowed_.size();
     TypeId result = ir::kVoid;
     bool dead = false;
     for (std::size_t i = 0; i < block->stmts.size(); ++i) {
@@ -219,8 +221,11 @@ TypeId Checker::checkBlock(BlockExpr* block, TypeId expected, bool wantValue) {
         if (stmtDiverges) {
             result = ir::kNever;
             dead = !last;
+        } else if (es != nullptr && es->expr->kind == ExprKind::If) {
+            narrowAfterExit(static_cast<IfExpr*>(es->expr), block->stmts.subspan(i + 1));
         }
     }
+    narrowed_.resize(narrowMark);
     popScope();
     if (wantValue && result == ir::kVoid && expected != ir::kError && expected != ir::kVoid) {
         diags_.error(block->span, std::format("this block has no value; expected '{}'", typeName(expected)));
@@ -252,7 +257,7 @@ void Checker::checkStmt(Stmt* s) {
         auto* w = static_cast<WhileStmt*>(s);
         pushScope();
         if (w->bindName.valid()) {
-            TypeId bt = checkValue(w->cond, ir::kError);
+            TypeId bt = checkNullableOperand(w->cond, ir::kError);
             TypeId inner = ir::kError;
             if (bt != ir::kError && types_->kind(bt) != ir::TypeKind::Nullable) {
                 diags_.error(w->cond->span,

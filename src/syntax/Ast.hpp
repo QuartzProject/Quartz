@@ -156,6 +156,7 @@ struct IdentExpr : Expr {
     sema::FnInfo* fn = nullptr;
     sema::GlobalInfo* global = nullptr;
     std::span<std::uint32_t> fnTypeArgs; // a generic function used as a value: its type arguments
+    bool narrowed = false;               // a nullable local read as its non-null type after an early exit
 };
 
 struct SelfExpr : Expr {
@@ -274,8 +275,8 @@ struct CastExpr : Expr {
 struct IsExpr : Expr {
     Expr* value;
     struct Pattern* pattern;
-};
     bool letForm = false; // written `let pattern = value` after `if` or `while`
+};
 
 /// `value with { field = expr, ... }`: a copy of a struct with some fields replaced.
 struct WithExpr : Expr {
