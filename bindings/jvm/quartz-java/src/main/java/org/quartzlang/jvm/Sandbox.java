@@ -481,52 +481,57 @@ public final class Sandbox implements AutoCloseable {
         }
     }
 
-    /** Reads str, list and map slots, checking that no later call freed them; a negative generation skips it. */
-    Slots.Readers readers(long generation) {
-        return new Slots.Readers() {
-            @Override
-            public byte[] string(long bits) {
-                return generation < 0 ? readSlotString(bits) : readString(bits, generation);
-            }
-
-            @Override
-            public List<Object> list(Type type, long bits) {
-                if (generation < 0) {
-                    return Heap.readList(type, bits, this);
-                }
-                Confinement c = enter();
-                try {
-                    requireCurrent(c, generation);
-                    return Heap.readList(type, bits, this);
-                } finally {
-                    c.exit();
-                }
-            }
-
-            @Override
-            public Map<Object, Object> map(Type type, long bits) {
-                if (generation < 0) {
-                    return Heap.readMap(address, type, bits, this);
-                }
-                Confinement c = enter();
-                try {
-                    requireCurrent(c, generation);
-                    return Heap.readMap(address, type, bits, this);
-                } finally {
-                    c.exit();
-                }
-            }
-        };
+    /** Reads str, list and map slots without checking that they are still alive. */
+    Slots.Readers readers() {
+        return readers;
     }
 
-    /** A list of {@code type} filled with {@code elements}, as an argument or, in a host function, its result. */
-    long newList(Type type, List<?> elements, Slots.Makers makers) throws Throwable {
-        return Heap.newList(address, this, type, elements, makers);
+    /** A value of {@code type} read from {@code slots}, after checking that no later call freed what it points to. */
+    Object read(Type type, long[] slots, long generation) {
+        Confinement c = enter();
+        try {
+            requireCurrent(c, generation);
+            return Slots.decode(type, slots, 0, readers);
+        } finally {
+            c.exit();
+        }
     }
 
-    /** A map of {@code type} with {@code entries} in their iteration order. */
-    long newMap(Type type, Map<?, ?> entries, Slots.Makers makers) throws Throwable {
-        return Heap.newMap(address, this, type, entries, makers);
+    private final Slots.Readers readers = new Slots.Readers() {
+        @Override
+        public byte[] string(long bits) {
+            return readSlotString(bits);
+        }
+
+        @Override
+        public int listLength(long bits) {
+            return Heap.listLength(bits);
+        }
+
+        @Override
+        public void listGet(Type type, long bits, int index, long[] out) {
+            Heap.listGet(type, bits, index, out);
+        }
+
+        @Override
+        public long mapLength(long bits) {
+            return Heap.mapLength(bits);
+        }
+
+        @Override
+        public void mapEntry(Type type, long bits, long index, long[] key, long[] value) {
+            Heap.mapEntry(address, type, bits, index, key, value);
+        }
+    };
+
+    /** A list of {@code type} holding {@code count} encoded elements, in whatever arena is current. */
+    long newList(Type type, long[] slots, int count) throws Throwable {
+        return Heap.newList(address, type, slots, count);
+    }
+
+    /** A map of {@code type} with {@code count} encoded entries in order. */
+    long newMap(Type type, long[] keys, long[] values, int count) throws Throwable {
+        return Heap.newMap(address, type, keys, values, count);
     }
 
     byte[] readSlotString(long bits) {
@@ -577,13 +582,13 @@ public final class Sandbox implements AutoCloseable {
         }
 
         @Override
-        public long list(Type type, List<?> elements) throws Throwable {
-            return newList(type, elements, this);
+        public long list(Type type, long[] slots, int count) throws Throwable {
+            return newList(type, slots, count);
         }
 
         @Override
-        public long map(Type type, Map<?, ?> entries) throws Throwable {
-            return newMap(type, entries, this);
+        public long map(Type type, long[] keys, long[] values, int count) throws Throwable {
+            return newMap(type, keys, values, count);
         }
     };
 

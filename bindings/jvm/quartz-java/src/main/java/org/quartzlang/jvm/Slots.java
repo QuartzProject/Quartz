@@ -1,7 +1,6 @@
 package org.quartzlang.jvm;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -17,30 +16,39 @@ final class Slots {
 
         long stringLossy(byte[] text) throws Throwable;
 
-        long list(Type type, List<?> elements) throws Throwable;
+        /** A list of {@code type} holding {@code count} elements laid out one after another in {@code slots}. */
+        long list(Type type, long[] slots, int count) throws Throwable;
 
-        long map(Type type, Map<?, ?> entries) throws Throwable;
+        /** A map of {@code type} with {@code count} entries, keys and values laid out like {@link #list}. */
+        long map(Type type, long[] keys, long[] values, int count) throws Throwable;
     }
 
     /** Reads what str, list and map slots point to. */
     interface Readers {
         byte[] string(long bits);
 
-        List<Object> list(Type type, long bits);
+        int listLength(long bits);
 
-        Map<Object, Object> map(Type type, long bits);
+        /** Copies element {@code index} of a list of {@code type} into {@code out}. */
+        void listGet(Type type, long bits, int index, long[] out);
+
+        long mapLength(long bits);
+
+        /** Copies entry {@code index} of a map of {@code type} into {@code key} and {@code value}. */
+        void mapEntry(Type type, long bits, long index, long[] key, long[] value);
     }
 
     private Slots() {}
 
     /** One slot of a one-slot type; throws IllegalArgumentException when {@code value} does not fit. */
     static long encode(Type type, Object value, Sandbox owner, Makers makers) throws Throwable {
-        if (type.kind() == Kind.I64 && value instanceof Long l) {
+        Kind kind = type.kind();
+        if (kind == Kind.I64 && value instanceof Long l) {
             return l;
         }
-        if (isComposite(type.kind())) {
+        if (isComposite(kind) || ((kind == Kind.LIST || kind == Kind.MAP) && !(value instanceof Value))) {
             long[] out = new long[Math.max(1, type.slots())];
-            encode(type, value, out, 0, owner, makers);
+            SlotWriter.encode(type, value, out, 0, owner, makers);
             return out[0];
         }
         return scalar(type, value, owner, makers);
@@ -48,71 +56,12 @@ final class Slots {
 
     /** Writes {@code value} as {@code type} into {@code out[at..at + type.slots())}. */
     static void encode(Type type, Object value, long[] out, int at, Sandbox owner, Makers makers) throws Throwable {
-        if (value instanceof Value v && isComposite(type.kind())) {
-            passBackWide(type, v, out, at, owner);
-            return;
-        }
-        switch (type.kind()) {
-            case VOID -> {}
-            case STRUCT -> fill(type.fields(), structValues(type, value), out, at, owner, makers);
-            case TUPLE -> fill(type.fields(), tupleValues(type, value), out, at, owner, makers);
-            case ENUM -> {
-                Variant v = variantOf(type, value);
-                Type.Case c = type.findCase(v.name());
-                if (c == null) {
-                    throw new IllegalArgumentException("no variant " + v.name() + " in " + type + "; it has "
-                            + type.cases().stream().map(Type.Case::name).toList());
-                }
-                if (c.payload().size() != v.values().size()) {
-                    throw new IllegalArgumentException("variant " + c.name() + " takes " + c.payload().size()
-                            + " values, got " + v.values().size());
-                }
-                Arrays.fill(out, at, at + type.slots(), 0L);
-                out[at] = c.index();
-                fill(c.payload(), v.values().toArray(), out, at, owner, makers);
-            }
-            case NULLABLE -> {
-                Arrays.fill(out, at, at + type.slots(), 0L);
-                if (value == null) {
-                    return;
-                }
-                if (type.isPointerNullable()) {
-                    encode(type.element(), value, out, at, owner, makers);
-                } else {
-                    out[at] = 1;
-                    encode(type.element(), value, out, at + 1, owner, makers);
-                }
-            }
-            default -> out[at] = scalar(type, value, owner, makers);
-        }
+        SlotWriter.encode(type, value, out, at, owner, makers);
     }
 
     /** Reads a value of {@code type} from {@code slots[at..]}: see {@link Value#get()} for what each type gives. */
     static Object decode(Type type, long[] slots, int at, Readers readers) {
-        return switch (type.kind()) {
-            case VOID -> null;
-            case STRUCT -> new Struct(type, read(type.fields(), slots, at, readers));
-            case TUPLE -> Collections.unmodifiableList(Arrays.asList(read(type.fields(), slots, at, readers)));
-            case ENUM -> {
-                long index = slots[at];
-                if (index < 0 || index >= type.cases().size()) {
-                    throw new QuartzException("enum value with an unknown variant " + index);
-                }
-                Type.Case c = type.cases().get((int) index);
-                Object[] values = read(c.payload(), slots, at, readers);
-                if (type.isResult()) {
-                    yield c.index() == 0 ? Result.ok(values[0]) : Result.err(values[0]);
-                }
-                yield new Variant(c.name(), Arrays.asList(values));
-            }
-            case NULLABLE -> {
-                if (slots[at] == 0) {
-                    yield null;
-                }
-                yield decode(type.element(), slots, type.isPointerNullable() ? at : at + 1, readers);
-            }
-            default -> box(type, slots[at], readers);
-        };
+        return SlotReader.decode(type, slots, at, readers);
     }
 
     /** A one-slot value as the Java value it maps to. */
@@ -129,9 +78,7 @@ final class Slots {
             case CHAR -> (int) bits;
             case STR -> new String(readers.string(bits), StandardCharsets.UTF_8);
             case BYTES -> readers.string(bits);
-            case LIST -> readers.list(type, bits);
-            case MAP -> readers.map(type, bits);
-            case STRUCT, TUPLE, ENUM, NULLABLE -> decode(type, new long[] {bits}, 0, readers);
+            case LIST, MAP, STRUCT, TUPLE, ENUM, NULLABLE -> decode(type, new long[] {bits}, 0, readers);
             default -> throw new UnsupportedOperationException("a " + kind + " value cannot be read through the "
                     + "C interface");
         };
@@ -149,14 +96,7 @@ final class Slots {
 
     /** True when the type, or anything inside it, points into the sandbox's memory. */
     static boolean holdsReferences(Type type) {
-        return switch (type.kind()) {
-            case STR, BYTES, LIST, MAP, FUNCTION -> true;
-            case NULLABLE -> type.element() == null || holdsReferences(type.element());
-            case STRUCT, TUPLE -> type.fields().stream().anyMatch(f -> holdsReferences(f.type()));
-            case ENUM -> type.cases().stream().anyMatch(c -> c.payload().stream()
-                    .anyMatch(f -> f.boxed() || holdsReferences(f.type())));
-            default -> false;
-        };
+        return type.holdsReferences();
     }
 
     static boolean isComposite(Kind kind) {
@@ -167,36 +107,7 @@ final class Slots {
         return new IllegalArgumentException("a " + value.getClass().getSimpleName() + " cannot be passed as " + type);
     }
 
-    private static void fill(List<Type.Field> fields, Object[] values, long[] out, int at, Sandbox owner,
-            Makers makers) throws Throwable {
-        for (int i = 0; i < values.length; ++i) {
-            Type.Field f = fields.get(i);
-            if (f.boxed()) {
-                out[at + f.offset()] = makers.list(f.box(), Collections.singletonList(values[i]));
-            } else {
-                encode(f.type(), values[i], out, at + f.offset(), owner, makers);
-            }
-        }
-    }
-
-    private static Object[] read(List<Type.Field> fields, long[] slots, int at, Readers readers) {
-        Object[] values = new Object[fields.size()];
-        for (int i = 0; i < values.length; ++i) {
-            Type.Field f = fields.get(i);
-            values[i] = f.boxed() ? unbox(readers.list(f.box(), slots[at + f.offset()]))
-                    : decode(f.type(), slots, at + f.offset(), readers);
-        }
-        return values;
-    }
-
-    private static Object unbox(List<Object> box) {
-        if (box.size() != 1) {
-            throw new QuartzException("a recursive payload holds " + box.size() + " values instead of one");
-        }
-        return box.get(0);
-    }
-
-    private static long scalar(Type type, Object value, Sandbox owner, Makers makers) throws Throwable {
+    static long scalar(Type type, Object value, Sandbox owner, Makers makers) throws Throwable {
         Kind kind = type.kind();
         if (value == null) {
             throw new IllegalArgumentException("null cannot be passed as " + type);
@@ -238,21 +149,7 @@ final class Slots {
                 }
                 yield ((Number) value).longValue();
             }
-            case LIST -> {
-                if (value instanceof Object[] array) {
-                    yield makers.list(type, Arrays.asList(array));
-                }
-                if (!(value instanceof List<?> list)) {
-                    throw mismatch(type, value);
-                }
-                yield makers.list(type, list);
-            }
-            case MAP -> {
-                if (!(value instanceof Map<?, ?> map)) {
-                    throw mismatch(type, value);
-                }
-                yield makers.map(type, map);
-            }
+            case LIST, MAP -> throw mismatch(type, value);
             default -> throw new IllegalArgumentException("a " + type + " value cannot cross the C interface");
         };
     }
@@ -341,7 +238,7 @@ final class Slots {
         return Mapper.variant(value);
     }
 
-    private static void passBackWide(Type type, Value v, long[] out, int at, Sandbox owner) {
+    static void passBackWide(Type type, Value v, long[] out, int at, Sandbox owner) {
         if (!v.type().equals(type)) {
             throw new IllegalArgumentException("a " + v.type() + " result cannot be passed as " + type);
         }

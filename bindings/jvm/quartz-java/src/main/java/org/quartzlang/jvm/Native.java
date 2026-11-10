@@ -203,10 +203,10 @@ final class Native {
         SANDBOX_WAIT_TYPE = fn("qz_sandbox_wait_type", FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT), CRITICAL);
         SANDBOX_LIST = fn("qz_sandbox_list", FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT), CRITICAL);
         LIST_PUSH = fn("qz_list_push", FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, ADDRESS, SIZE_T),
-                CRITICAL);
+                CRITICAL_HEAP);
         LIST_LENGTH = fn("qz_list_length", FunctionDescriptor.of(SIZE_T, JAVA_LONG), CRITICAL);
         LIST_GET = fn("qz_list_get", FunctionDescriptor.of(JAVA_BOOLEAN, JAVA_LONG, SIZE_T, ADDRESS, SIZE_T),
-                CRITICAL);
+                CRITICAL_HEAP);
         SANDBOX_TRAP_CODE = fn("qz_sandbox_trap_code", FunctionDescriptor.of(JAVA_INT, ADDRESS), CRITICAL);
         SANDBOX_RELOAD = fn("qz_sandbox_reload", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
         SANDBOX_EXPORT_HANDLE = fn("qz_sandbox_export_handle", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_LONG));
@@ -248,10 +248,11 @@ final class Native {
         SANDBOX_RESUME_WIDE = fn("qz_sandbox_resume_wide",
                 FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS, SIZE_T, ADDRESS));
         SANDBOX_MAP = fn("qz_sandbox_map", FunctionDescriptor.of(JAVA_LONG, ADDRESS, JAVA_INT), CRITICAL);
-        MAP_SET = fn("qz_map_set", FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS), CRITICAL);
+        MAP_SET = fn("qz_map_set", FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, ADDRESS, ADDRESS),
+                CRITICAL_HEAP);
         MAP_LENGTH = fn("qz_map_length", FunctionDescriptor.of(SIZE_T, JAVA_LONG), CRITICAL);
         MAP_ENTRY = fn("qz_map_entry",
-                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, SIZE_T, ADDRESS, ADDRESS), CRITICAL);
+                FunctionDescriptor.of(JAVA_BOOLEAN, ADDRESS, JAVA_LONG, SIZE_T, ADDRESS, ADDRESS), CRITICAL_HEAP);
         FIND_IMPORT = fn("qz_program_find_import", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS),
                 CRITICAL);
         TYPE_NAME = fn("qz_type_name", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT), CRITICAL);

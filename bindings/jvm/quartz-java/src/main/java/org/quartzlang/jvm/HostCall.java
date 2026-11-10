@@ -93,12 +93,12 @@ public final class HostCall {
         kind(index);
         Type type = signature.params().get(index);
         if (type.slots() == 1 && !Slots.isComposite(type.kind())) {
-            return Slots.box(type, rawArg(index), sandbox.readers(-1));
+            return Slots.box(type, rawArg(index), sandbox.readers());
         }
         long[] slots = new long[Math.max(1, type.slots())];
         MemorySegment.copy(Native.ALL, JAVA_LONG, args + (long) signature.offset(index) * Long.BYTES, slots, 0,
                 type.slots());
-        return Slots.decode(type, slots, 0, sandbox.readers(-1));
+        return Slots.decode(type, slots, 0, sandbox.readers());
     }
 
     /** Argument {@code index} converted to {@code target}, as {@link Value#to(Class)} does. */
@@ -128,7 +128,10 @@ public final class HostCall {
         if (kind(index) != Kind.LIST) {
             throw wrong(index, "listArg");
         }
-        return sandbox.readers(-1).list(signature.params().get(index), rawArg(index));
+        @SuppressWarnings("unchecked")
+        List<Object> list = (List<Object>) Slots.box(signature.params().get(index), rawArg(index),
+                sandbox.readers());
+        return list;
     }
 
     /** A map argument in insertion order. */
@@ -136,7 +139,10 @@ public final class HostCall {
         if (kind(index) != Kind.MAP) {
             throw wrong(index, "mapArg");
         }
-        return sandbox.readers(-1).map(signature.params().get(index), rawArg(index));
+        @SuppressWarnings("unchecked")
+        Map<Object, Object> map = (Map<Object, Object>) Slots.box(signature.params().get(index), rawArg(index),
+                sandbox.readers());
+        return map;
     }
 
     /** The first raw slot of parameter {@code index}. */
@@ -224,13 +230,13 @@ public final class HostCall {
         }
 
         @Override
-        public long list(Type type, List<?> elements) throws Throwable {
-            return sandbox.newList(type, elements, this);
+        public long list(Type type, long[] slots, int count) throws Throwable {
+            return sandbox.newList(type, slots, count);
         }
 
         @Override
-        public long map(Type type, Map<?, ?> entries) throws Throwable {
-            return sandbox.newMap(type, entries, this);
+        public long map(Type type, long[] keys, long[] values, int count) throws Throwable {
+            return sandbox.newMap(type, keys, values, count);
         }
     };
 

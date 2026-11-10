@@ -109,11 +109,12 @@ public final class Value {
         if (wide == null && type.slots() > 1) {
             throw new UnsupportedOperationException("only the first slot of this " + type + " is known");
         }
-        Slots.Readers readers = owner.readers(generation);
-        if (wide != null) {
-            return Slots.decode(type, wide, 0, readers);
+        Kind k = type.kind();
+        if (wide == null && !Slots.isComposite(k) && k != Kind.LIST && k != Kind.MAP) {
+            return k == Kind.STR ? asString() : k == Kind.BYTES ? asBytes() : Slots.box(type, bits, null);
         }
-        return Slots.box(type, bits, readers);
+        long[] slots = wide != null ? wide : new long[] {bits};
+        return Slots.holdsReferences(type) ? owner.read(type, slots, generation) : Slots.decode(type, slots, 0, null);
     }
 
     /** The value converted to {@code target}: a record or Kotlin data class (by field name), an enum, a sealed type
@@ -195,7 +196,9 @@ public final class Value {
     /** A list result with its elements boxed by the element type, nested lists included. */
     public List<Object> asList() {
         requireList();
-        return owner.readers(generation).list(type, bits);
+        @SuppressWarnings("unchecked")
+        List<Object> list = (List<Object>) owner.read(type, new long[] {bits}, generation);
+        return list;
     }
 
     @SuppressWarnings("unchecked")

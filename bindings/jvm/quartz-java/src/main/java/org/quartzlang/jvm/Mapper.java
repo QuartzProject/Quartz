@@ -6,7 +6,7 @@ import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -66,58 +66,86 @@ final class Mapper {
 
     /** {@code value}, as {@link Value#get()} gives it, converted to {@code target}. */
     static Object convert(Object value, java.lang.reflect.Type target) {
+        return Walk.convert(depth -> step(value, target, depth), true);
+    }
+
+    /** One level of {@link #convert}: the converted value, or a {@link Walk.Node} that converts the parts first. */
+    static Object step(Object value, java.lang.reflect.Type target, int depth) {
         if (target instanceof Class<?> c) {
-            return toClass(value, c);
+            return toClass(value, c, depth);
         }
         if (target instanceof ParameterizedType p) {
-            return toParameterized(value, p);
+            return toParameterized(value, p, depth);
         }
         if (target instanceof GenericArrayType g) {
-            return toArray(value, g.getGenericComponentType(), raw(g.getGenericComponentType()));
+            return toArray(value, g.getGenericComponentType(), raw(g.getGenericComponentType()), depth);
         }
         if (target instanceof WildcardType w) {
-            return convert(value, w.getUpperBounds()[0]);
+            return step(value, w.getUpperBounds()[0], depth);
         }
         if (target instanceof TypeVariable<?> v) {
-            return convert(value, v.getBounds()[0]);
+            return step(value, v.getBounds()[0], depth);
         }
         throw new IllegalArgumentException("cannot read a Quartz value as " + target);
     }
 
-    private static Object toParameterized(Object value, ParameterizedType p) {
+    private static Object toParameterized(Object value, ParameterizedType p, int depth) {
+        int d = Walk.deeper(depth);
         Class<?> raw = raw(p);
         java.lang.reflect.Type[] args = p.getActualTypeArguments();
         if (value == null) {
             return raw == Optional.class ? Optional.empty() : null;
         }
         if (raw == Optional.class) {
-            return Optional.of(convert(value, args[0]));
+            return Walk.parts(depth, 1, i -> step(value, args[0], d), v -> Optional.of(v[0]));
         }
         if (raw.isAssignableFrom(List.class) && value instanceof List<?> list) {
-            List<Object> out = new ArrayList<>(list.size());
-            for (Object x : list) {
-                out.add(convert(x, args[0]));
+            Object[] items = list.toArray();
+            if (depth >= 0 && depth < Walk.DIRECT) {
+                for (int i = 0; i < items.length; ++i) {
+                    items[i] = step(items[i], args[0], d);
+                }
+                return Collections.unmodifiableList(Arrays.asList(items));
             }
-            return Collections.unmodifiableList(out);
+            return Walk.parts(depth, items.length, i -> step(items[i], args[0], d),
+                    v -> Collections.unmodifiableList(Arrays.asList(v)));
         }
         if (raw.isAssignableFrom(LinkedHashMap.class) && value instanceof Map<?, ?> map) {
-            Map<Object, Object> out = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> e : map.entrySet()) {
-                out.put(convert(e.getKey(), args[0]), convert(e.getValue(), args[1]));
-            }
-            return Collections.unmodifiableMap(out);
+            Object[] flat = entries(map);
+            return Walk.parts(depth, flat.length, i -> step(flat[i], args[i % 2], d), Mapper::linkedMap);
         }
         if (raw == Result.class && args.length == 2) {
-            Result<?, ?> r = (Result<?, ?>) toClass(value, Result.class);
+            Result<?, ?> r = (Result<?, ?>) convert(value, Result.class);
             return switch (r) {
-                case Result.Ok<?, ?> ok -> Result.ok(convert(ok.value(), args[0]));
-                case Result.Err<?, ?> err -> Result.err(convert(err.error(), args[1]));
+                case Result.Ok<?, ?> ok -> Walk.parts(depth, 1, i -> step(ok.value(), args[0], d),
+                        v -> Result.ok(v[0]));
+                case Result.Err<?, ?> err -> Walk.parts(depth, 1, i -> step(err.error(), args[1], d),
+                        v -> Result.err(v[0]));
             };
         }
-        return toClass(value, raw);
+        return toClass(value, raw, depth);
     }
 
-    private static Object toClass(Object value, Class<?> c) {
+    /** A map's keys and values alternating, so a {@link Walk.Parts} converts entry {@code i} as parts 2i and 2i+1. */
+    static Object[] entries(Map<?, ?> map) {
+        Object[] out = new Object[Math.multiplyExact(2, map.size())];
+        int i = 0;
+        for (Map.Entry<?, ?> e : map.entrySet()) {
+            out[i++] = e.getKey();
+            out[i++] = e.getValue();
+        }
+        return out;
+    }
+
+    static Map<Object, Object> linkedMap(Object[] flat) {
+        Map<Object, Object> out = new LinkedHashMap<>();
+        for (int i = 0; i < flat.length; i += 2) {
+            out.put(flat[i], flat[i + 1]);
+        }
+        return Collections.unmodifiableMap(out);
+    }
+
+    private static Object toClass(Object value, Class<?> c, int depth) {
         if (c == Object.class) {
             return value;
         }
@@ -149,7 +177,7 @@ final class Mapper {
             return constant(value, c);
         }
         if (c.isArray() && value instanceof List<?>) {
-            return toArray(value, c.getComponentType(), c.getComponentType());
+            return toArray(value, c.getComponentType(), c.getComponentType(), depth);
         }
         if (Collection.class.isAssignableFrom(c) && value instanceof List<?>) {
             return value;
@@ -157,7 +185,7 @@ final class Mapper {
         Shape s = Shape.of(c);
         switch (s.form) {
             case PRODUCT -> {
-                return product(value, s);
+                return product(value, s, depth);
             }
             case SINGLETON -> {
                 if (value instanceof Variant v && v.values().isEmpty()) {
@@ -172,7 +200,7 @@ final class Mapper {
                         throw new IllegalArgumentException("no subclass of " + c.getSimpleName() + " is named like the "
                                 + "variant " + name);
                     }
-                    return toClass(value, sub);
+                    return toClass(value, sub, depth);
                 }
             }
             default -> {}
@@ -181,12 +209,13 @@ final class Mapper {
                 + (s.problem == null ? "" : " (" + s.problem + ")"));
     }
 
-    private static Object product(Object value, Shape s) {
-        Object[] args = new Object[s.names.length];
+    private static Object product(Object value, Shape s, int depth) {
+        int n = s.names.length;
+        Object[] parts = new Object[n];
         if (value instanceof Struct st) {
             int[] plan = s.readPlan(st.type());
-            for (int j = 0; j < args.length; ++j) {
-                args[j] = convert(st.values()[plan[j]], s.types[j]);
+            for (int j = 0; j < n; ++j) {
+                parts[j] = st.values()[plan[j]];
             }
         } else {
             List<?> values = switch (value) {
@@ -197,14 +226,23 @@ final class Mapper {
                 default -> throw new IllegalArgumentException("a " + describe(value) + " cannot be read as "
                         + s.type.getName());
             };
-            if (values.size() != args.length) {
-                throw new IllegalArgumentException(s.type.getSimpleName() + " has " + args.length + " components, "
+            if (values.size() != n) {
+                throw new IllegalArgumentException(s.type.getSimpleName() + " has " + n + " components, "
                         + "the value has " + values.size());
             }
-            for (int j = 0; j < args.length; ++j) {
-                args[j] = convert(values.get(j), s.types[j]);
-            }
+            values.toArray(parts);
         }
+        if (depth >= 0 && depth < Walk.DIRECT) {
+            for (int j = 0; j < n; ++j) {
+                parts[j] = step(parts[j], s.types[j], depth + 1);
+            }
+            return construct(s, parts);
+        }
+        int d = Walk.deeper(depth);
+        return Walk.parts(depth, n, j -> step(parts[j], s.types[j], d), args -> construct(s, args));
+    }
+
+    static Object construct(Shape s, Object[] args) {
         try {
             return s.construct(args);
         } catch (Throwable t) {
@@ -257,18 +295,22 @@ final class Mapper {
         throw new IllegalArgumentException(c.getSimpleName() + " has no constant for the variant " + name);
     }
 
-    private static Object toArray(Object value, java.lang.reflect.Type element, Class<?> raw) {
+    private static Object toArray(Object value, java.lang.reflect.Type element, Class<?> raw, int depth) {
         if (value == null) {
             return null;
         }
         if (!(value instanceof List<?> list)) {
             throw new IllegalArgumentException("a " + describe(value) + " cannot be read as an array");
         }
-        Object out = Array.newInstance(raw, list.size());
-        for (int i = 0; i < list.size(); ++i) {
-            Array.set(out, i, convert(list.get(i), element));
-        }
-        return out;
+        Object[] items = list.toArray();
+        int d = Walk.deeper(depth);
+        return Walk.parts(depth, items.length, i -> step(items[i], element, d), v -> {
+            Object out = Array.newInstance(raw, v.length);
+            for (int i = 0; i < v.length; ++i) {
+                Array.set(out, i, v[i]);
+            }
+            return out;
+        });
     }
 
     private static Object scalar(Object value, Class<?> c) {

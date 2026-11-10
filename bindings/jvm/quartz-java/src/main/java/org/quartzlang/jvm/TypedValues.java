@@ -5,6 +5,7 @@ import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -18,31 +19,43 @@ final class TypedValues {
 
     /** {@code value}, boxed as {@link Value#get()} gives it for {@code quartz}, converted to {@code target}. */
     static Object to(Object value, Type quartz, java.lang.reflect.Type target, HandleMapper handles) {
-        if (value == null || quartz == null || !quartz.holdsHandles()) {
-            return Mapper.convert(value, target);
-        }
-        Class<?> raw = Mapper.raw(target);
-        if (raw == Optional.class && quartz.kind() != Kind.HANDLE) {
-            return Optional.ofNullable(to(value, quartz, argument(target, 0), handles));
-        }
-        return switch (quartz.kind()) {
-            case HANDLE -> handle(value, quartz, target, raw, handles);
-            case NULLABLE -> to(value, quartz.element(), target, handles);
-            case LIST -> value instanceof List<?> l ? list(l, quartz.element(), target, raw, handles)
-                    : Mapper.convert(value, target);
-            case MAP -> value instanceof Map<?, ?> m ? map(m, quartz, target, raw, handles)
-                    : Mapper.convert(value, target);
-            case STRUCT -> value instanceof Struct st ? struct(st, quartz, target, raw, handles)
-                    : Mapper.convert(value, target);
-            case TUPLE -> value instanceof List<?> l ? tuple(l, quartz, target, raw, handles)
-                    : Mapper.convert(value, target);
-            case ENUM -> variant(value, quartz, target, raw, handles);
-            default -> Mapper.convert(value, target);
-        };
+        return Walk.convert(depth -> toStep(value, quartz, target, handles, depth), handles == null);
     }
 
     /** {@code value} as the generic form of {@code quartz}: what {@link Value#get()} would give for it. */
     static Object from(Object value, Type quartz, HandleMapper handles) {
+        return Walk.convert(depth -> fromStep(value, quartz, handles, depth), handles == null);
+    }
+
+    private static Object toStep(Object value, Type quartz, java.lang.reflect.Type target, HandleMapper handles,
+            int depth) {
+        int d = Walk.deeper(depth);
+        if (value == null || quartz == null || !quartz.holdsHandles()) {
+            return Mapper.step(value, target, depth);
+        }
+        Class<?> raw = Mapper.raw(target);
+        if (raw == Optional.class && quartz.kind() != Kind.HANDLE) {
+            return Walk.parts(depth, 1, i -> toStep(value, quartz, argument(target, 0), handles, d),
+                    v -> Optional.ofNullable(v[0]));
+        }
+        return switch (quartz.kind()) {
+            case HANDLE -> handle(value, quartz, target, raw, handles);
+            case NULLABLE -> toStep(value, quartz.element(), target, handles, depth);
+            case LIST -> value instanceof List<?> l ? list(l, quartz.element(), target, raw, handles, depth)
+                    : Mapper.step(value, target, depth);
+            case MAP -> value instanceof Map<?, ?> m ? map(m, quartz, target, raw, handles, depth)
+                    : Mapper.step(value, target, depth);
+            case STRUCT -> value instanceof Struct st ? struct(st, quartz, target, raw, handles, depth)
+                    : Mapper.step(value, target, depth);
+            case TUPLE -> value instanceof List<?> l ? tuple(l, quartz, target, raw, handles, depth)
+                    : Mapper.step(value, target, depth);
+            case ENUM -> variant(value, quartz, target, raw, handles, depth);
+            default -> Mapper.step(value, target, depth);
+        };
+    }
+
+    private static Object fromStep(Object value, Type quartz, HandleMapper handles, int depth) {
+        int d = Walk.deeper(depth);
         if (value instanceof Value v) {
             value = v.get();
         }
@@ -93,38 +106,30 @@ final class TypedValues {
                 yield handles.id(value, quartz);
             }
             case LIST -> {
-                List<Object> out = new ArrayList<>();
-                for (Object e : elements(value, quartz)) {
-                    out.add(from(e, quartz.element(), handles));
-                }
-                yield Collections.unmodifiableList(out);
+                Object[] items = elements(value, quartz);
+                yield Walk.parts(depth, items.length, i -> fromStep(items[i], quartz.element(), handles, d),
+                        v -> Collections.unmodifiableList(Arrays.asList(v)));
             }
             case MAP -> {
                 if (!(value instanceof Map<?, ?> map)) {
                     throw Slots.mismatch(quartz, value);
                 }
-                Map<Object, Object> out = new LinkedHashMap<>();
-                for (Map.Entry<?, ?> e : map.entrySet()) {
-                    out.put(from(e.getKey(), quartz.key(), handles), from(e.getValue(), quartz.element(), handles));
-                }
-                yield Collections.unmodifiableMap(out);
+                Object[] flat = Mapper.entries(map);
+                yield Walk.parts(depth, flat.length,
+                        i -> fromStep(flat[i], i % 2 == 0 ? quartz.key() : quartz.element(), handles, d),
+                        Mapper::linkedMap);
             }
             case STRUCT -> {
                 Object[] values = Slots.structValues(quartz, value);
                 List<Type.Field> fields = quartz.fields();
-                Object[] out = new Object[values.length];
-                for (int i = 0; i < out.length; ++i) {
-                    out[i] = from(values[i], fields.get(i).type(), handles);
-                }
-                yield new Struct(quartz, out);
+                yield Walk.parts(depth, values.length, i -> fromStep(values[i], fields.get(i).type(), handles, d),
+                        v -> new Struct(quartz, v));
             }
             case TUPLE -> {
                 Object[] values = Slots.tupleValues(quartz, value);
-                List<Object> out = new ArrayList<>(values.length);
-                for (int i = 0; i < values.length; ++i) {
-                    out.add(from(values[i], quartz.fields().get(i).type(), handles));
-                }
-                yield Collections.unmodifiableList(out);
+                yield Walk.parts(depth, values.length,
+                        i -> fromStep(values[i], quartz.fields().get(i).type(), handles, d),
+                        v -> Collections.unmodifiableList(Arrays.asList(v)));
             }
             case ENUM -> {
                 Variant v = Slots.variantOf(quartz, value);
@@ -137,16 +142,13 @@ final class TypedValues {
                     throw new IllegalArgumentException("variant " + c.name() + " takes " + c.payload().size()
                             + " values, got " + v.values().size());
                 }
-                List<Object> out = new ArrayList<>(c.payload().size());
-                for (int i = 0; i < c.payload().size(); ++i) {
-                    out.add(from(v.values().get(i), c.payload().get(i).type(), handles));
-                }
-                if (quartz.isResult()) {
-                    yield c.index() == 0 ? Result.ok(out.get(0)) : Result.err(out.get(0));
-                }
-                yield new Variant(c.name(), out);
+                List<Object> payload = v.values();
+                yield Walk.parts(depth, payload.size(),
+                        i -> fromStep(payload.get(i), c.payload().get(i).type(), handles, d),
+                        out -> quartz.isResult() ? (c.index() == 0 ? Result.ok(out[0]) : Result.err(out[0]))
+                                : new Variant(c.name(), Arrays.asList(out)));
             }
-            case NULLABLE -> from(value, quartz.element(), handles);
+            case NULLABLE -> fromStep(value, quartz.element(), handles, depth);
             default -> value;
         };
     }
@@ -175,67 +177,65 @@ final class TypedValues {
     }
 
     private static Object list(List<?> list, Type element, java.lang.reflect.Type target, Class<?> raw,
-            HandleMapper handles) {
+            HandleMapper handles, int depth) {
+        int d = Walk.deeper(depth);
         java.lang.reflect.Type each = raw.isArray() || target instanceof GenericArrayType ? component(target)
                 : argument(target, 0);
-        List<Object> out = new ArrayList<>(list.size());
-        for (Object e : list) {
-            out.add(to(e, element, each, handles));
+        if (!raw.isArray() && raw != Object.class && !raw.isAssignableFrom(List.class)
+                && !Collection.class.isAssignableFrom(raw)) {
+            throw new IllegalArgumentException("a list cannot be read as " + raw.getName());
         }
-        if (raw.isArray()) {
-            Object array = Array.newInstance(raw.getComponentType(), out.size());
-            for (int i = 0; i < out.size(); ++i) {
-                Array.set(array, i, out.get(i));
+        Object[] items = list.toArray();
+        return Walk.parts(depth, items.length, i -> toStep(items[i], element, each, handles, d), v -> {
+            if (!raw.isArray()) {
+                return Collections.unmodifiableList(Arrays.asList(v));
+            }
+            Object array = Array.newInstance(raw.getComponentType(), v.length);
+            for (int i = 0; i < v.length; ++i) {
+                Array.set(array, i, v[i]);
             }
             return array;
-        }
-        if (raw == Object.class || raw.isAssignableFrom(List.class) || Collection.class.isAssignableFrom(raw)) {
-            return Collections.unmodifiableList(out);
-        }
-        throw new IllegalArgumentException("a list cannot be read as " + raw.getName());
+        });
     }
 
     private static Object map(Map<?, ?> map, Type quartz, java.lang.reflect.Type target, Class<?> raw,
-            HandleMapper handles) {
+            HandleMapper handles, int depth) {
+        int d = Walk.deeper(depth);
         if (raw != Object.class && !raw.isAssignableFrom(LinkedHashMap.class)) {
             throw new IllegalArgumentException("a map cannot be read as " + raw.getName());
         }
-        Map<Object, Object> out = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> e : map.entrySet()) {
-            out.put(to(e.getKey(), quartz.key(), argument(target, 0), handles),
-                    to(e.getValue(), quartz.element(), argument(target, 1), handles));
-        }
-        return Collections.unmodifiableMap(out);
+        Object[] flat = Mapper.entries(map);
+        return Walk.parts(depth, flat.length,
+                i -> i % 2 == 0 ? toStep(flat[i], quartz.key(), argument(target, 0), handles, d)
+                        : toStep(flat[i], quartz.element(), argument(target, 1), handles, d), Mapper::linkedMap);
     }
 
     private static Object struct(Struct struct, Type quartz, java.lang.reflect.Type target, Class<?> raw,
-            HandleMapper handles) {
+            HandleMapper handles, int depth) {
+        int d = Walk.deeper(depth);
         Object[] values = struct.values();
         Type[] types = new Type[values.length];
         for (int i = 0; i < values.length; ++i) {
             types[i] = fieldType(quartz, struct.type().fields().get(i));
         }
         if (raw == Object.class || raw == Struct.class) {
-            Object[] out = new Object[values.length];
-            for (int i = 0; i < out.length; ++i) {
-                out[i] = to(values[i], types[i], Object.class, handles);
-            }
-            return new Struct(struct.type(), out);
+            return Walk.parts(depth, values.length, i -> toStep(values[i], types[i], Object.class, handles, d),
+                    v -> new Struct(struct.type(), v));
         }
         Shape s = Shape.of(raw);
         if (s.form != Shape.Form.PRODUCT) {
-            return Mapper.convert(struct(struct, quartz, Object.class, Object.class, handles), target);
+            return Walk.parts(depth, 1, i -> struct(struct, quartz, Object.class, Object.class, handles, d),
+                    v -> Mapper.step(v[0], target, depth));
         }
         int[] plan = s.readPlan(struct.type());
-        Object[] args = new Object[plan.length];
-        for (int j = 0; j < args.length; ++j) {
-            args[j] = to(values[plan[j]], types[plan[j]], s.types[j], handles);
-        }
-        return construct(s, args);
+        return Walk.parts(depth, plan.length,
+                j -> toStep(values[plan[j]], types[plan[j]], s.types[j], handles, d),
+                args -> Mapper.construct(s, args));
     }
 
     private static Object tuple(List<?> values, Type quartz, java.lang.reflect.Type target, Class<?> raw,
-            HandleMapper handles) {
+            HandleMapper handles, int depth) {
+        int d = Walk.deeper(depth);
         List<Type.Field> fields = quartz.fields();
         Shape s = raw == Object.class || List.class.isAssignableFrom(raw) ? null : Shape.of(raw);
         if (s != null && s.form == Shape.Form.PRODUCT) {
@@ -243,21 +243,20 @@ final class TypedValues {
                 throw new IllegalArgumentException(raw.getSimpleName() + " has " + s.types.length + " components, "
                         + "the tuple has " + values.size());
             }
-            Object[] args = new Object[values.size()];
-            for (int j = 0; j < args.length; ++j) {
-                args[j] = to(values.get(j), fields.get(j).type(), s.types[j], handles);
-            }
-            return construct(s, args);
+            return Walk.parts(depth, values.size(),
+                    j -> toStep(values.get(j), fields.get(j).type(), s.types[j], handles, d),
+                    args -> Mapper.construct(s, args));
         }
-        List<Object> out = new ArrayList<>(values.size());
-        for (int i = 0; i < values.size(); ++i) {
-            out.add(to(values.get(i), fields.get(i).type(), argument(target, 0), handles));
-        }
-        return s == null ? Collections.unmodifiableList(out) : Mapper.convert(out, target);
+        return Walk.parts(depth, values.size(),
+                i -> toStep(values.get(i), fields.get(i).type(), argument(target, 0), handles, d), v -> {
+                    List<Object> out = Collections.unmodifiableList(Arrays.asList(v));
+                    return s == null ? out : Mapper.step(out, target, depth);
+                });
     }
 
     private static Object variant(Object value, Type quartz, java.lang.reflect.Type target, Class<?> raw,
-            HandleMapper handles) {
+            HandleMapper handles, int depth) {
+        int d = Walk.deeper(depth);
         String name;
         List<?> payload;
         switch (value) {
@@ -274,7 +273,7 @@ final class TypedValues {
                 payload = Collections.singletonList(err.error());
             }
             default -> {
-                return Mapper.convert(value, target);
+                return Mapper.step(value, target, depth);
             }
         }
         Type.Case c = quartz.findCase(name);
@@ -282,15 +281,14 @@ final class TypedValues {
             throw new IllegalArgumentException("variant " + name + " does not fit " + describe(quartz));
         }
         if (raw == Result.class || (raw == Object.class && quartz.isResult())) {
-            Object one = to(payload.get(0), c.payload().get(0).type(), argument(target, c.index()), handles);
-            return c.index() == 0 ? Result.ok(one) : Result.err(one);
+            return Walk.parts(depth, 1,
+                    i -> toStep(payload.get(0), c.payload().get(0).type(), argument(target, c.index()), handles, d),
+                    v -> c.index() == 0 ? Result.ok(v[0]) : Result.err(v[0]));
         }
         if (raw == Object.class || raw == Variant.class) {
-            List<Object> out = new ArrayList<>(payload.size());
-            for (int i = 0; i < payload.size(); ++i) {
-                out.add(to(payload.get(i), c.payload().get(i).type(), Object.class, handles));
-            }
-            return new Variant(c.name(), out);
+            return Walk.parts(depth, payload.size(),
+                    i -> toStep(payload.get(i), c.payload().get(i).type(), Object.class, handles, d),
+                    v -> new Variant(c.name(), Arrays.asList(v)));
         }
         Shape s = Shape.of(raw);
         Class<?> chosen = raw;
@@ -306,17 +304,16 @@ final class TypedValues {
             return s.instance;
         }
         if (s.form != Shape.Form.PRODUCT) {
-            return Mapper.convert(value, target);
+            return Mapper.step(value, target, depth);
         }
         if (s.types.length != payload.size()) {
             throw new IllegalArgumentException(chosen.getSimpleName() + " has " + s.types.length + " components, "
                     + "variant " + c.name() + " carries " + payload.size());
         }
-        Object[] args = new Object[payload.size()];
-        for (int j = 0; j < args.length; ++j) {
-            args[j] = to(payload.get(j), c.payload().get(j).type(), s.types[j], handles);
-        }
-        return construct(s, args);
+        Shape product = s;
+        return Walk.parts(depth, payload.size(),
+                j -> toStep(payload.get(j), c.payload().get(j).type(), product.types[j], handles, d),
+                args -> Mapper.construct(product, args));
     }
 
     /** The declared type of {@code field}, looked up by name in {@code quartz} for a struct built with Struct.of. */
@@ -329,25 +326,22 @@ final class TypedValues {
         return field.type();
     }
 
-    private static Object construct(Shape s, Object[] args) {
-        try {
-            return s.construct(args);
-        } catch (Throwable t) {
-            throw new IllegalArgumentException("cannot build " + s.type.getSimpleName() + ": " + t, t);
+    private static Object[] elements(Object value, Type quartz) {
+        if (value instanceof Collection<?> c) {
+            return c.toArray();
         }
-    }
-
-    private static Iterable<?> elements(Object value, Type quartz) {
         if (value instanceof Iterable<?> it) {
-            return it;
+            List<Object> out = new ArrayList<>();
+            it.forEach(out::add);
+            return out.toArray();
         }
         if (value instanceof Object[] array) {
-            return java.util.Arrays.asList(array);
+            return array.clone();
         }
         if (value != null && value.getClass().isArray()) {
-            List<Object> out = new ArrayList<>();
-            for (int i = 0; i < Array.getLength(value); ++i) {
-                out.add(Array.get(value, i));
+            Object[] out = new Object[Array.getLength(value)];
+            for (int i = 0; i < out.length; ++i) {
+                out[i] = Array.get(value, i);
             }
             return out;
         }

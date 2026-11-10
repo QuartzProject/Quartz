@@ -61,6 +61,8 @@ public final class Type {
     private String packageName = "";
     private String doc = "";
     private volatile Boolean handles;
+    private volatile Boolean containers;
+    private volatile Boolean references;
 
     public Type(Kind kind, int slots) {
         this(kind, slots, 0, null);
@@ -81,6 +83,8 @@ public final class Type {
         this.fields = List.copyOf(fields);
         this.cases = List.copyOf(cases);
         this.pointerNullable = pointerNullable;
+        this.containers = null;
+        this.references = null;
     }
 
     void named(String typeName) {
@@ -172,6 +176,40 @@ public final class Type {
         if (known == null) {
             known = scanHandles(this, java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
             handles = known;
+        }
+        return known;
+    }
+
+    /** True when a value of this type can hold a list, map or recursive payload, so it may nest without bound. */
+    boolean holdsContainers() {
+        Boolean known = containers;
+        if (known == null) {
+            known = switch (kind) {
+                case LIST, MAP -> true;
+                case NULLABLE -> element != null && element.holdsContainers();
+                case STRUCT, TUPLE -> fields.stream().anyMatch(f -> f.boxed() || f.type().holdsContainers());
+                case ENUM -> cases.stream().anyMatch(c -> c.payload().stream()
+                        .anyMatch(f -> f.boxed() || f.type().holdsContainers()));
+                default -> false;
+            };
+            containers = known;
+        }
+        return known;
+    }
+
+    /** True when the type, or anything inside it, points into the sandbox's memory. */
+    boolean holdsReferences() {
+        Boolean known = references;
+        if (known == null) {
+            known = switch (kind) {
+                case STR, BYTES, LIST, MAP, FUNCTION -> true;
+                case NULLABLE -> element == null || element.holdsReferences();
+                case STRUCT, TUPLE -> fields.stream().anyMatch(f -> f.type().holdsReferences());
+                case ENUM -> cases.stream().anyMatch(c -> c.payload().stream()
+                        .anyMatch(f -> f.boxed() || f.type().holdsReferences()));
+                default -> false;
+            };
+            references = known;
         }
         return known;
     }
