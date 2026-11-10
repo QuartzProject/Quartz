@@ -190,13 +190,18 @@ kotlin {
         logger.lifecycle("quartz-kmp: set -Pquartz.source=<Quartz checkout> to build the native targets")
     }
 
+    // Mocha's 2 s default is too short for the deep value test, which copies 200 000 levels several times.
     if (quartzCapi != null) {
         js {
-            nodejs()
+            nodejs {
+                testTask { useMocha { timeout = "60s" } }
+            }
         }
         @OptIn(ExperimentalWasmDsl::class)
         wasmJs {
-            nodejs()
+            nodejs {
+                testTask { useMocha { timeout = "60s" } }
+            }
         }
     } else {
         logger.lifecycle("quartz-kmp: set -Pquartz.wasm=<dir with quartz-capi.js and .wasm> to build js and wasmJs")

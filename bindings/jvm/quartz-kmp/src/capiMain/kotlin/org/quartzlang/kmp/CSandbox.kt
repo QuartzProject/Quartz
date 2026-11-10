@@ -179,78 +179,72 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
         return qzListLength(bits).toInt()
     }
 
-    /** Reads str, list and map slots, checking no later call freed them; a negative generation skips the check. */
+    /** Reads str, list and map slots, checking at each length read that no later call freed them; -1 skips it. */
     fun readers(generation: Long): Slots.Readers = object : Slots.Readers {
-        override fun string(bits: Long): ByteArray {
+        private fun check() {
             if (generation >= 0) {
                 requireCurrent(generation)
             }
+        }
+
+        override fun string(bits: Long): ByteArray {
+            check()
             return qzStr(bits)
         }
 
-        override fun list(type: Type, bits: Long): List<Any?> {
-            if (generation >= 0) {
-                requireCurrent(generation)
-            }
-            val e = type.element!!
-            val cell = LongArray(maxOf(1, e.slots))
-            return List(qzListLength(bits).toInt()) { i ->
-                if (!qzListGet(bits, i.toLong(), cell, e.slots)) {
-                    throw QuartzException("cannot read element $i of a $type")
-                }
-                Slots.decode(e, cell, 0, this)
+        override fun listLength(bits: Long): Int {
+            check()
+            return qzListLength(bits).toInt()
+        }
+
+        override fun listGet(type: Type, bits: Long, index: Int, out: LongArray) {
+            if (!qzListGet(bits, index.toLong(), out, type.element!!.slots)) {
+                throw QuartzException("cannot read element $index of a $type")
             }
         }
 
-        override fun map(type: Type, bits: Long): Map<Any?, Any?> {
-            if (generation >= 0) {
-                requireCurrent(generation)
+        override fun mapLength(bits: Long): Long {
+            check()
+            return qzMapLength(bits)
+        }
+
+        override fun mapEntry(type: Type, bits: Long, index: Long, key: LongArray, value: LongArray) {
+            if (!qzMapEntry(address, bits, index, key, value)) {
+                throw QuartzException("cannot read entry $index of a $type")
             }
-            val k = type.key!!
-            val v = type.element!!
-            val key = LongArray(maxOf(1, k.slots))
-            val value = LongArray(maxOf(1, v.slots))
-            val out = LinkedHashMap<Any?, Any?>()
-            for (i in 0 until qzMapLength(bits)) {
-                if (!qzMapEntry(address, bits, i, key, value)) {
-                    throw QuartzException("cannot read entry $i of a $type")
-                }
-                out[Slots.decode(k, key, 0, this)] = Slots.decode(v, value, 0, this)
-            }
-            return out
         }
     }
 
-    /** A list of [type] filled with [elements], as an argument or, in a host function, its result. */
-    fun newList(type: Type, elements: List<*>, makers: Slots.Makers): Long {
-        val e = type.element!!
+    /** A list of [type] holding [count] encoded elements, in whatever arena is current. */
+    fun newList(type: Type, slots: LongArray, count: Int): Long {
+        val width = type.element!!.slots
         val list = qzSandboxList(address, type.id)
         if (list == 0L) {
             throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot make a $type")
         }
-        val cell = LongArray(maxOf(1, e.slots))
-        for (x in elements) {
-            Slots.encode(e, x, cell, 0, makers)
-            if (!qzListPush(address, list, cell, e.slots)) {
+        val cell = LongArray(maxOf(1, width))
+        for (i in 0 until count) {
+            slots.copyInto(cell, 0, i * width, i * width + width)
+            if (!qzListPush(address, list, cell, width)) {
                 throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the list")
             }
         }
         return list
     }
 
-    /** A map of [type] with [entries] in their iteration order. */
-    fun newMap(type: Type, entries: Map<*, *>, makers: Slots.Makers): Long {
-        val k = type.key!!
-        val v = type.element!!
+    /** A map of [type] with [count] encoded entries in order. */
+    fun newMap(type: Type, keys: LongArray, values: LongArray, count: Int): Long {
+        val keyWidth = type.key!!.slots
+        val valueWidth = type.element!!.slots
         val map = qzSandboxMap(address, type.id)
         if (map == 0L) {
             throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot make a $type")
         }
-        val key = LongArray(maxOf(1, k.slots))
-        val value = LongArray(maxOf(1, v.slots))
-        for ((ek, ev) in entries) {
-            Slots.encode(k, ek, key, 0, makers)
-            Slots.encode(v, ev, value, 0, makers)
+        val key = LongArray(maxOf(1, keyWidth))
+        val value = LongArray(maxOf(1, valueWidth))
+        for (i in 0 until count) {
+            keys.copyInto(key, 0, i * keyWidth, i * keyWidth + keyWidth)
+            values.copyInto(value, 0, i * valueWidth, i * valueWidth + valueWidth)
             if (!qzMapSet(address, map, key, value)) {
                 throw TrapException(TrapCode.OUT_OF_MEMORY, "cannot grow the map")
             }
@@ -335,9 +329,10 @@ internal class CSandbox(private var current: CProgram, limits: Limits) : Sandbox
 
         override fun stringLossy(text: ByteArray): Long = newLossyString(text)
 
-        override fun list(type: Type, elements: List<*>): Long = newList(type, elements, this)
+        override fun list(type: Type, slots: LongArray, count: Int): Long = newList(type, slots, count)
 
-        override fun map(type: Type, entries: Map<*, *>): Long = newMap(type, entries, this)
+        override fun map(type: Type, keys: LongArray, values: LongArray, count: Int): Long =
+            newMap(type, keys, values, count)
 
         override fun passBack(type: Type, value: Value, out: LongArray, at: Int) =
             this@CSandbox.passBack(type, value, out, at)

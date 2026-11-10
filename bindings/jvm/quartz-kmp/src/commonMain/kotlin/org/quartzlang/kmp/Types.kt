@@ -89,6 +89,28 @@ public class Type(public val kind: Kind, public val slots: Int = 1, public val i
     /** True when a value of this type can hold a `@handle` anywhere inside, recursive types included. */
     public val holdsHandles: Boolean by lazy { scanHandles(this, mutableSetOf()) }
 
+    /** True when a value of this type can hold a list, map or recursive payload, so it may nest without bound. */
+    internal val holdsContainers: Boolean by lazy {
+        when (kind) {
+            Kind.LIST, Kind.MAP -> true
+            Kind.NULLABLE -> element?.holdsContainers ?: false
+            Kind.STRUCT, Kind.TUPLE -> fields.any { it.boxed || it.type.holdsContainers }
+            Kind.ENUM -> cases.any { c -> c.payload.any { it.boxed || it.type.holdsContainers } }
+            else -> false
+        }
+    }
+
+    /** True when the type, or anything inside it, points into the sandbox's memory. */
+    internal val holdsReferences: Boolean by lazy {
+        when (kind) {
+            Kind.STR, Kind.BYTES, Kind.LIST, Kind.MAP, Kind.FUNCTION -> true
+            Kind.NULLABLE -> element?.holdsReferences ?: true
+            Kind.STRUCT, Kind.TUPLE -> fields.any { it.type.holdsReferences }
+            Kind.ENUM -> cases.any { c -> c.payload.any { it.boxed || it.type.holdsReferences } }
+            else -> false
+        }
+    }
+
     /** Filled in once the type is cached, so recursive types resolve. */
     internal fun complete(element: Type?, key: Type?, fields: List<Field>, cases: List<Case>, pointer: Boolean) {
         this.element = element

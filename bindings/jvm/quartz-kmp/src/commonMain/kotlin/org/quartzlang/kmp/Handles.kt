@@ -16,7 +16,10 @@ public interface HandleMapper {
  *
  * @throws IllegalArgumentException when [value] does not fit [type]
  */
-public fun QuartzValues.from(value: Any?, type: Type, handles: HandleMapper? = null): Any? {
+public fun QuartzValues.from(value: Any?, type: Type, handles: HandleMapper? = null): Any? =
+    Walk.convert(handles == null) { fromStep(value, type, handles, it) }
+
+private fun fromStep(value: Any?, type: Type, handles: HandleMapper?, depth: Int): Any? {
     val v = if (value is Value) value.get() else value
     val kind = type.kind
     if (v == null) {
@@ -26,6 +29,7 @@ public fun QuartzValues.from(value: Any?, type: Type, handles: HandleMapper? = n
     if (kind.isInteger) {
         return Slots.integer(kind, v)
     }
+    val d = Walk.deeper(depth)
     return when (kind) {
         Kind.VOID -> null
         Kind.BOOL -> v as? Boolean ?: throw Slots.mismatch(type, v)
@@ -43,20 +47,30 @@ public fun QuartzValues.from(value: Any?, type: Type, handles: HandleMapper? = n
                     "pass its id or a HandleMapper",
             )
         }
-        Kind.LIST -> when (v) {
-            is List<*> -> v
-            is Array<*> -> v.asList()
-            else -> throw Slots.mismatch(type, v)
-        }.map { from(it, type.element!!, handles) }
-        Kind.MAP -> (v as? Map<*, *> ?: throw Slots.mismatch(type, v)).entries.associateTo(LinkedHashMap()) {
-            from(it.key, type.key!!, handles) to from(it.value, type.element!!, handles)
+        Kind.LIST -> {
+            val items = when (v) {
+                is List<*> -> v
+                is Array<*> -> v.asList()
+                else -> throw Slots.mismatch(type, v)
+            }
+            Walk.parts(depth, items.size, { fromStep(items[it], type.element!!, handles, d) }) { it.asList() }
+        }
+        Kind.MAP -> {
+            val flat = entries(v as? Map<*, *> ?: throw Slots.mismatch(type, v))
+            Walk.parts(depth, flat.size, {
+                fromStep(flat[it], if (it % 2 == 0) type.key!! else type.element!!, handles, d)
+            }, ::linkedMap)
         }
         Kind.STRUCT -> {
             val values = Slots.structValues(type, v)
-            Struct(type.fields.map { it.name }, type.fields.mapIndexed { i, f -> from(values[i], f.type, handles) },
-                type.name)
+            Walk.parts(depth, values.size, { fromStep(values[it], type.fields[it].type, handles, d) }) {
+                Struct(type.fields.map { f -> f.name }, it.asList(), type.name)
+            }
         }
-        Kind.TUPLE -> Slots.tupleValues(type, v).mapIndexed { i, e -> from(e, type.fields[i].type, handles) }
+        Kind.TUPLE -> {
+            val values = Slots.tupleValues(type, v)
+            Walk.parts(depth, values.size, { fromStep(values[it], type.fields[it].type, handles, d) }) { it.asList() }
+        }
         Kind.ENUM -> {
             val variant = Slots.variantOf(type, v)
             val case = type.findCase(variant.name) ?: throw IllegalArgumentException(
@@ -65,53 +79,89 @@ public fun QuartzValues.from(value: Any?, type: Type, handles: HandleMapper? = n
             require(case.payload.size == variant.values.size) {
                 "variant ${case.name} takes ${case.payload.size} values, got ${variant.values.size}"
             }
-            val payload = case.payload.mapIndexed { i, f -> from(variant.values[i], f.type, handles) }
-            when {
-                !type.isResult -> Variant(case.name, payload)
-                case.index == 0 -> Result.Ok(payload[0])
-                else -> Result.Err(payload[0])
+            Walk.parts(depth, case.payload.size, { fromStep(variant.values[it], case.payload[it].type, handles, d) }) {
+                when {
+                    !type.isResult -> Variant(case.name, it.asList())
+                    case.index == 0 -> Result.Ok(it[0])
+                    else -> Result.Err(it[0])
+                }
             }
         }
-        Kind.NULLABLE -> from(v, type.element!!, handles)
+        Kind.NULLABLE -> fromStep(v, type.element!!, handles, depth)
         else -> v
     }
 }
 
 /** [value], as [Value.get] gives it for [type], with every handle id inside replaced by its host object. */
-public fun QuartzValues.resolveHandles(value: Any?, type: Type, handles: HandleMapper): Any? {
+public fun QuartzValues.resolveHandles(value: Any?, type: Type, handles: HandleMapper): Any? =
+    Walk.convert(false) { resolveStep(value, type, handles, it) }
+
+private fun resolveStep(value: Any?, type: Type, handles: HandleMapper, depth: Int): Any? {
     if (value == null || !type.holdsHandles) {
         return value
     }
+    val d = Walk.deeper(depth)
     return when (type.kind) {
         Kind.HANDLE -> handles.toObject((value as? Number ?: return value).toLong(), type)
-        Kind.NULLABLE -> resolveHandles(value, type.element!!, handles)
-        Kind.LIST -> (value as? List<*> ?: return value).map { resolveHandles(it, type.element!!, handles) }
-        Kind.MAP -> (value as? Map<*, *> ?: return value).entries.associateTo(LinkedHashMap()) {
-            resolveHandles(it.key, type.key!!, handles) to resolveHandles(it.value, type.element!!, handles)
+        Kind.NULLABLE -> resolveStep(value, type.element!!, handles, depth)
+        Kind.LIST -> {
+            val items = value as? List<*> ?: return value
+            Walk.parts(depth, items.size, { resolveStep(items[it], type.element!!, handles, d) }) { it.asList() }
+        }
+        Kind.MAP -> {
+            val flat = entries(value as? Map<*, *> ?: return value)
+            Walk.parts(depth, flat.size, {
+                resolveStep(flat[it], if (it % 2 == 0) type.key!! else type.element!!, handles, d)
+            }, ::linkedMap)
         }
         Kind.STRUCT -> {
             val s = value as? Struct ?: return value
-            Struct(s.names, s.names.mapIndexed { i, n ->
-                val field = type.fields.firstOrNull { it.name == n }
-                if (field == null) s.values[i] else resolveHandles(s.values[i], field.type, handles)
-            }, s.typeName)
+            Walk.parts(depth, s.size, { i ->
+                val field = type.fields.firstOrNull { it.name == s.names[i] }
+                if (field == null) s.values[i] else resolveStep(s.values[i], field.type, handles, d)
+            }) { Struct(s.names, it.asList(), s.typeName) }
         }
-        Kind.TUPLE -> (value as? List<*> ?: return value).mapIndexed { i, e ->
-            resolveHandles(e, type.fields[i].type, handles)
+        Kind.TUPLE -> {
+            val items = value as? List<*> ?: return value
+            Walk.parts(depth, items.size, { resolveStep(items[it], type.fields[it].type, handles, d) }) { it.asList() }
         }
         Kind.ENUM -> when (value) {
-            is Result.Ok<*> -> Result.Ok(resolveHandles(value.value, type.cases[0].payload[0].type, handles))
-            is Result.Err<*> -> Result.Err(resolveHandles(value.error, type.cases[1].payload[0].type, handles))
+            is Result.Ok<*> -> Walk.parts(depth, 1, {
+                resolveStep(value.value, type.cases[0].payload[0].type, handles, d)
+            }) { Result.Ok(it[0]) }
+            is Result.Err<*> -> Walk.parts(depth, 1, {
+                resolveStep(value.error, type.cases[1].payload[0].type, handles, d)
+            }) { Result.Err(it[0]) }
             is Variant -> {
                 val case = type.findCase(value.name) ?: return value
-                Variant(value.name, value.values.mapIndexed { i, e ->
-                    case.payload.getOrNull(i)?.let { resolveHandles(e, it.type, handles) } ?: e
-                })
+                Walk.parts(depth, value.values.size, { i ->
+                    val f = case.payload.getOrNull(i)
+                    val e = value.values[i]
+                    if (f == null) e else resolveStep(e, f.type, handles, d) ?: e
+                }) { Variant(value.name, it.asList()) }
             }
             else -> value
         }
         else -> value
     }
+}
+
+/** A map's keys and values alternating, so [Walk.parts] converts entry `i` as parts `2i` and `2i + 1`. */
+internal fun entries(map: Map<*, *>): List<Any?> {
+    val out = ArrayList<Any?>(2 * map.size)
+    for ((k, v) in map) {
+        out.add(k)
+        out.add(v)
+    }
+    return out
+}
+
+internal fun linkedMap(flat: Array<Any?>): Map<Any?, Any?> {
+    val out = LinkedHashMap<Any?, Any?>()
+    for (i in flat.indices step 2) {
+        out[flat[i]] = flat[i + 1]
+    }
+    return out
 }
 
 private fun describe(type: Type): String = type.name.ifEmpty { type.toString() }

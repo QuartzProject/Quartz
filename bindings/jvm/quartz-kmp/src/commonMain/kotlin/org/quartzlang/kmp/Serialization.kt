@@ -27,14 +27,28 @@ import kotlinx.serialization.serializer
  * name) or a tuple (by position), an enum class or a sealed class's subclass is a [Variant] named like it.
  */
 public object QuartzValues {
-    public fun <T> encode(serializer: SerializationStrategy<T>, value: T): Any? {
-        var out: Any? = null
-        TreeEncoder { out = it }.encodeSerializableValue(serializer, value)
-        return out
-    }
+    public fun <T> encode(serializer: SerializationStrategy<T>, value: T): Any? = encodeTree(serializer, value, 0)
 
     public fun <T> decode(deserializer: DeserializationStrategy<T>, value: Any?): T =
-        TreeDecoder(value).decodeSerializableValue(deserializer)
+        TreeDecoder(value, 0).decodeSerializableValue(deserializer)
+}
+
+/** Levels a serializer may nest: kotlinx.serialization recurses once per level on the thread's own stack. */
+internal const val SERIAL_DEPTH: Int = 500
+
+private fun <T> encodeTree(serializer: SerializationStrategy<T>, value: T, depth: Int): Any? {
+    var out: Any? = null
+    TreeEncoder(depth) { out = it }.encodeSerializableValue(serializer, value)
+    return out
+}
+
+private fun checkDepth(depth: Int) {
+    if (depth > SERIAL_DEPTH) {
+        throw QuartzException(
+            "a @Serializable value nested more than $SERIAL_DEPTH levels deep cannot be converted, since its " +
+                "serializer recurses per level; read it with get() and walk the Struct, Variant and List tree instead",
+        )
+    }
 }
 
 /** [value] as a value a sandbox takes, through its serializer: pass it to `call`, `resume` or return it from a host. */
@@ -58,8 +72,8 @@ public class ResultSerializer<T, E>(private val ok: KSerializer<T>, private val 
         if (encoder is TreeEncoder) {
             encoder.sink(
                 when (value) {
-                    is Result.Ok -> Result.Ok(QuartzValues.encode(ok, value.value))
-                    is Result.Err -> Result.Err(QuartzValues.encode(err, value.error))
+                    is Result.Ok -> Result.Ok(encodeTree(ok, value.value, encoder.depth + 1))
+                    is Result.Err -> Result.Err(encodeTree(err, value.error, encoder.depth + 1))
                 },
             )
             return
@@ -74,12 +88,15 @@ public class ResultSerializer<T, E>(private val ok: KSerializer<T>, private val 
 
     override fun deserialize(decoder: Decoder): Result<T, E> {
         if (decoder is TreeDecoder) {
+            val depth = decoder.depth + 1
             return when (val v = decoder.value) {
-                is Result.Ok<*> -> Result.Ok(QuartzValues.decode(ok, v.value))
-                is Result.Err<*> -> Result.Err(QuartzValues.decode(err, v.error))
+                is Result.Ok<*> -> Result.Ok(TreeDecoder(v.value, depth).decodeSerializableValue(ok))
+                is Result.Err<*> -> Result.Err(TreeDecoder(v.error, depth).decodeSerializableValue(err))
                 is Variant -> when {
-                    v.name == "Ok" && v.values.size == 1 -> Result.Ok(QuartzValues.decode(ok, v.values[0]))
-                    v.name == "Err" && v.values.size == 1 -> Result.Err(QuartzValues.decode(err, v.values[0]))
+                    v.name == "Ok" && v.values.size == 1 ->
+                        Result.Ok(TreeDecoder(v.values[0], depth).decodeSerializableValue(ok))
+                    v.name == "Err" && v.values.size == 1 ->
+                        Result.Err(TreeDecoder(v.values[0], depth).decodeSerializableValue(err))
                     else -> throw SerializationException("variant ${v.name} is not Ok or Err")
                 }
                 else -> throw SerializationException("${describe(v)} is not a Result")
@@ -113,8 +130,12 @@ private fun describe(value: Any?): String = when (value) {
 private fun simpleName(serialName: String): String = serialName.substringAfterLast('.').substringAfterLast('$')
 
 /** Builds the value tree a serializer describes, handing the result to [sink]. */
-internal class TreeEncoder(val sink: (Any?) -> Unit) : Encoder {
+internal class TreeEncoder(val depth: Int, val sink: (Any?) -> Unit) : Encoder {
     override val serializersModule: SerializersModule = EmptySerializersModule()
+
+    init {
+        checkDepth(depth)
+    }
 
     override fun encodeBoolean(value: Boolean) = sink(value)
     override fun encodeByte(value: Byte) = sink(value.toLong())
@@ -138,34 +159,36 @@ internal class TreeEncoder(val sink: (Any?) -> Unit) : Encoder {
         }
     }
 
-    override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder = TreeBuilder(descriptor) { values ->
-        sink(
-            when (descriptor.kind) {
-                StructureKind.LIST -> values
-                StructureKind.MAP -> LinkedHashMap<Any?, Any?>().also { m ->
-                    for (i in values.indices step 2) {
-                        m[values[i]] = values[i + 1]
-                    }
-                }
-                is PolymorphicKind -> {
-                    val name = simpleName(values[0] as String)
-                    when (val payload = values[1]) {
-                        is Struct -> Variant(name, payload.values)
-                        else -> Variant(name, listOf(payload))
-                    }
-                }
-                else -> Struct(
-                    List(descriptor.elementsCount) { descriptor.getElementName(it) },
-                    values,
-                    simpleName(descriptor.serialName),
-                )
-            },
+    override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder =
+        TreeBuilder(descriptor, depth) { values -> sink(tree(descriptor, values)) }
+
+    private fun tree(descriptor: SerialDescriptor, values: List<Any?>): Any? = when (descriptor.kind) {
+        StructureKind.LIST -> values
+        StructureKind.MAP -> LinkedHashMap<Any?, Any?>().also { m ->
+            for (i in values.indices step 2) {
+                m[values[i]] = values[i + 1]
+            }
+        }
+        is PolymorphicKind -> {
+            val name = simpleName(values[0] as String)
+            when (val payload = values[1]) {
+                is Struct -> Variant(name, payload.values)
+                else -> Variant(name, listOf(payload))
+            }
+        }
+        else -> Struct(
+            List(descriptor.elementsCount) { descriptor.getElementName(it) },
+            values,
+            simpleName(descriptor.serialName),
         )
     }
 }
 
-private class TreeBuilder(private val descriptor: SerialDescriptor, private val done: (List<Any?>) -> Unit) :
-    CompositeEncoder {
+private class TreeBuilder(
+    private val descriptor: SerialDescriptor,
+    private val depth: Int,
+    private val done: (List<Any?>) -> Unit,
+) : CompositeEncoder {
     private val values = ArrayList<Any?>()
     override val serializersModule: SerializersModule = EmptySerializersModule()
 
@@ -176,7 +199,7 @@ private class TreeBuilder(private val descriptor: SerialDescriptor, private val 
         values[index] = value
     }
 
-    private fun child(index: Int) = TreeEncoder { put(index, it) }
+    private fun child(index: Int) = TreeEncoder(depth + 1) { put(index, it) }
 
     override fun encodeBooleanElement(descriptor: SerialDescriptor, index: Int, value: Boolean) = put(index, value)
     override fun encodeByteElement(descriptor: SerialDescriptor, index: Int, value: Byte) = put(index, value.toLong())
@@ -216,8 +239,12 @@ private class TreeBuilder(private val descriptor: SerialDescriptor, private val 
 }
 
 /** Reads a value tree as a serializer asks for it. */
-internal class TreeDecoder(val value: Any?) : Decoder {
+internal class TreeDecoder(val value: Any?, val depth: Int) : Decoder {
     override val serializersModule: SerializersModule = EmptySerializersModule()
+
+    init {
+        checkDepth(depth)
+    }
 
     private fun fail(what: String): Nothing = throw SerializationException("${describe(value)} cannot be read as $what")
 
@@ -278,13 +305,13 @@ internal class TreeDecoder(val value: Any?) : Decoder {
         }
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder = when (descriptor.kind) {
-        StructureKind.LIST -> TreeReader(positional(value as? List<*> ?: fail("a list")))
+        StructureKind.LIST -> TreeReader(positional(value as? List<*> ?: fail("a list")), depth)
         StructureKind.MAP -> {
             val map = value as? Map<*, *> ?: fail("a map")
-            TreeReader(map.entries.flatMap { listOf(it.key, it.value) }.withIndex().map { it.index to it.value })
+            TreeReader(map.entries.flatMap { listOf(it.key, it.value) }.withIndex().map { it.index to it.value }, depth)
         }
-        is PolymorphicKind -> TreeReader(sealed(descriptor))
-        else -> TreeReader(product(descriptor))
+        is PolymorphicKind -> TreeReader(sealed(descriptor), depth)
+        else -> TreeReader(product(descriptor), depth)
     }
 
     private fun positional(values: List<*>): List<Pair<Int, Any?>> = values.mapIndexed { i, v -> i to v }
@@ -334,7 +361,7 @@ internal class TreeDecoder(val value: Any?) : Decoder {
     }
 }
 
-private class TreeReader(private val entries: List<Pair<Int, Any?>>) : CompositeDecoder {
+private class TreeReader(private val entries: List<Pair<Int, Any?>>, private val depth: Int) : CompositeDecoder {
     private var next = 0
     private var current: Any? = null
     override val serializersModule: SerializersModule = EmptySerializersModule()
@@ -348,7 +375,7 @@ private class TreeReader(private val entries: List<Pair<Int, Any?>>) : Composite
         return index
     }
 
-    private fun child() = TreeDecoder(current)
+    private fun child() = TreeDecoder(current, depth + 1)
 
     override fun decodeBooleanElement(descriptor: SerialDescriptor, index: Int) = child().decodeBoolean()
     override fun decodeByteElement(descriptor: SerialDescriptor, index: Int) = child().decodeByte()

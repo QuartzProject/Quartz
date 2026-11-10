@@ -95,35 +95,68 @@ private fun typeOf(t: org.quartzlang.jvm.Type, seen: IdentityHashMap<org.quartzl
 }
 
 /** A value of the Java bindings as the common API gives it. */
-internal fun fromJava(value: Any?): Any? = when (value) {
-    is JStruct -> Struct(value.names(), (0 until value.size()).map { fromJava(value.get(it)) }, value.type().name())
-    is JVariant -> Variant(value.name(), value.values().map(::fromJava))
-    is JResult.Ok<*, *> -> Result.Ok(fromJava(value.value()))
-    is JResult.Err<*, *> -> Result.Err(fromJava(value.error()))
-    is List<*> -> value.map(::fromJava)
-    is Map<*, *> -> value.entries.associateTo(LinkedHashMap()) { fromJava(it.key) to fromJava(it.value) }
-    else -> value
+internal fun fromJava(value: Any?): Any? = Walk.convert(true) { fromJavaStep(value, it) }
+
+private fun fromJavaStep(value: Any?, depth: Int): Any? {
+    val d = Walk.deeper(depth)
+    return when (value) {
+        is JStruct -> Walk.parts(depth, value.size(), { fromJavaStep(value.get(it), d) }) {
+            Struct(value.names(), it.asList(), value.type().name())
+        }
+        is JVariant -> {
+            val items = value.values()
+            Walk.parts(depth, items.size, { fromJavaStep(items[it], d) }) { Variant(value.name(), it.asList()) }
+        }
+        is JResult.Ok<*, *> -> Walk.parts(depth, 1, { fromJavaStep(value.value(), d) }) { Result.Ok(it[0]) }
+        is JResult.Err<*, *> -> Walk.parts(depth, 1, { fromJavaStep(value.error(), d) }) { Result.Err(it[0]) }
+        is List<*> -> {
+            val items = if (value is java.util.RandomAccess) value else value.toList()
+            Walk.parts(depth, items.size, { fromJavaStep(items[it], d) }) { it.asList() }
+        }
+        is Map<*, *> -> {
+            val flat = entries(value)
+            Walk.parts(depth, flat.size, { fromJavaStep(flat[it], d) }, ::linkedMap)
+        }
+        else -> value
+    }
 }
 
 /** A value of the common API as the Java bindings take it; other classes are refused here as on the C targets. */
-internal fun toJava(value: Any?): Any? = when (value) {
-    null, is Boolean, is Number, is Char, is String, is ByteArray, is Enum<*> -> value
-    is JvmValue -> value.java
-    is LossyText -> org.quartzlang.jvm.LossyText(value.raw)
-    is Unit -> null
-    is Struct -> JStruct.of(value.typeName, value.names.zip(value.values.map(::toJava)).toMap(LinkedHashMap()))
-    is Variant -> JVariant(value.name, value.values.map(::toJava))
-    is Result.Ok<*> -> JResult.ok<Any?, Any?>(toJava(value.value))
-    is Result.Err<*> -> JResult.err<Any?, Any?>(toJava(value.error))
-    is Pair<*, *> -> listOf(toJava(value.first), toJava(value.second))
-    is Triple<*, *, *> -> listOf(toJava(value.first), toJava(value.second), toJava(value.third))
-    is List<*> -> value.map(::toJava)
-    is Array<*> -> value.map(::toJava)
-    is Map<*, *> -> value.entries.associateTo(LinkedHashMap()) { toJava(it.key) to toJava(it.value) }
-    else -> throw IllegalArgumentException(
-        "a ${value::class.simpleName} cannot be passed: pass a Struct, Map, List, Variant or Result, " +
-            "or a @Serializable value through quartzValue()",
-    )
+internal fun toJava(value: Any?): Any? = Walk.convert(true) { toJavaStep(value, it) }
+
+private fun toJavaStep(value: Any?, depth: Int): Any? {
+    val d = Walk.deeper(depth)
+    return when (value) {
+        null, is Boolean, is Number, is Char, is String, is ByteArray, is Enum<*> -> value
+        is JvmValue -> value.java
+        is LossyText -> org.quartzlang.jvm.LossyText(value.raw)
+        is Unit -> null
+        is Struct -> Walk.parts(depth, value.size, { toJavaStep(value.values[it], d) }) {
+            JStruct.of(value.typeName, value.names.zip(it.asList()).toMap(LinkedHashMap()))
+        }
+        is Variant -> Walk.parts(depth, value.values.size, { toJavaStep(value.values[it], d) }) {
+            JVariant(value.name, it.asList())
+        }
+        is Result.Ok<*> -> Walk.parts(depth, 1, { toJavaStep(value.value, d) }) { JResult.ok<Any?, Any?>(it[0]) }
+        is Result.Err<*> -> Walk.parts(depth, 1, { toJavaStep(value.error, d) }) { JResult.err<Any?, Any?>(it[0]) }
+        is Pair<*, *> -> Walk.parts(depth, 2, { toJavaStep(if (it == 0) value.first else value.second, d) }) {
+            it.asList()
+        }
+        is Triple<*, *, *> -> Walk.parts(depth, 3, { toJavaStep(value.toList()[it], d) }) { it.asList() }
+        is List<*> -> {
+            val items = if (value is java.util.RandomAccess) value else value.toList()
+            Walk.parts(depth, items.size, { toJavaStep(items[it], d) }) { it.asList() }
+        }
+        is Array<*> -> Walk.parts(depth, value.size, { toJavaStep(value[it], d) }) { it.asList() }
+        is Map<*, *> -> {
+            val flat = entries(value)
+            Walk.parts(depth, flat.size, { toJavaStep(flat[it], d) }, ::linkedMap)
+        }
+        else -> throw IllegalArgumentException(
+            "a ${value::class.simpleName} cannot be passed: pass a Struct, Map, List, Variant or Result, " +
+                "or a @Serializable value through quartzValue()",
+        )
+    }
 }
 
 internal fun signatureOf(s: JSignature): Signature = Signature(s.params().map(::typeOf), typeOf(s.result()))

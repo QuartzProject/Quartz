@@ -55,7 +55,8 @@ internal class CValue(
 
     override fun asList(): List<Any?> {
         check(kind == Kind.LIST) { "the value is $type, not a list" }
-        return owner.readers(generation).list(type, bits)
+        @Suppress("UNCHECKED_CAST")
+        return Slots.box(type, bits, owner.readers(generation)) as List<Any?>
     }
 
     override fun slots(): LongArray = wide?.copyOf() ?: longArrayOf(bits)
@@ -134,12 +135,14 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
 
     override fun map(index: Int): Map<Any?, Any?> {
         check(kindAt(index) == Kind.MAP) { "argument $index is ${kindAt(index)}, not a map" }
-        return sandbox.readers(-1).map(signature.params[index], raw(index))
+        @Suppress("UNCHECKED_CAST")
+        return Slots.box(signature.params[index], raw(index), sandbox.readers(-1)) as Map<Any?, Any?>
     }
 
     override fun list(index: Int): List<Any?> {
         check(kindAt(index) == Kind.LIST) { "argument $index is ${kindAt(index)}, not a list" }
-        return sandbox.readers(-1).list(signature.params[index], raw(index))
+        @Suppress("UNCHECKED_CAST")
+        return Slots.box(signature.params[index], raw(index), sandbox.readers(-1)) as List<Any?>
     }
 
     override fun charge(units: Long): Boolean {
@@ -182,9 +185,10 @@ internal class CHostCall(private val sandbox: CSandbox) : HostCall {
             }
         }
 
-        override fun list(type: Type, elements: List<*>): Long = sandbox.newList(type, elements, this)
+        override fun list(type: Type, slots: LongArray, count: Int): Long = sandbox.newList(type, slots, count)
 
-        override fun map(type: Type, entries: Map<*, *>): Long = sandbox.newMap(type, entries, this)
+        override fun map(type: Type, keys: LongArray, values: LongArray, count: Int): Long =
+            sandbox.newMap(type, keys, values, count)
 
         override fun passBack(type: Type, value: Value, out: LongArray, at: Int) =
             throw IllegalArgumentException("a Value cannot be returned from a host function")
