@@ -1,11 +1,11 @@
 #include "Commands.hpp"
 #include "Fmt.hpp"
 #include "HostInterface.hpp"
-#include "dap/Scheduler.hpp"
 #include "dap/Session.hpp"
 #include "quartz/Package.hpp"
 #include "quartz/Quartz.hpp"
 #include "vm/Profiler.hpp"
+#include "vm/Scheduler.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -176,7 +176,7 @@ int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const 
         }
         functions.push_back(*found);
     }
-    quartz::dap::TickScheduler scheduler(sb);
+    quartz::vm::TickScheduler scheduler(sb);
     auto t = scheduler.spawn(functions[0]);
     std::optional<std::uint32_t> entryTask;
     std::optional<quartz::vm::Slot> result;
@@ -188,8 +188,8 @@ int runProgram(const std::shared_ptr<const quartz::vm::Program>& program, const 
     for (std::size_t i = 1; t && i < functions.size(); ++i) {
         t = scheduler.spawn(functions[i]);
     }
-    while (t && !scheduler.pending().empty()) {
-        std::uint32_t task = scheduler.pending().front().task;
+    while (t && scheduler.nextTask()) {
+        std::uint32_t task = *scheduler.nextTask();
         t = *scheduler.next();
         if (t && t->kind == quartz::vm::TaskOutcome::Kind::Done && entryTask == task) {
             result = t->value;

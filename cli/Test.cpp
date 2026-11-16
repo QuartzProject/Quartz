@@ -1,5 +1,5 @@
 #include "Commands.hpp"
-#include "dap/Scheduler.hpp"
+#include "vm/Scheduler.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -41,7 +41,7 @@ int runTests(const std::shared_ptr<const quartz::vm::Program>& program, std::str
         std::expected<quartz::vm::TaskOutcome, quartz::vm::Trap> r =
             std::unexpected(started ? quartz::vm::Trap{} : started.error());
         if (started) {
-            quartz::dap::TickScheduler scheduler(sb);
+            quartz::vm::TickScheduler scheduler(sb);
             r = scheduler.spawn(a.function);
             while (r && r->kind != quartz::vm::TaskOutcome::Kind::Done) {
                 r = *scheduler.next();

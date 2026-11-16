@@ -1,16 +1,16 @@
-#include "Scheduler.hpp"
+#include "vm/Scheduler.hpp"
 
 #include <algorithm>
 
-namespace quartz::dap {
+namespace quartz::vm {
 
-std::expected<vm::TaskOutcome, vm::Trap> TickScheduler::spawn(std::uint32_t function) {
+std::expected<TaskOutcome, Trap> TickScheduler::spawn(std::uint32_t function) {
     auto t = sandbox_.spawn(function, {});
     queue(t);
     return t;
 }
 
-std::optional<std::expected<vm::TaskOutcome, vm::Trap>> TickScheduler::next() {
+std::optional<std::expected<TaskOutcome, Trap>> TickScheduler::next() {
     if (pending_.empty()) {
         return std::nullopt;
     }
@@ -29,15 +29,15 @@ void TickScheduler::cancelAll() {
     pending_.clear();
 }
 
-void TickScheduler::queue(const std::expected<vm::TaskOutcome, vm::Trap>& outcome) {
-    if (!outcome || outcome->kind == vm::TaskOutcome::Kind::Done) {
+void TickScheduler::queue(const std::expected<TaskOutcome, Trap>& outcome) {
+    if (!outcome || outcome->kind == TaskOutcome::Kind::Done) {
         return;
     }
     std::uint64_t wake = now_;
-    if (outcome->kind == vm::TaskOutcome::Kind::Wait) {
+    if (outcome->kind == TaskOutcome::Kind::Wait) {
         waited_ += outcome->value.u;
         wake = outcome->value.u > ~wake ? ~std::uint64_t{0} : wake + outcome->value.u;
-    } else if (outcome->kind == vm::TaskOutcome::Kind::Yield) {
+    } else if (outcome->kind == TaskOutcome::Kind::Yield) {
         ++yields_;
         wake += 1;
     }
@@ -48,4 +48,4 @@ void TickScheduler::queue(const std::expected<vm::TaskOutcome, vm::Trap>& outcom
     pending_.insert(at, p);
 }
 
-} // namespace quartz::dap
+} // namespace quartz::vm

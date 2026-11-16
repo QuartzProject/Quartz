@@ -1,5 +1,5 @@
-#include "Scheduler.hpp"
 #include "Session.hpp"
+#include "vm/Scheduler.hpp"
 
 #include <algorithm>
 #include <format>
@@ -122,7 +122,7 @@ int Session::runTests() {
                 std::lock_guard lock(mutex_);
                 spawning_ = name;
             }
-            TickScheduler scheduler(sb);
+            vm::TickScheduler scheduler(sb);
             auto t = scheduler.spawn(a.function);
             while (t && !terminate_ && t->kind != vm::TaskOutcome::Kind::Done) {
                 t = *scheduler.next();

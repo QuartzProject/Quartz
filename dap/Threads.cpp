@@ -1,5 +1,5 @@
-#include "Scheduler.hpp"
 #include "Session.hpp"
+#include "vm/Scheduler.hpp"
 
 #include <algorithm>
 #include <format>
@@ -70,7 +70,7 @@ std::optional<Session::Shown> Session::framesOf(std::int64_t thread) {
 
 int Session::runTasks(vm::Sandbox& sb, const std::vector<std::uint32_t>& functions) {
     const vm::Program& program = sb.program();
-    TickScheduler scheduler(sb);
+    vm::TickScheduler scheduler(sb);
     auto key = [&](std::uint32_t fn, const vm::TaskOutcome& t) {
         return program.functions[fn].isSuspend ? std::optional<std::uint32_t>(t.task) : std::nullopt;
     };
@@ -109,8 +109,8 @@ int Session::runTasks(vm::Sandbox& sb, const std::vector<std::uint32_t>& functio
         }
         spawning_.clear();
     }
-    while (!terminate_ && !scheduler.pending().empty()) {
-        std::uint32_t task = scheduler.pending().front().task;
+    while (!terminate_ && scheduler.nextTask()) {
+        std::uint32_t task = *scheduler.nextTask();
         auto t = scheduler.next();
         if (!*t) {
             return failed(t->error());
