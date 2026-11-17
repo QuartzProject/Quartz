@@ -13,7 +13,6 @@
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LegacyPassManager.h>
-#include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/StringSaver.h>
 #include <llvm/Support/TargetSelect.h>
@@ -147,17 +146,6 @@ bool gCanaryDone = false;
 
 double msSince(std::chrono::steady_clock::time_point t0) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-}
-
-llvm::OptimizationLevel level(int opt) {
-    switch (opt) {
-    case 2:
-        return llvm::OptimizationLevel::O2;
-    case 3:
-        return llvm::OptimizationLevel::O3;
-    default:
-        return llvm::OptimizationLevel::O1;
-    }
 }
 
 } // namespace
@@ -308,17 +296,7 @@ QC_API int qc_compile(NativeJit* jit, const void* program, std::uint32_t functio
     double lowerMs = msSince(t0);
     auto t1 = std::chrono::steady_clock::now();
     if (jit->opt > 0) {
-        llvm::LoopAnalysisManager lam;
-        llvm::FunctionAnalysisManager fam;
-        llvm::CGSCCAnalysisManager cgam;
-        llvm::ModuleAnalysisManager mam;
-        llvm::PassBuilder pb(jit->tm.get());
-        pb.registerModuleAnalyses(mam);
-        pb.registerCGSCCAnalyses(cgam);
-        pb.registerFunctionAnalyses(fam);
-        pb.registerLoopAnalyses(lam);
-        pb.crossRegisterProxies(lam, fam, cgam, mam);
-        pb.buildPerModuleDefaultPipeline(level(jit->opt)).run(*mod, mam);
+        quartz::compiler::optimize(*mod, jit->tm.get());
     }
     double optMs = msSince(t1);
     if (std::getenv("QUARTZ_DUMP_LLVM") != nullptr) {

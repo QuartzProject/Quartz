@@ -21,12 +21,16 @@ else()
 endif()
 
 add_library(quartz_compiler SHARED Api.cpp Arrays.cpp Builtins.cpp Cache.cpp Closures.cpp Codegen.cpp FunctionCodegen.cpp FunctionSupport.cpp Intrinsics.cpp Loops.cpp
-    Tasks.cpp ${PROJECT_SOURCE_DIR}/src/ir/Types.cpp ${PROJECT_SOURCE_DIR}/src/ir/Liveness.cpp
+    Pipeline.cpp Tasks.cpp ${PROJECT_SOURCE_DIR}/src/ir/Types.cpp ${PROJECT_SOURCE_DIR}/src/ir/Liveness.cpp
     ${PROJECT_SOURCE_DIR}/src/ir/EnumProof.cpp)
 target_include_directories(quartz_compiler PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(quartz_compiler SYSTEM PRIVATE ${QUARTZ_LLVM_INCLUDE})
 target_compile_definitions(quartz_compiler PRIVATE __STDC_CONSTANT_MACROS __STDC_FORMAT_MACROS __STDC_LIMIT_MACROS)
 target_link_libraries(quartz_compiler PRIVATE quartz::options ${QUARTZ_LLVM_LIBS} ${QUARTZ_LLVM_SYSTEM_LIBS})
+if(QUARTZ_SANITIZE)
+    # Its copies of LLVM's inline slab allocator would replace the library's and poison what LLVM itself allocates.
+    set_source_files_properties(Pipeline.cpp PROPERTIES COMPILE_OPTIONS -fno-sanitize=all)
+endif()
 set_target_properties(quartz_compiler PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
 # Only the qc_* entry points leave the library; LLVM stays private to it.
 if(WIN32)
@@ -40,4 +44,10 @@ else()
     target_link_options(quartz_compiler PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--as-needed
         -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map)
     set_property(TARGET quartz_compiler APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/exports.map)
+    # lld folds LLVM's identical template copies: 2 MB less stripped, same code (D232).
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "-fuse-ld=lld;-Wl,--icf=all" QUARTZ_LLD_ICF)
+    if(QUARTZ_LLD_ICF)
+        target_link_options(quartz_compiler PRIVATE -fuse-ld=lld -Wl,--icf=all)
+    endif()
 endif()

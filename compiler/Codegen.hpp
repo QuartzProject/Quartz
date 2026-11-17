@@ -14,7 +14,14 @@
 #include <unordered_map>
 #include <vector>
 
+namespace llvm {
+class TargetMachine;
+}
+
 namespace quartz::compiler {
+
+/// Runs Quartz's optimization pipeline: LLVM's O1 without the passes Quartz IR never needs (D232).
+void optimize(llvm::Module& mod, llvm::TargetMachine* tm);
 
 /// How one 8-byte interpreter slot is held in an SSA value.
 enum class SlotKind : std::uint8_t { I1, I64, F64, F32, Ptr };
