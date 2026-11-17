@@ -1,8 +1,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT
+#include "ir/Serialize.hpp"
 #include "quartz/Quartz.hpp"
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -683,5 +685,34 @@ TEST_CASE("for over invalid UTF-8 and over a map changed inside the loop matches
     CHECK(interp.trap.find("map changed during iteration") != std::string::npos);
     if (!forcedUnavailable()) {
         CHECK(run(TierMode::Native) == interp);
+    }
+}
+
+TEST_CASE("hostile IR that reads an enum payload under another variant traps in both tiers") {
+    quartz::SourceInput src[] = {{"e.qz",
+                                  "enum E { A(int), B(str) }\nfn mk(n: int) -> E { return E.A(n) }\n"
+                                  "fn g(n: int) -> int {\n    match mk(n) {\n        E.B(s) => { return s.len() }\n"
+                                  "        _ => { return 0 }\n    }\n}\n"}};
+    quartz::CompileOutput out = quartz::compile(src, {.emitBinary = true, .manifest = {}});
+    REQUIRE_MESSAGE(out.program, out.diagnostics);
+    auto mod = quartz::ir::deserialize(out.binary);
+    REQUIRE(mod.has_value());
+    quartz::ir::Function& g = (*mod)->functions[out.program->findFunction("g")];
+    // Inverting the tag test still validates: only the runtime check stops the read of the int as a str.
+    auto inverted = std::ranges::find(g.code, quartz::ir::Op::Not, &quartz::ir::Inst::op);
+    REQUIRE(inverted != g.code.end());
+    inverted->op = quartz::ir::Op::Move;
+    auto p = quartz::load(quartz::ir::serialize(**mod));
+    REQUIRE(p.has_value());
+    for (TierMode mode : {TierMode::Interpreter, TierMode::Native}) {
+        quartz::vm::Limits limits;
+        limits.tier = mode;
+        quartz::vm::Sandbox sb(*p, limits);
+        REQUIRE(sb.start().has_value());
+        Slot n;
+        n.i = 0x4141414141;
+        auto r = sb.call((*p)->findFunction("g"), std::span(&n, 1));
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error().describe().find("unreachable in 'g'") != std::string::npos);
     }
 }

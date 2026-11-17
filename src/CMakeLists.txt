@@ -13,7 +13,7 @@ quartz_module(quartz_vm SOURCES vm/Layout.cpp vm/Bytecode.cpp vm/Compile.cpp vm/
     std/lib/RegexQz.cpp std/Regex.cpp std/regex/Parse.cpp std/regex/Compile.cpp std/regex/Pike.cpp std/lib/CollectionsQz.cpp std/lib/QueuesQz.cpp std/lib/SortedQz.cpp std/lib/CodecQz.cpp std/Codec.cpp
     DEPS quartz_ir quartz_zstd quartz_monocypher)
 # Suspension-point liveness, shared with the native compiler (D69).
-target_sources(quartz_ir PRIVATE ir/Liveness.cpp)
+target_sources(quartz_ir PRIVATE ir/Liveness.cpp ir/EnumProof.cpp)
 # The native tier loads libquartz_compiler at run time (D15); the core never links LLVM.
 target_sources(quartz_vm PRIVATE vm/Tier.cpp vm/NativeRuntime.cpp)
 if(NOT EMSCRIPTEN)

@@ -241,6 +241,7 @@ std::string FunctionCodegen::run() {
         live_ = std::make_unique<ir::Liveness>(fn_);
         zeroRefRegisters();
     }
+    provenFields_ = ir::provenEnumFields(*U.P.module, fn_);
     failBlock_ = llvm::BasicBlock::Create(U.C, "fail", F_);
     B_.SetInsertPoint(failBlock_);
     llvm::StructType* rt = U.resultType(index_);

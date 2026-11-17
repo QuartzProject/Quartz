@@ -21,7 +21,8 @@ else()
 endif()
 
 add_library(quartz_compiler SHARED Api.cpp Arrays.cpp Builtins.cpp Cache.cpp Closures.cpp Codegen.cpp FunctionCodegen.cpp FunctionSupport.cpp Intrinsics.cpp Loops.cpp
-    Tasks.cpp ${PROJECT_SOURCE_DIR}/src/ir/Types.cpp ${PROJECT_SOURCE_DIR}/src/ir/Liveness.cpp)
+    Tasks.cpp ${PROJECT_SOURCE_DIR}/src/ir/Types.cpp ${PROJECT_SOURCE_DIR}/src/ir/Liveness.cpp
+    ${PROJECT_SOURCE_DIR}/src/ir/EnumProof.cpp)
 target_include_directories(quartz_compiler PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(quartz_compiler SYSTEM PRIVATE ${QUARTZ_LLVM_INCLUDE})
 target_compile_definitions(quartz_compiler PRIVATE __STDC_CONSTANT_MACROS __STDC_FORMAT_MACROS __STDC_LIMIT_MACROS)

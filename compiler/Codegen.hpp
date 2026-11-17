@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ir/EnumProof.hpp"
 #include "ir/Ir.hpp"
 #include "ir/Liveness.hpp"
 #include "vm/Bytecode.hpp"
@@ -323,6 +324,7 @@ private:
     std::uint32_t line_ = 0;
     std::string error_;
     std::unique_ptr<ir::Liveness> live_; // suspend fns only
+    std::vector<bool> provenFields_;     // enum.field reads whose tag an earlier test proved (D231)
     std::vector<ResumePoint> resumePoints_;
 };
 

@@ -1,4 +1,5 @@
 #include "ir/Builtins.hpp"
+#include "ir/EnumProof.hpp"
 #include "ir/Liveness.hpp"
 #include "vm/Builtins.hpp"
 #include "vm/Bytecode.hpp"
@@ -57,6 +58,10 @@ public:
             put(Opc::Zero, out.paramSlots, 0, regSlots_ - out.paramSlots);
         }
         analyze();
+        // A debugger may change a local between the tag test and the read, so instrumented code keeps every check.
+        if (!prog_.probes.lines) {
+            provenFields_ = ir::provenEnumFields(*prog_.module, fn_);
+        }
         irPc_.assign(fn_.code.size() + 1, 0);
         std::uint32_t probedLine = 0;
         std::uint16_t probedColumn = 0;
@@ -892,7 +897,13 @@ private:
             }
             return;
         }
-        case Op::EnumTag: move(s(in.dst), s(in.a), 1); return;
+        case Op::EnumTag:
+            if (aliasable(in.dst, in.a)) {
+                offset_[in.dst] = offset_[in.a];
+                return;
+            }
+            move(s(in.dst), s(in.a), 1);
+            return;
         case Op::ScopeEnter: put(Opc::ScopeIn); return;
         case Op::ScopeExit: {
             put(Opc::ScopeOut);
@@ -919,12 +930,18 @@ private:
             for (std::uint32_t i = 0; i < in.b; ++i) {
                 off += lay_.slots(v.payload[i]);
             }
-            // The validator cannot prove the tag, and another variant's slots would be read as this payload's type.
-            std::size_t load = put(Opc::LoadI, regSlots_);
-            code_[load].setBc(static_cast<std::int32_t>(in.imm));
-            put(Opc::JEqI, s(in.a), regSlots_, 1);
-            put(Opc::Trap, static_cast<std::uint32_t>(ir::TrapCode::Unreachable));
-            maxOutgoing_ = std::max<std::uint32_t>(maxOutgoing_, 1);
+            if (pc_ >= provenFields_.size() || !provenFields_[pc_]) {
+                // The validator cannot prove the tag, and another variant's slots would be read as this payload's type.
+                std::size_t load = put(Opc::LoadI, regSlots_);
+                code_[load].setBc(static_cast<std::int32_t>(in.imm));
+                put(Opc::JEqI, s(in.a), regSlots_, 1);
+                put(Opc::Trap, static_cast<std::uint32_t>(ir::TrapCode::Unreachable));
+                maxOutgoing_ = std::max<std::uint32_t>(maxOutgoing_, 1);
+            }
+            if (aliasable(in.dst, in.a)) {
+                offset_[in.dst] = off;
+                return;
+            }
             move(s(in.dst), off, n(in.dst));
             return;
         }
@@ -941,6 +958,7 @@ private:
     std::vector<std::uint32_t> lines_;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> loopLines_;
     std::unique_ptr<ir::Liveness> live_;
+    std::vector<bool> provenFields_;
     std::vector<CompiledFunction::ResumeRecord> resumeRecords_;
 
     // Where each register kept by the native frame record lives in this interpreter frame (D69).

@@ -713,6 +713,10 @@ void FunctionCodegen::enumOp(const ir::Inst& in) {
         off += U.L.slots(var.payload[i]);
     }
     Values all = read(in.a);
+    if (pc_ >= provenFields_.size() || !provenFields_[pc_]) {
+        // The validator cannot prove the tag, and another variant's slots would be read as this payload's type.
+        trapIf(B_.CreateICmpNE(all[0], constI64(in.imm)), ir::TrapCode::Unreachable);
+    }
     const std::vector<SlotKind>& k = kindsOf(in.dst);
     Values out;
     for (std::size_t j = 0; j < k.size(); ++j) {
