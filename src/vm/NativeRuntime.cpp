@@ -191,20 +191,12 @@ std::int32_t qzStrCmp(const Str* a, const Str* b) {
     return a->len < b->len ? -1 : a->len > b->len ? 1 : 0;
 }
 
-} // namespace
-
 #if defined(__SSE2__)
-// Candidates in [skip, 16) of the block at `base` whose first and last bytes match; -1 when none matches fully.
-[[gnu::always_inline]] inline std::int64_t scanBlock(const char* base, const char* n, std::size_t nn, __m128i first,
-                                                     __m128i last, std::uint32_t keep) {
-    __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(base));
-    __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(base + nn - 1));
-    auto mask =
-        static_cast<std::uint32_t>(_mm_movemask_epi8(_mm_and_si128(_mm_cmpeq_epi8(a, first), _mm_cmpeq_epi8(b, last))));
-    mask &= keep;
+// The first candidate in `mask` whose middle bytes match too; the caller already compared the first and the last.
+[[gnu::noinline]] std::int64_t verifyCandidates(const char* h, const char* n, std::size_t nn, std::uint64_t mask) {
     while (mask != 0) {
         auto bit = static_cast<std::size_t>(std::countr_zero(mask));
-        if (std::memcmp(base + bit + 1, n + 1, nn - 2) == 0) {
+        if (bytesEq(h + bit + 1, n + 1, nn - 2)) {
             return static_cast<std::int64_t>(bit);
         }
         mask &= mask - 1;
@@ -212,8 +204,45 @@ std::int32_t qzStrCmp(const Str* a, const Str* b) {
     return -1;
 }
 
-// First and last needle byte compared 16 positions at a time; same answer as std::string_view::find.
-std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t nn) {
+[[gnu::always_inline]] inline std::uint32_t eqMask(const char* p, __m128i v) {
+    __m128i x = _mm_loadu_si128(reinterpret_cast<const __m128i*>(p));
+    return static_cast<std::uint32_t>(_mm_movemask_epi8(_mm_cmpeq_epi8(x, v)));
+}
+
+// Haystacks under 8 bytes or with more than 64 candidates.
+[[gnu::noinline]] std::int64_t findOther(const char* h, std::size_t hn, const char* n, std::size_t nn) {
+    std::size_t candidates = hn - nn + 1;
+    if (hn < 8) {
+        std::uint32_t mask = 0;
+        for (std::size_t i = 0; i < candidates; ++i) {
+            mask |= static_cast<std::uint32_t>(h[i] == n[0] && h[i + nn - 1] == n[nn - 1]) << i;
+        }
+        return mask == 0 ? -1 : verifyCandidates(h, n, nn, mask);
+    }
+    const __m128i first = _mm_set1_epi8(n[0]);
+    const __m128i last = _mm_set1_epi8(n[nn - 1]);
+    std::size_t i = 0;
+    for (; i + 16 <= candidates; i += 16) {
+        std::uint32_t mask = eqMask(h + i, first) & eqMask(h + i + nn - 1, last);
+        if (mask != 0) {
+            if (std::int64_t r = verifyCandidates(h + i, n, nn, mask); r >= 0) {
+                return static_cast<std::int64_t>(i) + r;
+            }
+        }
+    }
+    if (i == candidates) {
+        return -1;
+    }
+    // The last block overlaps the previous one; positions already checked are masked out.
+    std::size_t start = candidates - 16;
+    std::uint32_t mask = eqMask(h + start, first) & eqMask(h + start + nn - 1, last) & (0xFFFFu << (i - start));
+    std::int64_t r = mask == 0 ? -1 : verifyCandidates(h + start, n, nn, mask);
+    return r < 0 ? -1 : static_cast<std::int64_t>(start) + r;
+}
+
+// First and last needle byte compared 16 positions at a time; same answer as std::string_view::find. Up to 64
+// candidates take no loop: overlapping blocks cover them, so every load stays inside the haystack.
+[[gnu::always_inline]] inline std::int64_t findInline(const char* h, std::size_t hn, const char* n, std::size_t nn) {
     if (nn == 0) {
         return 0;
     }
@@ -224,48 +253,57 @@ std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t
         const void* at = std::memchr(h, n[0], hn);
         return at == nullptr ? -1 : static_cast<const char*>(at) - h;
     }
+    std::size_t candidates = hn - nn + 1;
+    if (hn < 8 || candidates > 64) {
+        return findOther(h, hn, n, nn);
+    }
     const __m128i first = _mm_set1_epi8(n[0]);
     const __m128i last = _mm_set1_epi8(n[nn - 1]);
-    std::size_t candidates = hn - nn + 1;
-    if (candidates < 16) {
-        // Too short for one block: pad a copy so no load leaves the string.
-        constexpr std::size_t kPad = 64;
-        if (nn > kPad - 16) {
-            std::size_t at = std::string_view(h, hn).find(std::string_view(n, nn));
-            return at == std::string_view::npos ? -1 : static_cast<std::int64_t>(at);
-        }
-        char padded[kPad] = {};
-        std::memcpy(padded, h, hn);
-        return scanBlock(padded, n, nn, first, last, (1u << candidates) - 1);
+    auto block = [&](std::size_t at) -> std::uint64_t { return eqMask(h + at, first) & eqMask(h + at + nn - 1, last); };
+    std::uint64_t mask = 0;
+    if (hn < 16) {
+        // The first and the last eight bytes side by side; lanes 8..15 stand for positions hn-8..hn-1.
+        std::uint64_t lo = 0;
+        std::uint64_t hi = 0;
+        std::memcpy(&lo, h, 8);
+        std::memcpy(&hi, h + hn - 8, 8);
+        __m128i v = _mm_set_epi64x(static_cast<long long>(hi), static_cast<long long>(lo));
+        auto spread = [&](__m128i c) {
+            auto m = static_cast<std::uint32_t>(_mm_movemask_epi8(_mm_cmpeq_epi8(v, c)));
+            return (m & 0xFFu) | ((m >> 8) << (hn - 8));
+        };
+        mask = spread(first) & (spread(last) >> (nn - 1)) & ((1u << candidates) - 1);
+    } else if (candidates < 16) {
+        mask = eqMask(h, first) & (eqMask(h + hn - 16, last) >> (16 - candidates)) & ((1u << candidates) - 1);
+    } else if (candidates <= 32) {
+        mask = block(0) | (block(candidates - 16) << (candidates - 16));
+    } else {
+        std::uint64_t low = block(0) | (block(16) << 16);
+        std::uint64_t high = block(candidates - 32) | (block(candidates - 16) << 16);
+        mask = low | (high << (candidates - 32));
     }
-    std::size_t i = 0;
-    for (; i + 16 <= candidates; i += 16) {
-        if (std::int64_t r = scanBlock(h + i, n, nn, first, last, 0xFFFFu); r >= 0) {
-            return static_cast<std::int64_t>(i) + r;
-        }
-    }
-    if (i == candidates) {
-        return -1;
-    }
-    // The last block overlaps the previous one; positions already checked are masked out.
-    std::size_t start = candidates - 16;
-    std::int64_t r = scanBlock(h + start, n, nn, first, last, 0xFFFFu << (i - start));
-    return r < 0 ? -1 : static_cast<std::int64_t>(start) + r;
+    return mask == 0 ? -1 : verifyCandidates(h, n, nn, mask);
 }
 #else
-std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t nn) {
+std::int64_t findInline(const char* h, std::size_t hn, const char* n, std::size_t nn) {
     std::size_t at = std::string_view(h, hn).find(std::string_view(n, nn));
     return at == std::string_view::npos ? -1 : static_cast<std::int64_t>(at);
 }
 #endif
 
+} // namespace
+
+std::int64_t findBytes(const char* h, std::size_t hn, const char* n, std::size_t nn) {
+    return findInline(h, hn, n, nn);
+}
+
 namespace {
 
 std::uint32_t qzStrContains(const Str* a, const Str* b) {
-    return findBytes(a->data, a->len, b->data, b->len) >= 0 ? 1 : 0;
+    return findInline(a->data, a->len, b->data, b->len) >= 0 ? 1 : 0;
 }
 
-std::int64_t qzStrFind(const Str* a, const Str* b) { return findBytes(a->data, a->len, b->data, b->len); }
+std::int64_t qzStrFind(const Str* a, const Str* b) { return findInline(a->data, a->len, b->data, b->len); }
 
 std::uint32_t qzStrStarts(const Str* a, const Str* b) { return a->view().starts_with(b->view()) ? 1 : 0; }
 
