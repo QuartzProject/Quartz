@@ -171,15 +171,13 @@ Str* Sandbox::copyStr(std::string_view text) {
         h->hash = 0;
         h->owner = Owner::Arena;
         h->level = 0;
-        if (!text.empty()) {
-            std::memcpy(h->data, text.data(), text.size());
-        }
+        copyBytes(h->data, text.data(), text.size());
         h->data[text.size()] = '\0';
         return h;
     }
     Str* s = allocStr(text.size());
-    if (s != nullptr && !text.empty()) {
-        std::memcpy(s->data, text.data(), text.size());
+    if (s != nullptr) {
+        copyBytes(s->data, text.data(), text.size());
     }
     return s;
 }
@@ -277,7 +275,7 @@ Str* Sandbox::concat(const Slot* parts, std::uint32_t count) {
     char* out = s->data;
     for (std::uint32_t i = 0; i < count; ++i) {
         const auto* p = static_cast<const Str*>(parts[i].p);
-        std::memcpy(out, p->data, p->len);
+        copyBytes(out, p->data, p->len);
         out += p->len;
     }
     return s;
@@ -524,11 +522,11 @@ Str* Sandbox::join(const List* l, const Str* sep) {
     char* out = s->data;
     for (std::uint32_t i = 0; i < l->len; ++i) {
         if (i > 0) {
-            std::memcpy(out, sep->data, sep->len);
+            copyBytes(out, sep->data, sep->len);
             out += sep->len;
         }
         const auto* p = static_cast<const Str*>(l->data[i].p);
-        std::memcpy(out, p->data, p->len);
+        copyBytes(out, p->data, p->len);
         out += p->len;
     }
     return s;

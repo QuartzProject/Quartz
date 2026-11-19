@@ -117,8 +117,68 @@ inline std::uint32_t strHash(Str* s) {
     return s->hash;
 }
 
+// Up to 16 bytes compared inline with two overlapping loads, which stay inside both ranges; longer ones go to memcmp.
+inline bool bytesEq(const char* a, const char* b, std::size_t n) {
+    if (n >= 8 && n <= 16) {
+        std::uint64_t a0 = 0;
+        std::uint64_t b0 = 0;
+        std::uint64_t a1 = 0;
+        std::uint64_t b1 = 0;
+        std::memcpy(&a0, a, 8);
+        std::memcpy(&b0, b, 8);
+        std::memcpy(&a1, a + n - 8, 8);
+        std::memcpy(&b1, b + n - 8, 8);
+        return ((a0 ^ b0) | (a1 ^ b1)) == 0;
+    }
+    if (n >= 4 && n < 8) {
+        std::uint32_t a0 = 0;
+        std::uint32_t b0 = 0;
+        std::uint32_t a1 = 0;
+        std::uint32_t b1 = 0;
+        std::memcpy(&a0, a, 4);
+        std::memcpy(&b0, b, 4);
+        std::memcpy(&a1, a + n - 4, 4);
+        std::memcpy(&b1, b + n - 4, 4);
+        return ((a0 ^ b0) | (a1 ^ b1)) == 0;
+    }
+    if (n < 4) {
+        return n == 0 || (a[0] == b[0] && a[n / 2] == b[n / 2] && a[n - 1] == b[n - 1]);
+    }
+    return std::memcmp(a, b, n) == 0;
+}
+
+// Short copies inline with the same overlapping loads; the libc call costs more than the copy up to 16 bytes.
+inline void copyBytes(char* dst, const char* src, std::size_t n) {
+    if (n >= 8 && n <= 16) {
+        std::uint64_t x = 0;
+        std::uint64_t y = 0;
+        std::memcpy(&x, src, 8);
+        std::memcpy(&y, src + n - 8, 8);
+        std::memcpy(dst, &x, 8);
+        std::memcpy(dst + n - 8, &y, 8);
+    } else if (n >= 4 && n < 8) {
+        std::uint32_t x = 0;
+        std::uint32_t y = 0;
+        std::memcpy(&x, src, 4);
+        std::memcpy(&y, src + n - 4, 4);
+        std::memcpy(dst, &x, 4);
+        std::memcpy(dst + n - 4, &y, 4);
+    } else if (n < 4) {
+        if (n != 0) {
+            char a = src[0];
+            char b = src[n / 2];
+            char c = src[n - 1];
+            dst[0] = a;
+            dst[n / 2] = b;
+            dst[n - 1] = c;
+        }
+    } else {
+        std::memcpy(dst, src, n);
+    }
+}
+
 inline bool strEq(const Str* a, const Str* b) {
-    return a == b || (a->len == b->len && std::memcmp(a->data, b->data, a->len) == 0);
+    return a == b || (a->len == b->len && bytesEq(a->data, b->data, a->len));
 }
 
 } // namespace quartz::vm
