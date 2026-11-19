@@ -152,6 +152,8 @@ struct CompiledFunction {
     bool isSuspend = false;
     std::vector<std::int32_t> entryPlan; // per parameter: state index, kHostArg for an argument given in as many slots as its type spans, kBadArg otherwise
     std::vector<std::int32_t> entryHandle; // per parameter: for a per-handle state, the first host slot holding the handle
+    std::vector<std::uint32_t>
+        entryWidth; // per parameter: the host slots it takes, so a call does not look the type up
     static constexpr std::int32_t kHostArg = -1;
     static constexpr std::int32_t kBadArg = -2;
     std::vector<std::pair<std::uint32_t, ir::TypeId>> refSlots; // slots that may hold references, for task suspension

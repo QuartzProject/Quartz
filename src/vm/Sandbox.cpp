@@ -159,23 +159,26 @@ Slot* Sandbox::instanceFor(std::size_t state, std::uint64_t handle) {
     return st;
 }
 
+Slot* Sandbox::stateFor(const CompiledFunction& fn, std::size_t param, std::span<const Slot> args) {
+    auto s = static_cast<std::size_t>(fn.entryPlan[param]);
+    if (fn.entryHandle[param] < 0) {
+        return states_[s];
+    }
+    auto h = static_cast<std::size_t>(fn.entryHandle[param]);
+    if (h >= args.size()) {
+        fail(ir::TrapCode::HostError, "argument mismatch");
+        return nullptr;
+    }
+    return instanceFor(s, args[h].u);
+}
+
 bool Sandbox::resolveStates(const CompiledFunction& fn, std::span<const Slot> args, std::vector<Slot*>& out) {
     out.assign(fn.entryPlan.size(), nullptr);
     for (std::size_t i = 0; i < fn.entryPlan.size(); ++i) {
-        std::int32_t plan = fn.entryPlan[i];
-        if (plan < 0) {
+        if (fn.entryPlan[i] < 0) {
             continue;
         }
-        auto s = static_cast<std::size_t>(plan);
-        if (fn.entryHandle[i] < 0) {
-            out[i] = states_[s];
-            continue;
-        }
-        auto h = static_cast<std::size_t>(fn.entryHandle[i]);
-        if (h >= args.size()) {
-            return fail(ir::TrapCode::HostError, "argument mismatch");
-        }
-        out[i] = instanceFor(s, args[h].u);
+        out[i] = stateFor(fn, i, args);
         if (out[i] == nullptr) {
             return false;
         }
@@ -283,19 +286,19 @@ std::expected<Slot, Trap> Sandbox::call(std::uint32_t function, std::span<const 
     hostArenas_[hostArena_ ^ 1].reset();
     mapCursor_.map = nullptr;
     trapped_ = false;
-    std::vector<Slot*>& resolved = resolved_;
-    if (!resolveStates(fn, args, resolved)) {
-        return std::unexpected(trap_);
-    }
     std::size_t next = 0;
     std::uint32_t slot = 0;
     for (std::size_t pi = 0; pi < fn.entryPlan.size(); ++pi) {
         std::int32_t plan = fn.entryPlan[pi];
         if (plan >= 0) {
-            stack_[slot++].p = resolved[pi];
+            Slot* state = stateFor(fn, pi, args);
+            if (state == nullptr) {
+                return std::unexpected(trap_);
+            }
+            stack_[slot++].p = state;
             continue;
         }
-        const std::size_t width = plan == CompiledFunction::kBadArg ? 0 : program_->layouts->slots(fn.params[pi]);
+        const std::size_t width = fn.entryWidth[pi];
         if (width == 0 || next + width > args.size()) {
             return std::unexpected(Trap{ir::TrapCode::HostError, "argument mismatch", fn.name, 0});
         }

@@ -1082,6 +1082,7 @@ std::unique_ptr<Program> compile(std::unique_ptr<ir::Module> module, Probes prob
             }
             cf.entryPlan.push_back(plan);
             cf.entryHandle.push_back(handleArg);
+            cf.entryWidth.push_back(plan == CompiledFunction::kHostArg ? prog->layouts->slots(p) : 0);
         }
         prog->functions.push_back(std::move(cf));
         prog->maxFrameSlots = std::max(prog->maxFrameSlots, prog->functions.back().frameSlots);

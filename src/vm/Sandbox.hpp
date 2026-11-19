@@ -364,8 +364,8 @@ private:
     void bindNatives();
     Slot* instanceFor(std::size_t state, std::uint64_t handle);
     bool resolveStates(const CompiledFunction& fn, std::span<const Slot> args, std::vector<Slot*>& out);
+    Slot* stateFor(const CompiledFunction& fn, std::size_t param, std::span<const Slot> args);
     std::vector<std::unordered_map<std::uint64_t, Slot*>> perHandle_;
-    std::vector<Slot*> resolved_;
     struct LinkTarget {
         Sandbox* provider;
         std::uint32_t function;
