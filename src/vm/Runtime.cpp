@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstring>
 #include <format>
 
 namespace quartz::vm {
@@ -13,6 +14,18 @@ using ir::TypeId;
 using ir::TypeKind;
 
 namespace {
+
+// Flips bit 5 of the bytes in 'a'..'z' (upper) or 'A'..'Z' (lower); bytes above 0x7F never match.
+std::uint64_t asciiCaseWord(std::uint64_t w, bool upper) {
+    constexpr std::uint64_t kOnes = 0x0101010101010101ULL;
+    constexpr std::uint64_t kHigh = 0x8080808080808080ULL;
+    std::uint64_t lo = upper ? 'a' : 'A';
+    std::uint64_t seven = w & ~kHigh;
+    std::uint64_t atLeast = seven + kOnes * (0x80 - lo);
+    std::uint64_t above = seven + kOnes * (0x7F - (lo + 25));
+    std::uint64_t letter = (atLeast ^ above) & ~w & kHigh;
+    return w ^ (letter >> 2);
+}
 
 std::string place(std::string_view file, std::uint32_t line) {
     if (line == 0) {
@@ -306,14 +319,25 @@ Str* Sandbox::caseMap(const Str* s, bool upper) {
     if (out == nullptr) {
         return nullptr;
     }
-    for (std::uint32_t i = 0; i < s->len; ++i) {
-        char c = s->data[i];
-        if (upper && c >= 'a' && c <= 'z') {
-            c = static_cast<char>(c - 32);
-        } else if (!upper && c >= 'A' && c <= 'Z') {
-            c = static_cast<char>(c + 32);
+    std::size_t n = s->len;
+    if (n < 8) {
+        char lo = upper ? 'a' : 'A';
+        for (std::size_t i = 0; i < n; ++i) {
+            char c = s->data[i];
+            out->data[i] = c >= lo && c <= lo + 25 ? static_cast<char>(c ^ 0x20) : c;
         }
-        out->data[i] = c;
+        return out;
+    }
+    // Eight bytes at a time; the last word overlaps the previous one so every load stays inside the string.
+    for (std::size_t i = 0;; i += 8) {
+        std::size_t at = i + 8 <= n ? i : n - 8;
+        std::uint64_t w = 0;
+        std::memcpy(&w, s->data + at, 8);
+        w = asciiCaseWord(w, upper);
+        std::memcpy(out->data + at, &w, 8);
+        if (at + 8 == n) {
+            break;
+        }
     }
     return out;
 }
