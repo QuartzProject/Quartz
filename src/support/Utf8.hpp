@@ -13,6 +13,22 @@ inline bool validUtf8(std::string_view text) {
     const std::size_t n = text.size();
     std::size_t i = 0;
     constexpr std::uint64_t kHigh = 0x8080808080808080ULL;
+    if (n >= 8 && n <= 64) {
+        // Short ASCII text in one pass of words; the last word overlaps the one before it.
+        std::uint64_t any = 0;
+        for (std::size_t at = 0;; at += 8) {
+            std::size_t from = at + 8 <= n ? at : n - 8;
+            std::uint64_t word = 0;
+            std::memcpy(&word, p + from, 8);
+            any |= word;
+            if (from + 8 == n) {
+                break;
+            }
+        }
+        if ((any & kHigh) == 0) {
+            return true;
+        }
+    }
     while (i + 32 <= n) {
         std::uint64_t w[4];
         std::memcpy(w, p + i, 32);
