@@ -235,7 +235,15 @@ void FunctionCodegen::branch(std::uint32_t depth, llvm::Value* cond) {
     B_.SetInsertPoint(back);
     chargeFuel(state, f.target);
     line_ = line;
-    B_.CreateBr(f.target);
+    llvm::Instruction* latch = B_.CreateBr(f.target);
+    if (!checkFuel_ && unroll_ > 1) {
+        llvm::Metadata* count[] = {llvm::MDString::get(U.C, "llvm.loop.unroll.count"),
+                                   llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(U.i32, unroll_))};
+        llvm::Metadata* ops[] = {nullptr, llvm::MDNode::get(U.C, count)};
+        llvm::MDNode* id = llvm::MDNode::getDistinct(U.C, ops);
+        id->replaceOperandWith(0, id);
+        latch->setMetadata(llvm::LLVMContext::MD_loop, id);
+    }
     B_.SetInsertPoint(cont);
 }
 

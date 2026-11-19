@@ -158,6 +158,34 @@ bool FunctionCodegen::countedLoop(std::size_t loop, CountedLoop& out) const {
     return true;
 }
 
+// Whether every intrinsic in the loop is lowered inline; a loop calling into the runtime gains nothing unrolled.
+bool FunctionCodegen::inlineBody(std::size_t loop, std::size_t end) const {
+    for (std::size_t pc = loop + 1; pc < end; ++pc) {
+        const ir::Inst& in = fn_.code[pc];
+        if (in.op != Op::Intrinsic) {
+            continue;
+        }
+        switch (static_cast<ir::Intrinsic>(in.imm)) {
+        case ir::Intrinsic::ListLen:
+        case ir::Intrinsic::ListGet:
+        case ir::Intrinsic::ListSet:
+        case ir::Intrinsic::MathSqrt:
+        case ir::Intrinsic::MathFloor:
+        case ir::Intrinsic::MathCeil:
+        case ir::Intrinsic::MathAbsF:
+        case ir::Intrinsic::MathAbsI:
+        case ir::Intrinsic::MathMinI:
+        case ir::Intrinsic::MathMaxI:
+        case ir::Intrinsic::MathMinF:
+        case ir::Intrinsic::MathMaxF:
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
+}
+
 void FunctionCodegen::versionLoop(std::size_t loop, const CountedLoop& c) {
     llvm::Value* i0 = read1(c.i);
     llvm::Value* step = read1(c.step);
@@ -176,6 +204,8 @@ void FunctionCodegen::versionLoop(std::size_t loop, const CountedLoop& c) {
     B_.CreateCondBr(ok, fast, slow);
     // The checked copy goes first so the unchecked one can jump into it after a host call charged fuel.
     resume_.clear();
+    // Unrolling the unchecked copy turns about two taken branches per iteration into one (D233).
+    unroll_ = c.end - loop <= 64 && inlineBody(loop, c.end) ? 8 : 0;
     for (llvm::BasicBlock* head : {slow, fast}) {
         checkFuel_ = head == slow;
         recordResume_ = head == slow;
@@ -193,6 +223,7 @@ void FunctionCodegen::versionLoop(std::size_t loop, const CountedLoop& c) {
     }
     checkFuel_ = true;
     recordResume_ = false;
+    unroll_ = 0;
     B_.SetInsertPoint(after);
 }
 

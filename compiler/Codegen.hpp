@@ -234,6 +234,7 @@ private:
     /// True when the Block closed at `end` is never the target of a branch.
     bool fallsThroughOnly(std::size_t end) const;
     /// Emits the loop twice: without fuel checks when the remaining fuel covers every back edge, and with them.
+    [[nodiscard]] bool inlineBody(std::size_t loop, std::size_t end) const;
     void versionLoop(std::size_t loop, const CountedLoop& c);
 
     // Intrinsics.cpp
@@ -331,6 +332,7 @@ private:
     std::uint32_t line_ = 0;
     std::string error_;
     std::unique_ptr<ir::Liveness> live_; // suspend fns only
+    std::uint32_t unroll_ = 0;           // unroll count for the unchecked copy of the counted loop being lowered
     std::vector<bool> provenFields_;     // enum.field reads whose tag an earlier test proved (D231)
     std::vector<ResumePoint> resumePoints_;
 };
