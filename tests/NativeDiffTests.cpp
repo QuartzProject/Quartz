@@ -269,7 +269,10 @@ TEST_CASE("native code prints and returns what the interpreter does") {
         if (p->functions[p->findFunction("main")].isSuspend) {
             continue; // tasks always run in the interpreter
         }
-        CHECK(runMain(p, TierMode::Native) == runMain(p, TierMode::Interpreter));
+        Outcome native = runMain(p, TierMode::Native);
+        Outcome interp = runMain(p, TierMode::Interpreter);
+        CHECK(native.log == interp.log);
+        CHECK(native.trap == interp.trap);
     }
 }
 

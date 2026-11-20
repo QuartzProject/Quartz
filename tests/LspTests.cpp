@@ -69,6 +69,9 @@ std::vector<Json> runSession(std::string_view name, const std::string& input) {
     std::ofstream(dir / "in", std::ios::binary) << input;
     std::string cmd = std::string("\"") + QUARTZ_LSP_PATH + "\" < \"" + (dir / "in").string() + "\" > \"" +
                       (dir / "out").string() + "\" 2> \"" + (dir / "err").string() + "\"";
+#ifdef _WIN32
+    cmd = "\"" + cmd + "\""; // cmd.exe strips the outer quotes of a line that holds several
+#endif
     REQUIRE(std::system(cmd.c_str()) == 0);
     std::stringstream ss;
     ss << std::ifstream(dir / "out", std::ios::binary).rdbuf();

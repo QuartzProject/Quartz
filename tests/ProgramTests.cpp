@@ -47,7 +47,7 @@ impl int {
 
 // `// file: name` lines split one test into several source files.
 std::vector<quartz::SourceInput> withInterface(const fs::path& path, const std::string& text) {
-    std::vector<quartz::SourceInput> inputs{{path.string(), ""}};
+    std::vector<quartz::SourceInput> inputs{{path.generic_string(), ""}};
     std::istringstream in(text);
     std::string line;
     while (std::getline(in, line)) {
@@ -60,7 +60,7 @@ std::vector<quartz::SourceInput> withInterface(const fs::path& path, const std::
     fs::path iface = path;
     iface.replace_extension(".qzi");
     if (fs::exists(iface)) {
-        inputs.push_back({iface.string(), readFile(iface)});
+        inputs.push_back({iface.generic_string(), readFile(iface)});
     }
     return inputs;
 }

@@ -135,6 +135,9 @@ TEST_CASE("scripted debug session: breakpoints, steps, variables and a trap") {
     std::ofstream(dir / "in", std::ios::binary) << in;
     std::string cmd = std::string("\"") + QUARTZ_CLI_PATH + "\" debug --dap < \"" + (dir / "in").string() + "\" > \"" +
                       (dir / "out").string() + "\" 2> \"" + (dir / "err").string() + "\"";
+#ifdef _WIN32
+    cmd = "\"" + cmd + "\""; // cmd.exe strips the outer quotes of a line that holds several
+#endif
     REQUIRE(std::system(cmd.c_str()) == 0);
     std::stringstream ss;
     ss << std::ifstream(dir / "out", std::ios::binary).rdbuf();
@@ -199,6 +202,9 @@ std::vector<Json> runSession(const fs::path& dir, const std::string& in) {
     std::ofstream(dir / "in", std::ios::binary) << in;
     std::string cmd = std::string("\"") + QUARTZ_CLI_PATH + "\" debug --dap < \"" + (dir / "in").string() + "\" > \"" +
                       (dir / "out").string() + "\" 2> \"" + (dir / "err").string() + "\"";
+#ifdef _WIN32
+    cmd = "\"" + cmd + "\""; // cmd.exe strips the outer quotes of a line that holds several
+#endif
     REQUIRE(std::system(cmd.c_str()) == 0);
     std::stringstream ss;
     ss << std::ifstream(dir / "out", std::ios::binary).rdbuf();
