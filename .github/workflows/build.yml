@@ -104,14 +104,20 @@ jobs:
           mem: 8192
           usesh: true
           prepare: |
-            n=0; until pkg install -y cmake ninja llvm23 bash; do n=$((n + 1)); [ $n -lt 4 ] || exit 1; sleep 20; done
+            n=0; until pkg install -y cmake ninja llvm23 bash zstd; do n=$((n + 1)); [ $n -lt 4 ] || exit 1; sleep 20; done
           run: |
             set -eu
             llvm=/usr/local/llvm23
             "$llvm/bin/llvm-config" --version | grep -q '^23\.'
+            mkdir -p "$HOME/quartz-static"
+            for lib in zstd xml2; do
+                [ ! -f "/usr/local/lib/lib$lib.a" ] || cp "/usr/local/lib/lib$lib.a" "$HOME/quartz-static/"
+            done
             cmake --preset release -DCMAKE_BUILD_TYPE=Release "-DQUARTZ_VERSION=$VERSION" -DQUARTZ_SHARED=ON \
               -DQUARTZ_COMPILER=ON -DQUARTZ_JVM=OFF -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_C_COMPILER="$llvm/bin/clang" \
-              -DCMAKE_CXX_COMPILER="$llvm/bin/clang++" -DQUARTZ_LLVM_CONFIG="$llvm/bin/llvm-config"
+              -DCMAKE_CXX_COMPILER="$llvm/bin/clang++" -DQUARTZ_LLVM_CONFIG="$llvm/bin/llvm-config" \
+              "-DCMAKE_SHARED_LINKER_FLAGS=-L$HOME/quartz-static -L/usr/local/lib" \
+              "-DCMAKE_EXE_LINKER_FLAGS=-L$HOME/quartz-static -L/usr/local/lib"
             cmake --build build/release
             ctest --test-dir build/release --output-on-failure
             .github/scripts/package.sh "$VERSION" FreeBSD-x64 build/release
