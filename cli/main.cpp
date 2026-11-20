@@ -64,6 +64,7 @@ int usage() {
                  "       quartz repl\n"
                  "       quartz debug --dap\n"
                  "       quartz fmt [--check] <file|dir>... | quartz fmt -\n"
+                 "       quartz --version\n"
                  "packages with dependencies build with qiln: %s\n",
                  kQilnDocs);
     return 2;
@@ -474,6 +475,10 @@ const char* movedToQiln(std::string_view cmd) {
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view(argv[1]) == "repl") {
         return runRepl();
+    }
+    if (argc == 2 && (std::string_view(argv[1]) == "--version" || std::string_view(argv[1]) == "version")) {
+        std::printf("quartz %s\n", QUARTZ_VERSION);
+        return 0;
     }
     if (argc < 2) {
         return usage();

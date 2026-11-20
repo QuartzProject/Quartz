@@ -1,3 +1,4 @@
 add_executable(quartz-cli main.cpp Fmt.cpp Test.cpp Doc.cpp Repl.cpp)
 set_target_properties(quartz-cli PROPERTIES OUTPUT_NAME quartz)
 target_link_libraries(quartz-cli PRIVATE quartz quartz_format quartz_dap)
+target_compile_definitions(quartz-cli PRIVATE QUARTZ_VERSION="${QUARTZ_VERSION}")
