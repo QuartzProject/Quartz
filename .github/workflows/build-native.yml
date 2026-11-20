@@ -1,0 +1,104 @@
+name: Build native
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: The GitHub-hosted runner
+        type: string
+        required: true
+      target:
+        description: The release artifact target
+        type: string
+        required: true
+      version:
+        description: The planned version to stamp
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: ${{ startsWith(inputs.target, 'Windows') && 'msys2 {0}' || 'bash' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the MinGW toolchain
+        if: startsWith(inputs.target, 'Windows')
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ inputs.target == 'Windows-arm64' && 'CLANGARM64' || 'CLANG64' }}
+          update: true
+          pacboy: >-
+            clang:p lld:p llvm:p cmake:p ninja:p zstd:p zlib:p
+          install: zip
+
+      - name: Install ccache
+        if: ${{ !startsWith(inputs.target, 'Windows') }}
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          job-summary: ''
+          max-size: 800M
+          key: ${{ inputs.target }}
+
+      - name: Select the compiler
+        run: .github/scripts/select-compiler.sh
+
+      - name: Configure
+        run: |
+          launcher=""
+          if command -v ccache >/dev/null; then
+              launcher="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+          fi
+          eval cmake --preset release -DCMAKE_BUILD_TYPE=Release "-DQUARTZ_VERSION=${{ inputs.version }}" \
+            -DQUARTZ_SHARED=ON -DQUARTZ_COMPILER=ON -DQUARTZ_JVM=OFF -DQUARTZ_ANDROID=OFF -DCMAKE_INSTALL_LIBDIR=lib $launcher $QUARTZ_CMAKE_ARGS
+
+      - name: Build
+        run: cmake --build build/release -- -k 0
+
+      - name: Test
+        run: ctest --test-dir build/release --output-on-failure
+
+      - name: Package
+        run: .github/scripts/package.sh "${{ inputs.version }}" "${{ inputs.target }}" build/release
+
+      - name: Check the tools run from the package
+        run: |
+          mkdir -p check
+          case "${{ inputs.target }}" in
+          Windows-*) unzip -q dist/*.zip -d check ;;
+          *) tar -xJf dist/*.tar.xz -C check ;;
+          esac
+          check/*/bin/quartz --version | grep -F "${{ inputs.version }}"
+          printf 'fn main() {\n    print("ok")\n}\n' > check/hello.qz
+          check/*/bin/quartz run check/hello.qz | grep -qx ok
+
+      - name: Check the macOS binaries need only the system
+        if: startsWith(inputs.target, 'macOS')
+        run: |
+          for binary in check/*/bin/* check/*/lib/*.dylib; do
+              otool -L "$binary"
+              if otool -L "$binary" | grep -q -e /opt/homebrew -e /usr/local/opt; then echo "$binary links Homebrew"; exit 1; fi
+          done
+
+      - name: Check the Windows binaries need only the system
+        if: startsWith(inputs.target, 'Windows')
+        run: |
+          for binary in check/*/bin/*.exe check/*/bin/*.dll; do
+              echo "$binary"
+              if objdump -p "$binary" | grep 'DLL Name' | grep -i -e 'libc++' -e 'libwinpthread' -e 'libunwind' -e 'libLLVM'; then exit 1; fi
+          done
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v7
+        with:
+          name: quartz-${{ inputs.target }}
+          path: dist/
+          if-no-files-found: error

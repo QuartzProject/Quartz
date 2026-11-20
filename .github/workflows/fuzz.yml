@@ -1,0 +1,62 @@
+name: Fuzz
+
+# Every night and on demand: each fuzzer runs for a while with ASan and UBSan on top of the corpus the last run left.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per fuzzer
+        default: "600"
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [frontend, data, binary, ir_loader]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the toolchain
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 23
+          sudo apt-get install -y ninja-build
+
+      - name: Restore the corpus
+        uses: actions/cache/restore@v6
+        with:
+          path: corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+
+      - name: Build
+        run: |
+          cmake --preset fuzz -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
+          cmake --build build/fuzz --target quartz_fuzz_${{ matrix.target }}
+
+      - name: Fuzz
+        run: |
+          mkdir -p corpus/${{ matrix.target }} crashes
+          if [ "${{ matrix.target }}" = frontend ] && [ -z "$(ls -A corpus/frontend)" ]; then
+            cp tests/programs/*.qz tests/diagnostics/*.qz corpus/frontend/
+          fi
+          build/fuzz/fuzz/quartz_fuzz_${{ matrix.target }} corpus/${{ matrix.target }} \
+            -max_total_time=${{ inputs.seconds || 600 }} -max_len=8192 -rss_limit_mb=4096 \
+            -artifact_prefix=crashes/
+
+      - name: Save the corpus
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+
+      - name: Keep what crashed
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: crashes-${{ matrix.target }}
+          path: crashes/

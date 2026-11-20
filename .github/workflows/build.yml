@@ -1,0 +1,260 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Plan the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+              .github/scripts/plan-version.sh release
+          else
+              .github/scripts/plan-version.sh ci
+          fi
+
+  linux:
+    name: ${{ matrix.target }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: Linux-x64
+          - os: ubuntu-24.04-arm
+            target: Linux-arm64
+    uses: ./.github/workflows/build-native.yml
+    with:
+      runner: ${{ matrix.os }}
+      target: ${{ matrix.target }}
+      version: ${{ needs.plan.outputs.version }}
+
+  windows:
+    name: ${{ matrix.target }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2025
+            target: Windows-x64
+          - os: windows-11-arm
+            target: Windows-arm64
+    uses: ./.github/workflows/build-native.yml
+    with:
+      runner: ${{ matrix.os }}
+      target: ${{ matrix.target }}
+      version: ${{ needs.plan.outputs.version }}
+
+  macos:
+    name: ${{ matrix.target }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: macOS-arm64
+    uses: ./.github/workflows/build-native.yml
+    with:
+      runner: ${{ matrix.os }}
+      target: ${{ matrix.target }}
+      version: ${{ needs.plan.outputs.version }}
+
+  freebsd:
+    name: FreeBSD-x64
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build and test on FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.3'
+          envs: VERSION
+          cpu: 4
+          mem: 8192
+          usesh: true
+          prepare: |
+            n=0; until pkg install -y cmake ninja llvm23 xz; do n=$((n + 1)); [ $n -lt 4 ] || exit 1; sleep 20; done
+          run: |
+            set -eu
+            llvm=/usr/local/llvm23
+            "$llvm/bin/llvm-config" --version | grep -q '^23\.'
+            cmake --preset release -DCMAKE_BUILD_TYPE=Release "-DQUARTZ_VERSION=$VERSION" -DQUARTZ_SHARED=ON \
+              -DQUARTZ_COMPILER=ON -DQUARTZ_JVM=OFF -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_C_COMPILER="$llvm/bin/clang" \
+              -DCMAKE_CXX_COMPILER="$llvm/bin/clang++" -DQUARTZ_LLVM_CONFIG="$llvm/bin/llvm-config"
+            cmake --build build/release
+            ctest --test-dir build/release --output-on-failure
+            .github/scripts/package.sh "$VERSION" FreeBSD-x64 build/release
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quartz-FreeBSD-x64
+          path: dist/
+          if-no-files-found: error
+
+  wasm:
+    name: WebAssembly
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 7.0.0
+          actions-cache-folder: emsdk-cache
+
+      - name: Build
+        run: |
+          sudo apt-get install -y ninja-build
+          cmake --preset wasm "-DQUARTZ_VERSION=${{ needs.plan.outputs.version }}"
+          cmake --build build/wasm
+
+      - name: Test
+        run: ctest --test-dir build/wasm --output-on-failure
+
+      - name: Package
+        run: |
+          name="quartz-${{ needs.plan.outputs.version }}-WebAssembly"
+          mkdir -p "dist/$name"
+          cp build/wasm/wasm/*.js build/wasm/wasm/*.wasm wasm/quartz-api.d.ts LICENSE "dist/$name/"
+          (cd dist && zip -qr "$name.zip" "$name" && rm -rf "$name")
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quartz-WebAssembly
+          path: dist/
+          if-no-files-found: error
+
+  jvm:
+    name: JVM
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Install ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          job-summary: ''
+          max-size: 400M
+          key: jvm
+
+      - name: Select the compiler
+        run: .github/scripts/select-compiler.sh
+
+      - name: Configure
+        run: >-
+          eval cmake --preset release -DCMAKE_BUILD_TYPE=Release "-DQUARTZ_VERSION=${{ needs.plan.outputs.version }}"
+          -DQUARTZ_SHARED=ON -DQUARTZ_COMPILER=OFF -DQUARTZ_JVM=ON -DQUARTZ_ANDROID=OFF
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache $QUARTZ_CMAKE_ARGS
+
+      - name: Build
+        run: cmake --build build/release --target quartz_shared quartz-jvm
+
+      - name: Test
+        run: ctest --test-dir build/release -L jvm --output-on-failure
+
+      - name: Package
+        run: |
+          name="quartz-${{ needs.plan.outputs.version }}-JVM"
+          mkdir -p "dist/$name"
+          find build/release/jvm -path '*/libs/*.jar' ! -name '*-sources.jar' ! -name '*-javadoc.jar' -exec cp {} "dist/$name/" \;
+          cp LICENSE "dist/$name/"
+          ls "dist/$name"
+          (cd dist && zip -qr "$name.zip" "$name" && rm -rf "$name")
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: quartz-JVM
+          path: dist/
+          if-no-files-found: error
+
+  sanitize:
+    name: Sanitizers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          job-summary: ''
+          max-size: 400M
+          key: sanitize
+
+      - name: Select the compiler
+        run: .github/scripts/select-compiler.sh
+
+      - name: Configure with the address and undefined sanitizers
+        run: >-
+          cmake --preset asan -DQUARTZ_COMPILER=OFF -DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build
+        run: cmake --build build/asan
+
+      - name: Test
+        run: ctest --test-dir build/asan --output-on-failure
+
+  release:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [plan, linux, windows, macos, freebsd, wasm, jvm, sanitize]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          pattern: quartz-*
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/publish-release.sh "${{ needs.plan.outputs.version }}" "$GITHUB_SHA" artifacts
