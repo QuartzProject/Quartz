@@ -59,6 +59,7 @@ struct Library {
             candidates.emplace_back(support::compilerLibraryName());
             if (auto exe = support::executablePath(); !exe.empty()) {
                 candidates.push_back((exe.parent_path() / support::compilerLibraryName()).string());
+                candidates.push_back((exe.parent_path().parent_path() / "lib" / support::compilerLibraryName()).string());
             }
         }
         support::DynamicLibrary handle;
