@@ -17,6 +17,9 @@ retry() {
 
 case "$(uname -s)" in
 Linux)
+    # Ubuntu 24.04's libstdc++ 14 lacks parts of C++23 (std::format's "{:?}"); Clang picks the newest GCC it finds.
+    retry 4 sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    retry 4 sudo apt-get install -y --no-install-recommends g++-15
     retry 4 wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
     retry 4 sudo bash /tmp/llvm.sh 23
     retry 4 sudo apt-get install -y --no-install-recommends ninja-build llvm-23-dev libzstd-dev zlib1g-dev
