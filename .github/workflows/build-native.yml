@@ -66,6 +66,20 @@ jobs:
       - name: Test
         run: ctest --test-dir build/release --output-on-failure
 
+      - name: Show what the failed tool tests wrote
+        if: failure()
+        run: |
+          find build/release -name err -type f -size +0 | while read -r f; do echo "== $f"; head -c 4000 "$f"; done
+          if [ "$RUNNER_OS" = Linux ]; then
+              sudo apt-get install -y gdb >/dev/null
+              for test in quartz_state quartz_capi_tests; do
+                  gdb -batch -ex run -ex bt --args "build/release/tests/$test" 2>&1 | tail -30
+              done
+              find build/release/tests -name in -type f | head -2 | while read -r f; do
+                  gdb -batch -ex "run < $f > /dev/null" -ex bt build/release/lsp/quartz-lsp 2>&1 | tail -30
+              done
+          fi
+
       - name: Package
         run: .github/scripts/package.sh "${{ inputs.version }}" "${{ inputs.target }}" build/release
 

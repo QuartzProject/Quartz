@@ -32,7 +32,11 @@ Darwin)
     "$llvm/bin/llvm-config" --version | grep -q '^23\.' || { echo "Homebrew's llvm is not LLVM 23" >&2; exit 1; }
     # Homebrew's libc++ is newer than the system one: link its static archive so the binaries need only the system.
     cxx="$llvm/lib/c++/libc++.a"
-    echo "QUARTZ_CMAKE_ARGS=-DCMAKE_C_COMPILER=$llvm/bin/clang -DCMAKE_CXX_COMPILER=$llvm/bin/clang++ -DQUARTZ_LLVM_CONFIG=$llvm/bin/llvm-config \"-DCMAKE_CXX_STANDARD_LIBRARIES=-lc++ $cxx\" -DCMAKE_CXX_FLAGS=-D_LIBCPP_DISABLE_AVAILABILITY" >>"$GITHUB_ENV"
+    # LLVM's static libraries ask for -lzstd: a folder holding only the archive keeps Homebrew's dylib out.
+    mkdir -p "$HOME/quartz-static"
+    cp "$(brew --prefix zstd)/lib/libzstd.a" "$HOME/quartz-static/"
+    static="-L$HOME/quartz-static"
+    echo "QUARTZ_CMAKE_ARGS=-DCMAKE_C_COMPILER=$llvm/bin/clang -DCMAKE_CXX_COMPILER=$llvm/bin/clang++ -DQUARTZ_LLVM_CONFIG=$llvm/bin/llvm-config -DCMAKE_EXE_LINKER_FLAGS=$static -DCMAKE_SHARED_LINKER_FLAGS=$static \"-DCMAKE_CXX_STANDARD_LIBRARIES=-lc++ $cxx\" -DCMAKE_CXX_FLAGS=-D_LIBCPP_DISABLE_AVAILABILITY" >>"$GITHUB_ENV"
     ;;
 MINGW* | MSYS*)
     echo "QUARTZ_CMAKE_ARGS=-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_EXE_LINKER_FLAGS=-static -DCMAKE_SHARED_LINKER_FLAGS=-static" >>"$GITHUB_ENV"
