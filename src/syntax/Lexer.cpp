@@ -1,3 +1,4 @@
+#include "support/Chars.hpp"
 #include "syntax/Lexer.hpp"
 
 #include <algorithm>
@@ -349,7 +350,7 @@ private:
             return t;
         }
         if (isFloat) {
-            auto res = std::from_chars(digits.data(), digits.data() + digits.size(), t.floatValue);
+            auto res = support::parseDouble(digits.data(), digits.data() + digits.size(), t.floatValue);
             if (res.ec != std::errc{}) {
                 error(t.span.begin, t.span.end, "invalid float literal");
             }

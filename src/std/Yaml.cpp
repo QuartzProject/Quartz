@@ -1,4 +1,5 @@
 #include "std/Builder.hpp"
+#include "support/Chars.hpp"
 
 #include <charconv>
 #include <cmath>
@@ -389,7 +390,7 @@ private:
         }
         if (base == 10 && !n.empty() && (std::isdigit(static_cast<unsigned char>(n[0])) || n[0] == '.')) {
             double d = 0;
-            auto rf = std::from_chars(n.data(), n.data() + n.size(), d);
+            auto rf = support::parseDouble(n.data(), n.data() + n.size(), d);
             if (rf.ec == std::errc{} && rf.ptr == n.data() + n.size()) {
                 Builder::setFloat(out, neg ? -d : d);
                 return true;

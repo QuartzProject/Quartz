@@ -1,4 +1,5 @@
 #include "ir/Builtins.hpp"
+#include "support/Chars.hpp"
 #include "vm/Builtins.hpp"
 #include "vm/Sandbox.hpp"
 
@@ -269,7 +270,7 @@ bool Builtins::toFloat(Sandbox& sb, const Slot* a, Slot* out) {
         if (j != rest.size()) {
             return true;
         }
-        auto r = std::from_chars(rest.data(), rest.data() + rest.size(), value, std::chars_format::general);
+        auto r = support::parseDouble(rest.data(), rest.data() + rest.size(), value);
         if (r.ec == std::errc::result_out_of_range) {
             value = tooLarge(rest) ? std::numeric_limits<double>::infinity() : 0.0;
         } else if (r.ec != std::errc{} || r.ptr != rest.data() + rest.size()) {

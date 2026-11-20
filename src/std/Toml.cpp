@@ -1,4 +1,5 @@
 #include "std/Builder.hpp"
+#include "support/Chars.hpp"
 
 #include <charconv>
 #include <cmath>
@@ -450,7 +451,7 @@ private:
             return true;
         }
         double d = 0;
-        auto r = std::from_chars(t.data(), t.data() + t.size(), d);
+        auto r = support::parseDouble(t.data(), t.data() + t.size(), d);
         if (r.ec != std::errc{} || r.ptr != t.data() + t.size() || t.front() == '.' || t.back() == '.') {
             return fail("invalid float");
         }

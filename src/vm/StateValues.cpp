@@ -1,3 +1,4 @@
+#include "support/Chars.hpp"
 #include "support/Utf8.hpp"
 #include "vm/Sandbox.hpp"
 #include "vm/StateJson.hpp"
@@ -329,7 +330,7 @@ bool Sandbox::importNode(ImportCtx& ctx, const Node& node, TypeId type, Slot* ou
         const char* b = node.text.data();
         const char* e = b + node.text.size();
         if (wantFloat) {
-            return std::from_chars(b, e, s.f).ptr == e;
+            return support::parseDouble(b, e, s.f).ptr == e;
         }
         if (types.isSigned(type)) {
             return std::from_chars(b, e, s.i).ptr == e;

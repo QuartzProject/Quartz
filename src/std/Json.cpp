@@ -1,5 +1,6 @@
 #include "std/Builder.hpp"
 #include "std/Natives.hpp"
+#include "support/Chars.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -199,7 +200,7 @@ private:
             }
         }
         double d = 0;
-        std::from_chars(text.data(), text.data() + text.size(), d);
+        support::parseDouble(text.data(), text.data() + text.size(), d);
         Builder::setFloat(out, d);
         return true;
     }
