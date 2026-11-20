@@ -179,7 +179,7 @@ jobs:
         with:
           job-summary: ''
           max-size: 400M
-          key: jvm
+          key: jvm-gcc15
 
       - name: Select the compiler
         run: .github/scripts/select-compiler.sh
@@ -223,7 +223,7 @@ jobs:
         with:
           job-summary: ''
           max-size: 400M
-          key: sanitize
+          key: sanitize-gcc15
 
       - name: Select the compiler
         run: .github/scripts/select-compiler.sh

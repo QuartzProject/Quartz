@@ -46,19 +46,22 @@ jobs:
         with:
           job-summary: ''
           max-size: 800M
-          key: ${{ inputs.target }}
+          key: ${{ inputs.target }}-gcc15
 
       - name: Select the compiler
         run: .github/scripts/select-compiler.sh
 
       - name: Configure
         run: |
+          # The native tier gives wrong floating-point results on Windows arm64: it stays off there until that is fixed.
+          compiler=ON
+          [ "${{ inputs.target }}" = Windows-arm64 ] && compiler=OFF
           launcher=""
           if command -v ccache >/dev/null; then
               launcher="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
           fi
           eval cmake --preset release -DCMAKE_BUILD_TYPE=Release "-DQUARTZ_VERSION=${{ inputs.version }}" \
-            -DQUARTZ_SHARED=ON -DQUARTZ_COMPILER=ON -DQUARTZ_JVM=OFF -DQUARTZ_ANDROID=OFF -DCMAKE_INSTALL_LIBDIR=lib $launcher $QUARTZ_CMAKE_ARGS
+            -DQUARTZ_SHARED=ON -DQUARTZ_COMPILER=$compiler -DQUARTZ_JVM=OFF -DQUARTZ_ANDROID=OFF -DCMAKE_INSTALL_LIBDIR=lib $launcher $QUARTZ_CMAKE_ARGS
 
       - name: Build
         run: cmake --build build/release -- -k 0
