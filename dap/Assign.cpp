@@ -1,4 +1,5 @@
 #include "Session.hpp"
+#include "support/Chars.hpp"
 
 #include <charconv>
 #include <format>
@@ -201,7 +202,7 @@ std::expected<void, std::string> Session::assign(const vm::ValueRef& v, std::siz
             d = std::numeric_limits<double>::quiet_NaN();
         } else if (text == "inf" || text == "-inf") {
             d = text == "inf" ? std::numeric_limits<double>::infinity() : -std::numeric_limits<double>::infinity();
-        } else if (auto r = std::from_chars(text.data(), text.data() + text.size(), d);
+        } else if (auto r = support::parseDouble(text.data(), text.data() + text.size(), d);
                    text.empty() || r.ec != std::errc{} || r.ptr != text.data() + text.size()) {
             return std::unexpected(std::format("'{}' is not a {}", text, type));
         }

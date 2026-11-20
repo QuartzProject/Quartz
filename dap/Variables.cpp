@@ -1,5 +1,6 @@
 #include "Session.hpp"
 #include "std/Std.hpp"
+#include "support/Chars.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -26,7 +27,7 @@ bool identChar(char c) {
 
 std::optional<double> number(std::string_view s) {
     double v = 0;
-    auto r = std::from_chars(s.data(), s.data() + s.size(), v);
+    auto r = support::parseDouble(s.data(), s.data() + s.size(), v);
     if (r.ec != std::errc{} || r.ptr != s.data() + s.size()) {
         return std::nullopt;
     }

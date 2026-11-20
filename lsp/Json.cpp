@@ -1,4 +1,5 @@
 #include "Json.hpp"
+#include "support/Chars.hpp"
 
 #include <charconv>
 #include <cmath>
@@ -281,7 +282,7 @@ private:
             }
         }
         double d = 0;
-        auto r = std::from_chars(first, last, d);
+        auto r = support::parseDouble(first, last, d);
         if (r.ec != std::errc{} || r.ptr != last) {
             return false;
         }
