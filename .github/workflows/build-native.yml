@@ -15,6 +15,11 @@ on:
         description: The planned version to stamp
         type: string
         required: true
+      arch:
+        description: Optional cross-architecture selection for macOS
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -49,13 +54,17 @@ jobs:
           key: ${{ inputs.target }}-gcc15
 
       - name: Select the compiler
+        env:
+          QUARTZ_TARGET_ARCH: ${{ inputs.arch }}
         run: .github/scripts/select-compiler.sh
 
       - name: Configure
         run: |
-          # The native tier gives wrong floating-point results on Windows arm64: it stays off there until that is fixed.
+          # Windows arm64 gives wrong floating-point results in the native tier, and macOS x64 has no LLVM 23 to link.
           compiler=ON
-          [ "${{ inputs.target }}" = Windows-arm64 ] && compiler=OFF
+          case "${{ inputs.target }}" in
+          Windows-arm64 | macOS-x64) compiler=OFF ;;
+          esac
           launcher=""
           if command -v ccache >/dev/null; then
               launcher="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
@@ -104,6 +113,10 @@ jobs:
               otool -L "$binary"
               if otool -L "$binary" | grep -q -e /opt/homebrew -e /usr/local/opt; then echo "$binary links Homebrew"; exit 1; fi
           done
+
+      - name: Check the architecture
+        if: inputs.arch == 'x86_64'
+        run: file check/*/bin/* | tee /dev/stderr | grep -v x86_64 && exit 1 || true
 
       - name: Check the Windows binaries need only the system
         if: startsWith(inputs.target, 'Windows')

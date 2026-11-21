@@ -27,6 +27,16 @@ Linux)
     echo "QUARTZ_CMAKE_ARGS=-DCMAKE_C_COMPILER=clang-23 -DCMAKE_CXX_COMPILER=clang++-23 -DQUARTZ_LLVM_CONFIG=/usr/bin/llvm-config-23 \"-DCMAKE_EXE_LINKER_FLAGS=$static\" \"-DCMAKE_SHARED_LINKER_FLAGS=$static\"" >>"$GITHUB_ENV"
     ;;
 Darwin)
+    if [ "${QUARTZ_TARGET_ARCH:-}" = x86_64 ] && [ "$(uname -m)" = arm64 ]; then
+        # Homebrew has no x86_64 LLVM for an arm64 host: Apple's Clang and libc++ build the interpreter, run by Rosetta.
+        sudo softwareupdate --install-rosetta --agree-to-license || true
+        xcode="$(find /Applications -maxdepth 1 -name 'Xcode_*.app' | sort -V | tail -1)"
+        [ -z "$xcode" ] || sudo xcode-select -s "$xcode"
+        clang --version
+        retry 4 brew install ninja
+        echo "QUARTZ_CMAKE_ARGS=-DCMAKE_C_COMPILER=$(xcrun -f clang) -DCMAKE_CXX_COMPILER=$(xcrun -f clang++) -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3" >>"$GITHUB_ENV"
+        exit 0
+    fi
     retry 4 brew install llvm ninja
     llvm="$(brew --prefix llvm)"
     "$llvm/bin/llvm-config" --version | grep -q '^23\.' || { echo "Homebrew's llvm is not LLVM 23" >&2; exit 1; }
