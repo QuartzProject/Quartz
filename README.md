@@ -13,7 +13,7 @@
 
 <p align="center">
   <img alt="C++" src="https://img.shields.io/badge/C%2B%2B-23-00599C?logo=cplusplus&logoColor=white">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux_%7C_Windows_%7C_macOS_%7C_FreeBSD-00599C">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux_%7C_Windows_%7C_macOS_%7C_FreeBSD_%7C_Android-00599C">
   <img alt="Embedding" src="https://img.shields.io/badge/embeds_in-C%2B%2B_%7C_C_%7C_JVM_%7C_JS-F9A8D4">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
@@ -108,9 +108,10 @@ formats and debugs single packages; [Qiln](https://github.com/QuartzProject/Qiln
 ## Download
 
 Every commit to `main` publishes a release, numbered `0.<n>` until 1.0, on the
-[releases page](https://github.com/QuartzProject/Quartz/releases). Each one has `quartz`, `quartz-lsp`, `libquartz`
-with its headers and the native tier for Linux, Windows, macOS and FreeBSD, plus the WebAssembly build and the JVM
-bindings, with a `SHA256SUMS` file.
+[releases page](https://github.com/QuartzProject/Quartz/releases). Each one has `quartz`, `quartz-lsp` and
+`libquartz` with its headers for Linux (glibc and musl), Windows, macOS, FreeBSD and Android, on x64 and arm64, plus
+the WebAssembly build and the JVM bindings, with a `SHA256SUMS` file. All but Android, macOS x64 and Windows arm64 carry
+the native tier.
 
 ## Building
 
