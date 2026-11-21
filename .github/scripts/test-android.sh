@@ -17,5 +17,9 @@ adb shell "chmod 755 $remote/quartz $remote/quartz_*"
 adb shell "cd $remote && ./quartz --version"
 adb shell "cd $remote && printf 'fn main() {\n    print(\"ok\")\n}\n' > hello.qz && ./quartz run hello.qz" | tr -d "\r" | grep -qx ok
 for test in $tests; do
-    adb shell "cd $remote && TMPDIR=$remote ./$test"
+    if ! adb shell "cd $remote && TMPDIR=$remote ./$test"; then
+        adb shell cat /proc/meminfo | head -3
+        adb logcat -d | grep -iE "quartz|fatal signal|lowmemory|lmkd|oom|backtrace|#[0-9]+ pc" | tail -60
+        exit 1
+    fi
 done
