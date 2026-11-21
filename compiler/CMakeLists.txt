@@ -8,6 +8,10 @@ if(WIN32 OR CMAKE_CROSSCOMPILING)
     set(QUARTZ_LLVM_INCLUDE ${LLVM_INCLUDE_DIRS})
     llvm_map_components_to_libnames(QUARTZ_LLVM_LIBS orcjit passes native)
     set(QUARTZ_LLVM_SYSTEM_LIBS "")
+    # LLVM's package only offers zstd's shared library; its archive keeps the backend free of non-system libraries.
+    if(NOT WIN32 AND TARGET zstd::libzstd_shared AND zstd_STATIC_LIBRARY)
+        set_target_properties(zstd::libzstd_shared PROPERTIES IMPORTED_LOCATION "${zstd_STATIC_LIBRARY}")
+    endif()
 else()
     find_program(QUARTZ_LLVM_CONFIG NAMES llvm-config-23 llvm-config REQUIRED)
     execute_process(COMMAND ${QUARTZ_LLVM_CONFIG} --includedir OUTPUT_VARIABLE QUARTZ_LLVM_INCLUDE
