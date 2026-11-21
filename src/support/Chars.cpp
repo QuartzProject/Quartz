@@ -1,6 +1,6 @@
 #include "support/Chars.hpp"
 
-#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 200000
+#if defined(_LIBCPP_VERSION) && (_LIBCPP_VERSION < 200000 || !_LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT)
 #include <cerrno>
 #include <cstdlib>
 #include <locale.h>
