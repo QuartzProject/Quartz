@@ -8,7 +8,7 @@ remote=/data/local/tmp/quartz-ci
 tests="quartz_programs quartz_format_tests quartz_state quartz_deep quartz_capi_tests"
 
 adb shell "rm -rf $remote && mkdir -p $remote"
-adb push tests "$remote/"
+adb push tests examples bench "$remote/"
 adb push "$build/cli/quartz" "$remote/"
 for test in $tests; do
     adb push "$build/tests/$test" "$remote/"
