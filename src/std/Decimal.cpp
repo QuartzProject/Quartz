@@ -8,7 +8,26 @@ using i128 = __int128;
 
 enum class Rounding : std::uint64_t { Down, Up, Ceiling, Floor, HalfUp, HalfDown, HalfEven, Unnecessary };
 
-bool mulOverflows(i128 a, i128 b, i128& out) { return __builtin_mul_overflow(a, b, &out); }
+using u128 = unsigned __int128;
+
+// Not __builtin_mul_overflow: that needs __muloti4 from compiler-rt, which libgcc does not provide.
+bool mulOverflows(i128 a, i128 b, i128& out) {
+    if (a == 0 || b == 0) {
+        out = 0;
+        return false;
+    }
+    const bool negative = (a < 0) != (b < 0);
+    const u128 ua = a < 0 ? u128{0} - static_cast<u128>(a) : static_cast<u128>(a);
+    const u128 ub = b < 0 ? u128{0} - static_cast<u128>(b) : static_cast<u128>(b);
+    const u128 limit = (u128{1} << 127) - (negative ? 0 : 1);
+    if (ua > limit / ub) {
+        out = 0;
+        return true;
+    }
+    const u128 product = ua * ub;
+    out = static_cast<i128>(negative ? u128{0} - product : product);
+    return false;
+}
 
 // round(a * b * 10^exp / c) exactly, for the `Rounding` variant `mode`; the core of Decimal arithmetic.
 bool mulDivPow10(vm::HostCall& call, void*) {
