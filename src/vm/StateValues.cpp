@@ -3,6 +3,7 @@
 #include "vm/Sandbox.hpp"
 #include "vm/StateJson.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <format>

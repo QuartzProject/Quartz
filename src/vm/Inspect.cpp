@@ -2,6 +2,7 @@
 
 #include "vm/Sandbox.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 

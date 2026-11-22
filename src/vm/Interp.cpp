@@ -2,6 +2,7 @@
 #include "vm/Math.hpp"
 #include "vm/Sandbox.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string_view>

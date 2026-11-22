@@ -1,6 +1,7 @@
 #include "quartz/Package.hpp"
 #include "std/Natives.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 

@@ -1,5 +1,6 @@
 #include "std/Sha.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cstring>
 

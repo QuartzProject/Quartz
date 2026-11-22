@@ -1,6 +1,7 @@
 #include "std/Natives.hpp"
 #include "std/Sha.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 #include <monocypher/monocypher-ed25519.h>
