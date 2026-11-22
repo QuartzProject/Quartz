@@ -94,16 +94,7 @@ public:
 
 private:
     static constexpr std::size_t kGranule = 16;
-#if defined(__has_feature)
-#if __has_feature(address_sanitizer)
-#define QUARTZ_HEAP_ASAN 1
-#endif
-#endif
-#ifdef QUARTZ_HEAP_ASAN
-    static constexpr std::size_t kMaxSmall = 0; // every block from malloc so ASan sees use after free
-#else
     static constexpr std::size_t kMaxSmall = 512;
-#endif
     static constexpr std::size_t kClasses = kMaxSmall / kGranule + 1;
     static constexpr std::size_t kSlab = 64 * 1024;
 

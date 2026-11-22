@@ -19,6 +19,17 @@ const HashKey& hashKey() {
 
 namespace {
 
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define QUARTZ_HEAP_ASAN 1
+#endif
+#endif
+#ifdef QUARTZ_HEAP_ASAN
+constexpr bool kPooled = false; // every block from malloc so ASan sees use after free
+#else
+constexpr bool kPooled = true;
+#endif
+
 inline std::uint64_t rotl(std::uint64_t x, int b) { return (x << b) | (x >> (64 - b)); }
 
 inline void sipRound(std::uint64_t& v0, std::uint64_t& v1, std::uint64_t& v2, std::uint64_t& v3) {
@@ -148,7 +159,7 @@ void* StateHeap::allocateSmall(std::size_t cls) {
 }
 
 void* StateHeap::allocate(std::size_t size) {
-    if (size <= kMaxSmall && kMaxSmall > 0) {
+    if (kPooled && size <= kMaxSmall) {
         return allocateSmall(size == 0 ? 0 : (size - 1) / kGranule);
     }
     std::size_t total = size + kHeader;
