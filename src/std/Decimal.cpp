@@ -1,4 +1,5 @@
 #include "std/Natives.hpp"
+#include "support/Int128.hpp"
 
 namespace quartz::stdlib {
 
@@ -54,8 +55,8 @@ bool mulDivPow10(vm::HostCall& call, void*) {
         tiny = mulOverflows(d, 10, d);
     }
     bool negative = (n < 0) != (d < 0);
-    i128 q = tiny ? 0 : n / d;
-    i128 r = tiny ? n : n % d;
+    i128 r = n;
+    i128 q = tiny ? 0 : support::divmod(n, d, r);
     if (r != 0) {
         int half = -1;
         if (!tiny) {
@@ -83,7 +84,7 @@ bool mulDivPow10(vm::HostCall& call, void*) {
             away = half > 0;
             break;
         case Rounding::HalfEven:
-            away = half > 0 || (half == 0 && q % 2 != 0);
+            away = half > 0 || (half == 0 && (q & 1) != 0);
             break;
         case Rounding::Unnecessary:
         default:

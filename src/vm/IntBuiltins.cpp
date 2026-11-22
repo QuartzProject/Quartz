@@ -1,4 +1,5 @@
 #include "ir/Types.hpp"
+#include "support/Int128.hpp"
 #include "vm/Builtins.hpp"
 
 namespace quartz::vm {
@@ -66,7 +67,8 @@ bool exact(const Slot* a, Arith op, const Range& r, i128& out) {
         if (y == 0) {
             return false;
         }
-        out = x / y;
+        i128 rest = 0;
+        out = support::divmod(x, y, rest);
         break;
     }
     return out >= r.lo && out <= r.hi;
