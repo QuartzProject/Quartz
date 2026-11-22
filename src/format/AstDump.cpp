@@ -9,6 +9,32 @@ using namespace syntax;
 
 namespace {
 
+void appendQuoted(std::string& out, std::string_view text) {
+    out += " \"";
+    for (const char c : text) {
+        switch (c) {
+        case '"':
+            out += "\\\"";
+            break;
+        case '\\':
+            out += "\\\\";
+            break;
+        case '\n':
+            out += "\\n";
+            break;
+        case '\r':
+            out += "\\r";
+            break;
+        case '\t':
+            out += "\\t";
+            break;
+        default:
+            out += c;
+        }
+    }
+    out += '"';
+}
+
 class Dumper {
 public:
     explicit Dumper(const Interner& names) : names_(names) {}
@@ -125,12 +151,12 @@ public:
             out += std::format(" {}", static_cast<const CharLitExpr*>(e)->value);
             break;
         case ExprKind::StringLit:
-            out += std::format(" {:?}", static_cast<const StringLitExpr*>(e)->value);
+            appendQuoted(out, static_cast<const StringLitExpr*>(e)->value);
             break;
         case ExprKind::Interp: {
             const auto* in = static_cast<const InterpExpr*>(e);
             for (std::string_view t : in->texts) {
-                out += std::format(" {:?}", t);
+                appendQuoted(out, t);
             }
             exprs(in->exprs);
             break;
