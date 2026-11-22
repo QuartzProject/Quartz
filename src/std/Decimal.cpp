@@ -21,7 +21,8 @@ bool mulOverflows(i128 a, i128 b, i128& out) {
     const u128 ua = a < 0 ? u128{0} - static_cast<u128>(a) : static_cast<u128>(a);
     const u128 ub = b < 0 ? u128{0} - static_cast<u128>(b) : static_cast<u128>(b);
     const u128 limit = (u128{1} << 127) - (negative ? 0 : 1);
-    if (ua > limit / ub) {
+    u128 rest = 0;
+    if (ua > support::divmodUnsigned(limit, ub, rest)) {
         out = 0;
         return true;
     }
